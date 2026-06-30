@@ -246,8 +246,8 @@ let by_author ctx =
   |> Posts.values ctx
 ```
 
-Stored-FK to-many edges can order by related row count without writing raw
-aggregation terms:
+Stored-FK and Mongo join-backed to-many edges can order by related row count
+without writing raw aggregation terms:
 
 ```ocaml
 let most_active_users ctx =
@@ -259,7 +259,18 @@ let most_active_users ctx =
            ~direction:Ent_ocaml.Desc ~as_:"post_count" ();
        ]
   |> limit 20
-  |> Users.values ctx
+	  |> Users.values ctx
+
+let most_tagged_posts ctx =
+  let open Post in
+  query ()
+  |> order_by
+       [
+         tags_count_order ~target:Tag.tag_entity
+           ~direction:Ent_ocaml.Desc ~as_:"tag_count" ();
+       ]
+  |> limit 20
+  |> Posts.values ctx
 ```
 
 Mutation hooks wrap generated stores in the same module-first style:

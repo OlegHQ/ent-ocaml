@@ -434,6 +434,18 @@ let query_posts_with_ocaml_tag_name =
       orders = [ Order.field ~direction:Asc "id" ];
     }
 
+let query_posts_by_tag_count =
+  Ent_ocaml.
+    {
+      query_all with
+      orders =
+        [
+          Order.edge_count ~edge:"tags" ~target:tag_entity ~direction:Desc ();
+          Order.field ~direction:Asc "id";
+        ];
+      limit = Some 1;
+    }
+
 let assert_true label condition =
   if condition then Printf.printf "PASS %s\n%!" label
   else failwith ("FAIL " ^ label)
@@ -862,6 +874,28 @@ let run_flow client =
   in
   assert_int64_value "selected edge count order value returns count" 2L
     selected_edge_count_order_value;
+  let* join_edge_count_ordered_posts =
+    Ent_ocaml_mongo.find ctx query_posts_by_tag_count
+  in
+  assert_true "join edge count order returns most tagged post"
+    (match join_edge_count_ordered_posts with
+    | [ doc ] -> Bson.get_string (Bson.get_element "_id" doc) = "post_2"
+    | _ -> false);
+  let* selected_join_edge_count_order_value =
+    Ent_ocaml_mongo.value ctx
+      Ent_ocaml.
+        {
+          query_posts_by_tag_count with
+          orders =
+            [
+              Order.edge_count ~edge:"tags" ~target:tag_entity ~direction:Desc
+                ~as_:"tag_count" ();
+              Order.field ~direction:Asc "id";
+            ];
+        }
+  in
+  assert_int64_value "selected join edge count order value returns count" 2L
+    selected_join_edge_count_order_value;
   let* entql_user_posts =
     match
       Ent_ocaml.Query.make post_entity

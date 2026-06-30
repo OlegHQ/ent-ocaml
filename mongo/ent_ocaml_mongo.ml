@@ -94,6 +94,11 @@ let doc fields =
     (fun acc (name, value) -> Bson.add_element name value acc)
     Bson.empty fields
 
+let ordered_doc fields =
+  List.fold_right
+    (fun (name, value) acc -> Bson.add_element name value acc)
+    fields Bson.empty
+
 let find_edge (entity : Ent_ocaml.entity) name =
   List.find_opt (fun (edge : Ent_ocaml.edge) -> edge.name = name) entity.edges
 
@@ -510,8 +515,8 @@ let sort_to_bson ?entity (orders : Ent_ocaml.order list) =
             let field = order_field_for_sort order in
             (field, direction order.direction))
           orders
-      in
-      Some (doc fields)
+	      in
+	      Some (ordered_doc fields)
 
 let has_edge_field_order (query : Ent_ocaml.query) =
   List.exists
@@ -871,9 +876,14 @@ let edge_order_field (query : Ent_ocaml.query) index (order : Ent_ocaml.order) =
           Error
             (`Bad_query "edge-count ordering currently supports to-many edges")
       | Some edge_desc -> (
-          match edge_desc.storage_key with
-          | Some _ -> Ok (edge_order_temp index ^ "_count")
-          | None ->
+          match (edge_desc.storage_key, edge_desc.join) with
+          | Some _, None | None, Some _ -> Ok (edge_order_temp index ^ "_count")
+          | Some _, Some _ ->
+              Error
+                (`Bad_query
+                  ("edge " ^ edge_desc.name
+                 ^ " must use either storage_key or join metadata, not both"))
+          | None, None ->
               Error
                 (`Bad_query
                   ("edge " ^ edge_desc.name
@@ -885,7 +895,7 @@ let sort_to_bson_result (query : Ent_ocaml.query) =
     | Desc -> Bson.create_int32 (-1l)
   in
   let rec loop index acc = function
-    | [] -> Ok (if acc = [] then None else Some (doc (List.rev acc)))
+    | [] -> Ok (if acc = [] then None else Some (ordered_doc (List.rev acc)))
     | (order : Ent_ocaml.order) :: rest -> (
         match edge_order_field query index order with
         | Ok field ->
@@ -1556,8 +1566,12 @@ let edge_order_lookup_stages (query : Ent_ocaml.query) index
           Error
             (`Bad_query "edge-count ordering currently supports to-many edges")
       | Some edge_desc -> (
-          match (field_storage_key query.Ent_ocaml.entity "id", edge_desc.storage_key) with
-          | Ok local_key, Some foreign_key ->
+          match
+            ( field_storage_key query.Ent_ocaml.entity "id",
+              edge_desc.storage_key,
+              edge_desc.join )
+          with
+          | Ok local_key, Some foreign_key, None ->
               let temp = edge_order_temp index in
               let count_key = temp ^ "_count" in
               let count_expr =
@@ -1587,8 +1601,43 @@ let edge_order_lookup_stages (query : Ent_ocaml.query) index
                         Bson.create_doc_element (doc fields) );
                     ];
                 ]
-          | Error _ as error, _ -> error
-          | _, None ->
+          | Ok local_key, None, Some join ->
+              let temp = edge_order_temp index in
+              let count_key = temp ^ "_count" in
+              let count_expr =
+                Bson.create_doc_element
+                  (doc [ ("$size", Bson.create_string ("$" ^ temp)) ])
+              in
+              let lookup =
+                doc
+                  [
+                    ("from", Bson.create_string join.collection);
+                    ("localField", Bson.create_string local_key);
+                    ("foreignField", Bson.create_string join.source_key);
+                    ("as", Bson.create_string temp);
+                  ]
+              in
+              let fields =
+                match order.value_alias with
+                | None -> [ (count_key, count_expr) ]
+                | Some alias -> [ (count_key, count_expr); (alias, count_expr) ]
+              in
+              Ok
+                [
+                  doc [ ("$lookup", Bson.create_doc_element lookup) ];
+                  doc
+                    [
+                      ( "$addFields",
+                        Bson.create_doc_element (doc fields) );
+                    ];
+                ]
+          | Error _ as error, _, _ -> error
+          | _, Some _, Some _ ->
+              Error
+                (`Bad_query
+                  ("edge " ^ edge_desc.name
+                 ^ " must use either storage_key or join metadata, not both"))
+          | _, None, None ->
               Error
                 (`Bad_query
                   ("edge " ^ edge_desc.name
