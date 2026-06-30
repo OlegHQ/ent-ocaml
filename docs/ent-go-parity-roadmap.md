@@ -57,16 +57,16 @@ feel like a small typed OCaml library:
 The initial package scaffold already provides:
 
 - Core schema descriptors for fields, edges, indexes, predicates, ordering,
-  queries, mutations, mutation validation, errors, privacy decisions, and
-  backend signatures.
+  queries, mutations, mutation validation, field validators, errors, privacy
+  decisions, and backend signatures.
 - Mongo planning and CRUD execution for scalar filters, boolean predicates,
   field selection/projection, ordering, limit/offset, insert, bulk insert,
   update, delete, count, and basic value translation.
 - `[@@deriving ent]` generation for entity metadata, functional query helpers,
   typed field predicates, typed ordering helpers, create/update/delete mutation
   values, create-bulk helpers, field selector constants, create-time and
-  update-time default values, and matching `.mli` signatures for generated
-  helper modules.
+  update-time default values, typed validator wrappers, and matching `.mli`
+  signatures for generated helper modules.
 - Poster pilot integration for `User`, `Session`, `Post`, `Media`,
   `PublishState`, and `PublishAttempt` DTO entities.
 
@@ -101,7 +101,7 @@ The initial package scaffold already provides:
 | Privacy | Query/mutation rule chains with allow/deny/skip | Evaluated before backend execution |
 | Mixins | Reusable fields, edges, indexes, hooks, policies | PPX composition step |
 | Field defaults | Generated `[@ent.default expr]` and `[@ent.update_default expr]`; error-returning default funcs pending | OCaml expressions evaluated in create/update APIs |
-| Field validators | Generated validator chains for create/update values | Checked before backend mutation |
+| Field validators | Generated `[@ent.validate [fn1; fn2]]` wrappers for primitive/enum fields | Checked before backend mutation |
 | Sensitive/deprecated/comments | Schema metadata and generated output controls | Hidden from display/debug helpers |
 | Indexes | Field, edge, compound, unique, partial/specialized annotations | Mongo indexes with options and partial filters |
 | Annotations | Backend/codegen metadata extension point | OCaml attributes and extensible annotation records |
@@ -141,7 +141,9 @@ The initial package scaffold already provides:
    validator chains are still pending. Generated create helpers apply
    `[@ent.default expr]` for omitted fields and generated update helpers apply
    `[@ent.update_default expr]` unless the field is explicitly set or cleared.
-   Defaults that return errors are still pending.
+   Generated validator wrappers support `[@ent.validate [fn1; fn2]]` on
+   primitive and enum fields. Defaults that return errors and validators for
+   custom/nested fields are still pending.
 
 5. Poster pilot:
    model `User`, `Session`, `Post`, `Media`, and `PublishAttempt`; replace the

@@ -22,6 +22,7 @@ let post_entity =
             unique = true;
             immutable = false;
             nillable = false;
+            validators = [];
           };
           {
             name = "body";
@@ -31,6 +32,7 @@ let post_entity =
             unique = false;
             immutable = false;
             nillable = false;
+            validators = [];
           };
         ];
       edges = [];

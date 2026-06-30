@@ -14,6 +14,17 @@ type field_type =
   | Option of field_type
   | Custom of string
 
+type value =
+  | V_string of string
+  | V_int of int
+  | V_int32 of int32
+  | V_int64 of int64
+  | V_float of float
+  | V_bool of bool
+  | V_null
+  | V_list of value list
+  | V_doc of (string * value) list
+
 type field = {
   name : string;
   storage_key : string;
@@ -22,6 +33,7 @@ type field = {
   unique : bool;
   immutable : bool;
   nillable : bool;
+  validators : (value -> (unit, string) result) list;
 }
 
 type edge_cardinality = One | Many
@@ -50,17 +62,6 @@ type entity = {
   edges : edge list;
   indexes : index list;
 }
-
-type value =
-  | V_string of string
-  | V_int of int
-  | V_int32 of int32
-  | V_int64 of int64
-  | V_float of float
-  | V_bool of bool
-  | V_null
-  | V_list of value list
-  | V_doc of (string * value) list
 
 type predicate =
   | Eq of string * value
@@ -191,6 +192,32 @@ let validate_immutable_update (entity : entity) fields =
   | None -> Ok ()
   | Some name -> Error (`Bad_query ("immutable field cannot be updated: " ^ name))
 
+let validate_field_values (entity : entity) values =
+  let validate_one (name, value) =
+    match find_field entity name with
+    | None -> Ok ()
+    | Some field ->
+        let rec loop = function
+          | [] -> Ok ()
+          | validator :: validators -> (
+              match validator value with
+              | Ok () -> loop validators
+              | Error message ->
+                  Error
+                    (`Bad_query
+                      ("validation failed for field " ^ name ^ ": " ^ message)))
+        in
+        loop field.validators
+  in
+  let rec loop = function
+    | [] -> Ok ()
+    | value :: values -> (
+        match validate_one value with
+        | Ok () -> loop values
+        | Error _ as error -> error)
+  in
+  loop values
+
 let ( let* ) result f = match result with Ok value -> f value | Error _ as error -> error
 
 let validate_mutation mutation =
@@ -206,6 +233,7 @@ let validate_mutation mutation =
   let* () = validate_no_overlap "set" set_names "add" add_names in
   let* () = validate_no_overlap "set" set_names "clear" clear_names in
   let* () = validate_no_overlap "add" add_names "clear" clear_names in
+  let* () = validate_field_values entity (mutation.set @ mutation.add) in
   match mutation.op with
   | Create ->
       let* () = validate_required_create entity mutation.set in

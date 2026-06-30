@@ -1,7 +1,11 @@
 type post = {
   id : string [@ent.key "_id"] [@ent.unique] [@ent.immutable];
   user_id : string [@ent.index "posts_by_user"];
-  body : string;
+  body : string
+  [@ent.validate
+    [
+      (fun value -> if value = "" then Error "must not be empty" else Ok ());
+    ]];
   media_ids : string list;
   status : string [@ent.enum [ "draft"; "published" ]] [@ent.default "draft"];
   created_at_ms : int64;
@@ -164,6 +168,26 @@ let test_generated_mutation_api () =
        create_with_default.set);
   (match Ent_ocaml.validate_mutation create_with_default with
   | Ok () -> ()
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  let create_invalid =
+    Post.create
+      [
+        Post.id "post_invalid";
+        Post.user_id "user_1";
+        Post.body "";
+        Post.media_ids [];
+        Post.created_at_ms 4L;
+        Post.updated_at_ms 4L;
+        Post.published_at_ms None;
+      ]
+  in
+  (match Ent_ocaml.validate_mutation create_invalid with
+  | Ok () -> Alcotest.fail "expected generated validator error"
+  | Error (`Bad_query message) ->
+      Alcotest.(check string)
+        "validator message"
+        "validation failed for field body: must not be empty"
+        message
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
   let update =
     Post.update_one ~where:[ Post.id_eq "post_1" ]

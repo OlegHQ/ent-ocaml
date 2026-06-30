@@ -20,7 +20,9 @@ required create fields, unknown mutation fields, duplicate mutation fields, and
 immutable-field updates before backend execution. Fields annotated with
 `[@ent.default expr]` are inserted by generated create helpers when omitted, and
 `[@ent.update_default expr]` is inserted by generated update helpers unless the
-field is explicitly set or cleared.
+field is explicitly set or cleared. Fields annotated with
+`[@ent.validate [fn1; fn2]]` run typed validator functions during core mutation
+validation.
 
 The first production target is Poster, whose Mongo store code should be replaced
 by generated entity clients once the Mongo backend and PPX are complete.

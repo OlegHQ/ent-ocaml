@@ -80,6 +80,11 @@ let ent_update_default_attr =
     Ast_pattern.(single_expr_payload __)
     (fun expr -> expr)
 
+let ent_validate_attr =
+  Attribute.declare "ent.validate" Attribute.Context.label_declaration
+    Ast_pattern.(single_expr_payload (elist __))
+    (fun validators -> validators)
+
 let has_attr attr item = Attribute.get attr item |> Option.is_some
 
 let snake_to_pascal name =
@@ -281,6 +286,76 @@ let rec value_expr ~loc field value =
           Location.raise_errorf ~loc:field.pld_type.ptyp_loc
             "ent deriving cannot generate value helper for this field type")
 
+let rec value_pattern_for_validator ~loc field =
+  match Attribute.get ent_enum_attr field with
+  | Some _ -> Some (A.ppat_construct ~loc (lid ~loc [ "Ent_ocaml"; "V_string" ]) (Some (pvar ~loc "value")))
+  | None -> (
+      match field.pld_type.ptyp_desc with
+      | Ptyp_constr ({ txt = Longident.Lident "string"; _ }, []) ->
+          Some
+            (A.ppat_construct ~loc (lid ~loc [ "Ent_ocaml"; "V_string" ])
+               (Some (pvar ~loc "value")))
+      | Ptyp_constr ({ txt = Longident.Lident "int"; _ }, []) ->
+          Some
+            (A.ppat_construct ~loc (lid ~loc [ "Ent_ocaml"; "V_int" ])
+               (Some (pvar ~loc "value")))
+      | Ptyp_constr ({ txt = Longident.Lident "int32"; _ }, [])
+      | Ptyp_constr
+          ({ txt = Longident.Ldot (Longident.Lident "Int32", "t"); _ }, []) ->
+          Some
+            (A.ppat_construct ~loc (lid ~loc [ "Ent_ocaml"; "V_int32" ])
+               (Some (pvar ~loc "value")))
+      | Ptyp_constr ({ txt = Longident.Lident "int64"; _ }, [])
+      | Ptyp_constr
+          ({ txt = Longident.Ldot (Longident.Lident "Int64", "t"); _ }, []) ->
+          Some
+            (A.ppat_construct ~loc (lid ~loc [ "Ent_ocaml"; "V_int64" ])
+               (Some (pvar ~loc "value")))
+      | Ptyp_constr ({ txt = Longident.Lident "float"; _ }, []) ->
+          Some
+            (A.ppat_construct ~loc (lid ~loc [ "Ent_ocaml"; "V_float" ])
+               (Some (pvar ~loc "value")))
+      | Ptyp_constr ({ txt = Longident.Lident "bool"; _ }, []) ->
+          Some
+            (A.ppat_construct ~loc (lid ~loc [ "Ent_ocaml"; "V_bool" ])
+               (Some (pvar ~loc "value")))
+      | Ptyp_constr ({ txt = Longident.Lident "option"; _ }, [ inner ])
+      | Ptyp_constr
+          ({ txt = Longident.Ldot (Longident.Lident "Option", "t"); _ }, [ inner ])
+        ->
+          value_pattern_for_validator ~loc { field with pld_type = inner }
+      | _ -> None)
+
+let validator_expr ~loc field validator =
+  match value_pattern_for_validator ~loc field with
+  | None ->
+      Location.raise_errorf ~loc:field.pld_type.ptyp_loc
+        "ent validators currently support primitive and enum fields"
+  | Some value_pat ->
+      A.pexp_fun ~loc Nolabel None (pvar ~loc "ent_value")
+        (A.pexp_match ~loc (evar ~loc "ent_value")
+           [
+             A.case ~lhs:value_pat ~guard:None
+               ~rhs:(app ~loc validator [ evar ~loc "value" ]);
+             A.case
+               ~lhs:
+                 (A.ppat_construct ~loc (lid ~loc [ "Ent_ocaml"; "V_null" ])
+                    None)
+               ~guard:None ~rhs:(constr_arg ~loc [ "Ok" ] (constr ~loc [ "()" ]));
+             A.case ~lhs:(A.ppat_any ~loc) ~guard:None
+               ~rhs:
+                 (constr_arg ~loc [ "Error" ]
+                    (str ~loc
+                       ("validator type mismatch for field: "
+                      ^ field.pld_name.txt)));
+           ])
+
+let validators_expr ~loc field =
+  match Attribute.get ent_validate_attr field with
+  | None -> list ~loc []
+  | Some validators ->
+      list ~loc (List.map (validator_expr ~loc field) validators)
+
 let predicate_function ~loc name constructor field_name field =
   let value = evar ~loc "value" in
   let body =
@@ -471,6 +546,7 @@ let field_expr field =
       (lid ~loc [ "Ent_ocaml"; "unique" ], bool ~loc (has_attr ent_unique_attr field));
       (lid ~loc [ "Ent_ocaml"; "immutable" ], bool ~loc (has_attr ent_immutable_attr field));
       (lid ~loc [ "Ent_ocaml"; "nillable" ], bool ~loc (is_option field));
+      (lid ~loc [ "Ent_ocaml"; "validators" ], validators_expr ~loc field);
     ]
     None
 

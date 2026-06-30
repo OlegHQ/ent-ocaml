@@ -14,6 +14,17 @@ type field_type =
   | Option of field_type
   | Custom of string
 
+type value =
+  | V_string of string
+  | V_int of int
+  | V_int32 of int32
+  | V_int64 of int64
+  | V_float of float
+  | V_bool of bool
+  | V_null
+  | V_list of value list
+  | V_doc of (string * value) list
+
 type field = {
   name : string;
   storage_key : string;
@@ -22,6 +33,7 @@ type field = {
   unique : bool;
   immutable : bool;
   nillable : bool;
+  validators : (value -> (unit, string) result) list;
 }
 
 type edge_cardinality = One | Many
@@ -50,17 +62,6 @@ type entity = {
   edges : edge list;
   indexes : index list;
 }
-
-type value =
-  | V_string of string
-  | V_int of int
-  | V_int32 of int32
-  | V_int64 of int64
-  | V_float of float
-  | V_bool of bool
-  | V_null
-  | V_list of value list
-  | V_doc of (string * value) list
 
 type predicate =
   | Eq of string * value

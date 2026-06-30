@@ -13,6 +13,7 @@ let post_entity =
             unique = true;
             immutable = true;
             nillable = false;
+            validators = [];
           };
           {
             name = "user_id";
@@ -22,6 +23,23 @@ let post_entity =
             unique = false;
             immutable = false;
             nillable = false;
+            validators = [];
+          };
+          {
+            name = "body";
+            storage_key = "body";
+            typ = String;
+            required = false;
+            unique = false;
+            immutable = false;
+            nillable = false;
+            validators =
+              [
+                (function
+                | V_string value ->
+                    if value = "" then Error "must not be empty" else Ok ()
+                | _ -> Error "expected string");
+              ];
           };
         ];
       edges = [];
@@ -78,6 +96,18 @@ let test_validate_immutable_update () =
   | Error (`Bad_query message) ->
       Alcotest.(check string)
         "message" "immutable field cannot be updated: id" message
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+
+let test_validate_field_validator () =
+  match
+    Ent_ocaml.validate_mutation
+      (mutation Ent_ocaml.Update_one
+         ~set:Ent_ocaml.[ ("body", V_string "") ])
+  with
+  | Ok () -> Alcotest.fail "expected field validation error"
+  | Error (`Bad_query message) ->
+      Alcotest.(check string)
+        "message" "validation failed for field body: must not be empty" message
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
 let test_mongo_eq_predicate () =
@@ -231,6 +261,8 @@ let () =
             test_validate_unknown_field;
           Alcotest.test_case "validate immutable update" `Quick
             test_validate_immutable_update;
+          Alcotest.test_case "validate field validator" `Quick
+            test_validate_field_validator;
         ] );
       ( "mongo",
         [
