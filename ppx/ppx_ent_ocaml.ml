@@ -591,69 +591,256 @@ let rec value_expr ~loc field value =
           Location.raise_errorf ~loc:field.pld_type.ptyp_loc
             "ent deriving cannot generate value helper for this field type")
 
-let rec value_pattern_for_validator ~loc field =
+let ok ~loc expr = constr_arg ~loc [ "Ok" ] expr
+let error_string ~loc message = constr_arg ~loc [ "Error" ] (str ~loc message)
+
+let rec value_decoder_expr ~loc field value =
   match Attribute.get ent_enum_attr field with
-  | Some _ -> Some (A.ppat_construct ~loc (lid ~loc [ "Ent_ocaml"; "V_string" ]) (Some (pvar ~loc "value")))
+  | Some _ ->
+      A.pexp_match ~loc value
+        [
+          A.case
+            ~lhs:
+              (A.ppat_construct ~loc (lid ~loc [ "Ent_ocaml"; "V_string" ])
+                 (Some (pvar ~loc "value")))
+            ~guard:None ~rhs:(ok ~loc (evar ~loc "value"));
+          A.case ~lhs:(A.ppat_any ~loc) ~guard:None
+            ~rhs:
+              (error_string ~loc
+                 ("decoder type mismatch for field: " ^ field.pld_name.txt));
+        ]
+  | None when has_attr ent_json_attr field -> ok ~loc value
   | None -> (
       match field.pld_type.ptyp_desc with
       | Ptyp_constr ({ txt = Longident.Lident "string"; _ }, []) ->
-          Some
-            (A.ppat_construct ~loc (lid ~loc [ "Ent_ocaml"; "V_string" ])
-               (Some (pvar ~loc "value")))
+          A.pexp_match ~loc value
+            [
+              A.case
+                ~lhs:
+                  (A.ppat_construct ~loc (lid ~loc [ "Ent_ocaml"; "V_string" ])
+                     (Some (pvar ~loc "value")))
+                ~guard:None ~rhs:(ok ~loc (evar ~loc "value"));
+              A.case ~lhs:(A.ppat_any ~loc) ~guard:None
+                ~rhs:
+                  (error_string ~loc
+                     ("decoder type mismatch for field: " ^ field.pld_name.txt));
+            ]
       | Ptyp_constr ({ txt = Longident.Lident "int"; _ }, []) ->
-          Some
-            (A.ppat_construct ~loc (lid ~loc [ "Ent_ocaml"; "V_int" ])
-               (Some (pvar ~loc "value")))
+          A.pexp_match ~loc value
+            [
+              A.case
+                ~lhs:
+                  (A.ppat_construct ~loc (lid ~loc [ "Ent_ocaml"; "V_int" ])
+                     (Some (pvar ~loc "value")))
+                ~guard:None ~rhs:(ok ~loc (evar ~loc "value"));
+              A.case ~lhs:(A.ppat_any ~loc) ~guard:None
+                ~rhs:
+                  (error_string ~loc
+                     ("decoder type mismatch for field: " ^ field.pld_name.txt));
+            ]
       | Ptyp_constr ({ txt = Longident.Lident "int32"; _ }, [])
       | Ptyp_constr
           ({ txt = Longident.Ldot (Longident.Lident "Int32", "t"); _ }, []) ->
-          Some
-            (A.ppat_construct ~loc (lid ~loc [ "Ent_ocaml"; "V_int32" ])
-               (Some (pvar ~loc "value")))
+          A.pexp_match ~loc value
+            [
+              A.case
+                ~lhs:
+                  (A.ppat_construct ~loc (lid ~loc [ "Ent_ocaml"; "V_int32" ])
+                     (Some (pvar ~loc "value")))
+                ~guard:None ~rhs:(ok ~loc (evar ~loc "value"));
+              A.case ~lhs:(A.ppat_any ~loc) ~guard:None
+                ~rhs:
+                  (error_string ~loc
+                     ("decoder type mismatch for field: " ^ field.pld_name.txt));
+            ]
       | Ptyp_constr ({ txt = Longident.Lident "int64"; _ }, [])
       | Ptyp_constr
           ({ txt = Longident.Ldot (Longident.Lident "Int64", "t"); _ }, []) ->
-          Some
-            (A.ppat_construct ~loc (lid ~loc [ "Ent_ocaml"; "V_int64" ])
-               (Some (pvar ~loc "value")))
+          A.pexp_match ~loc value
+            [
+              A.case
+                ~lhs:
+                  (A.ppat_construct ~loc (lid ~loc [ "Ent_ocaml"; "V_int64" ])
+                     (Some (pvar ~loc "value")))
+                ~guard:None ~rhs:(ok ~loc (evar ~loc "value"));
+              A.case ~lhs:(A.ppat_any ~loc) ~guard:None
+                ~rhs:
+                  (error_string ~loc
+                     ("decoder type mismatch for field: " ^ field.pld_name.txt));
+            ]
       | Ptyp_constr ({ txt = Longident.Lident "float"; _ }, []) ->
-          Some
-            (A.ppat_construct ~loc (lid ~loc [ "Ent_ocaml"; "V_float" ])
-               (Some (pvar ~loc "value")))
+          A.pexp_match ~loc value
+            [
+              A.case
+                ~lhs:
+                  (A.ppat_construct ~loc (lid ~loc [ "Ent_ocaml"; "V_float" ])
+                     (Some (pvar ~loc "value")))
+                ~guard:None ~rhs:(ok ~loc (evar ~loc "value"));
+              A.case ~lhs:(A.ppat_any ~loc) ~guard:None
+                ~rhs:
+                  (error_string ~loc
+                     ("decoder type mismatch for field: " ^ field.pld_name.txt));
+            ]
       | Ptyp_constr ({ txt = Longident.Lident "bool"; _ }, []) ->
-          Some
-            (A.ppat_construct ~loc (lid ~loc [ "Ent_ocaml"; "V_bool" ])
-               (Some (pvar ~loc "value")))
+          A.pexp_match ~loc value
+            [
+              A.case
+                ~lhs:
+                  (A.ppat_construct ~loc (lid ~loc [ "Ent_ocaml"; "V_bool" ])
+                     (Some (pvar ~loc "value")))
+                ~guard:None ~rhs:(ok ~loc (evar ~loc "value"));
+              A.case ~lhs:(A.ppat_any ~loc) ~guard:None
+                ~rhs:
+                  (error_string ~loc
+                     ("decoder type mismatch for field: " ^ field.pld_name.txt));
+            ]
       | Ptyp_constr ({ txt = Longident.Lident "option"; _ }, [ inner ])
       | Ptyp_constr
           ({ txt = Longident.Ldot (Longident.Lident "Option", "t"); _ }, [ inner ])
         ->
-          value_pattern_for_validator ~loc { field with pld_type = inner }
-      | _ -> None)
+          A.pexp_match ~loc value
+            [
+              A.case
+                ~lhs:
+                  (A.ppat_construct ~loc (lid ~loc [ "Ent_ocaml"; "V_null" ])
+                     None)
+                ~guard:None ~rhs:(ok ~loc (constr ~loc [ "None" ]));
+              A.case
+                ~lhs:(pvar ~loc "value")
+                ~guard:None
+                ~rhs:
+                  (A.pexp_match ~loc
+                     (value_decoder_expr ~loc { field with pld_type = inner }
+                        (evar ~loc "value"))
+                     [
+                       A.case
+                         ~lhs:
+                           (A.ppat_construct ~loc (lid ~loc [ "Ok" ])
+                              (Some (pvar ~loc "value")))
+                         ~guard:None
+                         ~rhs:
+                           (ok ~loc
+                              (A.pexp_construct ~loc (lid ~loc [ "Some" ])
+                                 (Some (evar ~loc "value"))));
+                       A.case
+                         ~lhs:
+                           (A.ppat_construct ~loc (lid ~loc [ "Error" ])
+                              (Some (pvar ~loc "error")))
+                         ~guard:None
+                         ~rhs:(constr_arg ~loc [ "Error" ] (evar ~loc "error"));
+                     ]);
+            ]
+      | Ptyp_constr ({ txt = Longident.Lident "list"; _ }, [ inner ])
+      | Ptyp_constr
+          ({ txt = Longident.Ldot (Longident.Lident "List", "t"); _ }, [ inner ])
+        ->
+          let inner = { field with pld_type = inner } in
+          A.pexp_match ~loc value
+            [
+              A.case
+                ~lhs:
+                  (A.ppat_construct ~loc (lid ~loc [ "Ent_ocaml"; "V_list" ])
+                     (Some (pvar ~loc "values")))
+                ~guard:None
+                ~rhs:
+                  (A.pexp_let ~loc Recursive
+                     [
+                       A.value_binding ~loc ~pat:(pvar ~loc "loop")
+                         ~expr:
+                           (A.pexp_fun ~loc Nolabel None (pvar ~loc "acc")
+                              (A.pexp_fun ~loc Nolabel None (pvar ~loc "values")
+                                 (A.pexp_match ~loc (evar ~loc "values")
+                                    [
+                                      A.case
+                                        ~lhs:
+                                          (A.ppat_construct ~loc (lid ~loc [ "[]" ])
+                                             None)
+                                        ~guard:None
+                                        ~rhs:
+                                          (ok ~loc
+                                             (app ~loc
+                                                (ident ~loc [ "List"; "rev" ])
+                                                [ evar ~loc "acc" ]));
+                                      A.case
+                                        ~lhs:
+                                          (A.ppat_construct ~loc (lid ~loc [ "::" ])
+                                             (Some
+                                                (A.ppat_tuple ~loc
+                                                   [
+                                                     pvar ~loc "value";
+                                                     pvar ~loc "rest";
+                                                   ])))
+                                        ~guard:None
+                                        ~rhs:
+                                          (A.pexp_match ~loc
+                                             (value_decoder_expr ~loc inner
+                                                (evar ~loc "value"))
+                                             [
+                                               A.case
+                                                 ~lhs:
+                                                   (A.ppat_construct ~loc
+                                                      (lid ~loc [ "Ok" ])
+                                                      (Some (pvar ~loc "value")))
+                                                 ~guard:None
+                                                 ~rhs:
+                                                   (app ~loc (evar ~loc "loop")
+                                                      [
+                                                        A.pexp_construct ~loc
+                                                          (lid ~loc [ "::" ])
+                                                          (Some
+                                                             (A.pexp_tuple ~loc
+                                                                [
+                                                                  evar ~loc "value";
+                                                                  evar ~loc "acc";
+                                                                ]));
+                                                        evar ~loc "rest";
+                                                      ]);
+                                               A.case
+                                                 ~lhs:
+                                                   (A.ppat_construct ~loc
+                                                      (lid ~loc [ "Error" ])
+                                                      (Some (pvar ~loc "error")))
+                                                 ~guard:None
+                                                 ~rhs:
+                                                   (constr_arg ~loc [ "Error" ]
+                                                      (evar ~loc "error"));
+                                             ]);
+                                    ])));
+                     ]
+                     (app ~loc (evar ~loc "loop")
+                        [ list ~loc []; evar ~loc "values" ]));
+              A.case ~lhs:(A.ppat_any ~loc) ~guard:None
+                ~rhs:
+                  (error_string ~loc
+                     ("decoder type mismatch for field: " ^ field.pld_name.txt));
+            ]
+      | Ptyp_constr ({ txt = path; _ }, []) ->
+          let name = String.concat "." (type_path_parts path) in
+          if name = "Ptime.t" || name = "Uuidm.t" || name = "Yojson.Safe.t"
+             || name = "Yojson.t"
+          then ok ~loc value
+          else app ~loc (evar ~loc (type_path_name path ^ "_of_ent_value")) [ value ]
+      | _ ->
+          Location.raise_errorf ~loc:field.pld_type.ptyp_loc
+            "ent deriving cannot generate typed decoder for this field type")
 
 let validator_expr ~loc field validator =
-  match value_pattern_for_validator ~loc field with
-  | None ->
-      Location.raise_errorf ~loc:field.pld_type.ptyp_loc
-        "ent validators currently support primitive and enum fields"
-  | Some value_pat ->
-      A.pexp_fun ~loc Nolabel None (pvar ~loc "ent_value")
-        (A.pexp_match ~loc (evar ~loc "ent_value")
-           [
-             A.case ~lhs:value_pat ~guard:None
-               ~rhs:(app ~loc validator [ evar ~loc "value" ]);
-             A.case
-               ~lhs:
-                 (A.ppat_construct ~loc (lid ~loc [ "Ent_ocaml"; "V_null" ])
-                    None)
-               ~guard:None ~rhs:(constr_arg ~loc [ "Ok" ] (constr ~loc [ "()" ]));
-             A.case ~lhs:(A.ppat_any ~loc) ~guard:None
-               ~rhs:
-                 (constr_arg ~loc [ "Error" ]
-                    (str ~loc
-                       ("validator type mismatch for field: "
-                      ^ field.pld_name.txt)));
-           ])
+  A.pexp_fun ~loc Nolabel None (pvar ~loc "ent_value")
+    (A.pexp_match ~loc
+       (value_decoder_expr ~loc field (evar ~loc "ent_value"))
+       [
+         A.case
+           ~lhs:
+             (A.ppat_construct ~loc (lid ~loc [ "Ok" ])
+                (Some (pvar ~loc "value")))
+           ~guard:None
+           ~rhs:(app ~loc validator [ evar ~loc "value" ]);
+         A.case
+           ~lhs:
+             (A.ppat_construct ~loc (lid ~loc [ "Error" ])
+                (Some (pvar ~loc "error")))
+           ~guard:None ~rhs:(constr_arg ~loc [ "Error" ] (evar ~loc "error"));
+       ])
 
 let validators_expr ~loc field =
   match Attribute.get ent_validate_attr field with
@@ -1309,6 +1496,54 @@ let gen_value_converter td =
     in
     A.pexp_tuple ~loc [ str ~loc field_name; value_expr ~loc field access ]
   in
+  let record_expr =
+    A.pexp_record ~loc
+      (List.map
+         (fun field ->
+           let field_name = field.pld_name.txt in
+           (lid ~loc [ field_name ], evar ~loc field_name))
+         fields)
+      None
+  in
+  let rec decode_fields fields body =
+    match fields with
+    | [] -> ok ~loc body
+    | field :: rest ->
+        let field_name = field.pld_name.txt in
+        let missing =
+          if is_option field then ok ~loc (constr ~loc [ "None" ])
+          else error_string ~loc ("missing field: " ^ field_name)
+        in
+        let field_result =
+          A.pexp_match ~loc
+            (app ~loc (ident ~loc [ "List"; "assoc_opt" ])
+               [ str ~loc field_name; evar ~loc "fields" ])
+            [
+              A.case
+                ~lhs:(A.ppat_construct ~loc (lid ~loc [ "None" ]) None)
+                ~guard:None ~rhs:missing;
+              A.case
+                ~lhs:
+                  (A.ppat_construct ~loc (lid ~loc [ "Some" ])
+                     (Some (pvar ~loc "value")))
+                ~guard:None
+                ~rhs:(value_decoder_expr ~loc field (evar ~loc "value"));
+            ]
+        in
+        A.pexp_match ~loc field_result
+          [
+            A.case
+              ~lhs:
+                (A.ppat_construct ~loc (lid ~loc [ "Ok" ])
+                   (Some (pvar ~loc field_name)))
+              ~guard:None ~rhs:(decode_fields rest body);
+            A.case
+              ~lhs:
+                (A.ppat_construct ~loc (lid ~loc [ "Error" ])
+                   (Some (pvar ~loc "error")))
+              ~guard:None ~rhs:(constr_arg ~loc [ "Error" ] (evar ~loc "error"));
+          ]
+  in
   A.pstr_value ~loc Nonrecursive
     [
       A.value_binding ~loc ~pat:(pvar ~loc (type_name ^ "_to_ent_value"))
@@ -1316,6 +1551,21 @@ let gen_value_converter td =
           (A.pexp_fun ~loc Nolabel None value_pat
              (constr_arg ~loc [ "Ent_ocaml"; "V_doc" ]
                 (list ~loc (List.map field_value fields))));
+      A.value_binding ~loc ~pat:(pvar ~loc (type_name ^ "_of_ent_value"))
+        ~expr:
+          (A.pexp_fun ~loc Nolabel None (pvar ~loc "value")
+             (A.pexp_match ~loc (evar ~loc "value")
+                [
+                  A.case
+                    ~lhs:
+                      (A.ppat_construct ~loc (lid ~loc [ "Ent_ocaml"; "V_doc" ])
+                         (Some (pvar ~loc "fields")))
+                    ~guard:None ~rhs:(decode_fields fields record_expr);
+                  A.case ~lhs:(A.ppat_any ~loc) ~guard:None
+                    ~rhs:
+                      (error_string ~loc
+                         ("decoder type mismatch for record: " ^ type_name));
+                ]));
     ]
 
 let gen_query_module td =
@@ -3220,6 +3470,10 @@ let gen_sig_for_type td =
   let orders_typ = list_typ order_typ in
   let error_typ = A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "error" ]) [] in
   let result_typ ok err = A.ptyp_constr ~loc (lid ~loc [ "result" ]) [ ok; err ] in
+  let value_decoder_typ =
+    A.ptyp_arrow ~loc Nolabel value_typ
+      (result_typ record_typ string_typ)
+  in
   let arrow label arg result = A.ptyp_arrow ~loc label arg result in
   let val_sig name type_ =
     A.psig_value ~loc (A.value_description ~loc ~name:{ loc; txt = name } ~type_ ~prim:[])
@@ -3936,6 +4190,10 @@ let gen_sig_for_type td =
       (A.value_description ~loc
          ~name:{ loc; txt = type_name ^ "_to_ent_value" }
          ~type_:value_converter_typ ~prim:[]);
+    A.psig_value ~loc
+      (A.value_description ~loc
+         ~name:{ loc; txt = type_name ^ "_of_ent_value" }
+         ~type_:value_decoder_typ ~prim:[]);
     A.psig_module ~loc
       (A.module_declaration ~loc ~name:{ loc; txt = Some module_name }
          ~type_:(A.pmty_signature ~loc module_items));

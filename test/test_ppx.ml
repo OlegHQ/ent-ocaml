@@ -16,11 +16,22 @@ type post = {
     [
       (fun value -> if value = "" then Error "must not be empty" else Ok ());
     ]];
-  media_ids : string list;
+  media_ids : string list
+  [@ent.validate
+    [
+      (fun values ->
+        if List.length values > 2 then Error "too many media items" else Ok ());
+    ]];
   status : string [@ent.enum [ "draft"; "published" ]] [@ent.default "draft"];
   created_at_ms : int64;
   updated_at_ms : int64 [@ent.update_default 42L];
-  published_at_ms : int64 option;
+  published_at_ms : int64 option
+  [@ent.validate
+    [
+      (function
+      | Some value when value < 0L -> Error "must not be negative"
+      | Some _ | None -> Ok ());
+    ]];
 }
 [@@ent.entity "Post"] [@@ent.collection "posts"]
 [@@ent.indexes
@@ -79,7 +90,12 @@ type publish_state = {
 
 type publish_attempt = {
   id : string;
-  state : publish_state;
+  state : publish_state
+  [@ent.validate
+    [
+      (fun state ->
+        if state.kind = "" then Error "kind must not be empty" else Ok ());
+    ]];
 }
 [@@ent.entity "PublishAttempt"] [@@ent.collection "publish_attempts"]
 [@@deriving ent]
@@ -582,6 +598,42 @@ let test_generated_mutation_api () =
       Alcotest.(check string)
         "validator message"
         "validation failed for field body: must not be empty"
+        message
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  let create_invalid_list =
+    create ()
+    |> set (id "post_invalid_list")
+    |> set (user_id "user_1")
+    |> set (body "has too much media")
+    |> set (media_ids [ "m1"; "m2"; "m3" ])
+    |> set (created_at_ms 4L)
+    |> set (updated_at_ms 4L)
+    |> set (published_at_ms None)
+  in
+  (match Ent_ocaml.validate_mutation create_invalid_list with
+  | Ok () -> Alcotest.fail "expected generated list validator error"
+  | Error (`Bad_query message) ->
+      Alcotest.(check string)
+        "list validator message"
+        "validation failed for field media_ids: too many media items"
+        message
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  let create_invalid_option =
+    create ()
+    |> set (id "post_invalid_option")
+    |> set (user_id "user_1")
+    |> set (body "bad published time")
+    |> set (media_ids [])
+    |> set (created_at_ms 4L)
+    |> set (updated_at_ms 4L)
+    |> set (published_at_ms (Some (-1L)))
+  in
+  (match Ent_ocaml.validate_mutation create_invalid_option with
+  | Ok () -> Alcotest.fail "expected generated option validator error"
+  | Error (`Bad_query message) ->
+      Alcotest.(check string)
+        "option validator message"
+        "validation failed for field published_at_ms: must not be negative"
         message
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
   let update =
@@ -1090,7 +1142,24 @@ let test_generated_nested_value_api () =
     "nested create" true
     (match create.set with
     | [ ("id", Ent_ocaml.V_string "attempt_1"); ("state", V_doc _) ] -> true
-    | _ -> false)
+    | _ -> false);
+  (match Ent_ocaml.validate_mutation create with
+  | Ok () -> ()
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  let invalid =
+    let open PublishAttempt in
+    create ()
+    |> set (id "attempt_2")
+    |> set (state { kind = ""; external_id = None })
+  in
+  (match Ent_ocaml.validate_mutation invalid with
+  | Ok () -> Alcotest.fail "expected nested validator error"
+  | Error (`Bad_query message) ->
+      Alcotest.(check string)
+        "nested validator message"
+        "validation failed for field state: kind must not be empty"
+        message
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error))
 
 let () =
   Alcotest.run "ent-ocaml-ppx"

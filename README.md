@@ -389,8 +389,10 @@ and `[@ent.update_default_result expr]` when computing a default can fail; call
 the generated `_result` helpers and compose with `Ent_ocaml.Result_syntax`.
 Fields annotated with
 `[@ent.validate [fn1; fn2]]` run typed validator functions during core mutation
-validation. `Ent_ocaml.Result_syntax` provides `let*` and `let+` for direct
-result composition at backend/application boundaries.
+validation, including option, list, and nested record fields. Generated
+`<entity>_of_ent_value` decoders power those typed wrappers and are also
+available for local tooling. `Ent_ocaml.Result_syntax` provides `let*` and
+`let+` for direct result composition at backend/application boundaries.
 
 The first production target is Poster, whose Mongo store code should be replaced
 by generated entity clients once the Mongo backend and PPX are complete.
