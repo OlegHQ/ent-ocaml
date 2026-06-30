@@ -126,7 +126,7 @@ The initial package scaffold already provides:
 | Global IDs | Optional globally unique ID configuration | App-generated IDs or ObjectId strategy |
 | Schema views | Read-only entity descriptors and generated query modules | Mongo views/aggregation-backed collections where useful |
 | Schema snapshot | PPX-generated schema manifest for conflict/debugging | Checked-in `.ml` manifest or JSON snapshot |
-| Local custom code | Hand-written modules beside generated code | Ordinary OCaml modules, not generator templates |
+| Local custom code | Hand-written modules beside generated code | Ordinary OCaml modules |
 | Dynamic EntQL | Runtime generic filters | Runtime predicate AST parser/builder |
 | SQL-only features | Backend-specific optional capabilities | Provide Mongo-specific analogs, keep SQL names out of core |
 | GraphQL/gRPC integrations | Out of core for first release | Future packages, not required for Poster |
@@ -198,8 +198,7 @@ The initial package scaffold already provides:
 11. EntQL and backend-specific metadata:
    add runtime dynamic filters, schema snapshots, custom annotations when they
    directly support a backend feature, and typed backend-specific escape
-   hatches. Do not add generator-template plugins unless a concrete user need
-   appears.
+   hatches. Do not add generator plugins unless a concrete user need appears.
 
 12. Poster cutover and e2e:
    run unit tests, PPX expansion tests, Mongo driver e2e, Poster HTTP e2e, and
