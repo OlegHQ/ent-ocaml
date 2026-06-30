@@ -65,6 +65,26 @@ let ent_edges_attr =
     Ast_pattern.(single_expr_payload (elist __))
     (fun edges -> edges)
 
+let ent_query_rules_attr =
+  Attribute.declare "ent.query_rules" Attribute.Context.type_declaration
+    Ast_pattern.(single_expr_payload (elist __))
+    (fun rules -> rules)
+
+let ent_mutation_rules_attr =
+  Attribute.declare "ent.mutation_rules" Attribute.Context.type_declaration
+    Ast_pattern.(single_expr_payload (elist __))
+    (fun rules -> rules)
+
+let ent_mutation_hooks_attr =
+  Attribute.declare "ent.mutation_hooks" Attribute.Context.type_declaration
+    Ast_pattern.(single_expr_payload (elist __))
+    (fun hooks -> hooks)
+
+let ent_query_interceptors_attr =
+  Attribute.declare "ent.query_interceptors" Attribute.Context.type_declaration
+    Ast_pattern.(single_expr_payload (elist __))
+    (fun interceptors -> interceptors)
+
 let ent_optional_attr =
   Attribute.declare "ent.optional" Attribute.Context.label_declaration
     Ast_pattern.(pstr nil)
@@ -1173,6 +1193,18 @@ let gen_query_module td =
   let edges = edge_names td in
   let type_name = td.ptype_name.txt in
   let module_name = snake_to_pascal type_name in
+  let schema_query_rules =
+    Attribute.get ent_query_rules_attr td |> Option.value ~default:[]
+  in
+  let schema_mutation_rules =
+    Attribute.get ent_mutation_rules_attr td |> Option.value ~default:[]
+  in
+  let schema_mutation_hooks =
+    Attribute.get ent_mutation_hooks_attr td |> Option.value ~default:[]
+  in
+  let schema_query_interceptors =
+    Attribute.get ent_query_interceptors_attr td |> Option.value ~default:[]
+  in
   let query_body =
     A.pexp_record ~loc
       [
@@ -2391,6 +2423,37 @@ let gen_query_module td =
                 (Named ({ loc; txt = Some "Interceptors" }, interceptors_type))
                 (A.pmod_structure ~loc structure)))
     in
+    let schema_module name functor_name bindings =
+      A.pstr_module ~loc
+        (A.module_binding ~loc ~name:{ loc; txt = Some name }
+           ~expr:
+             (A.pmod_apply ~loc
+                (A.pmod_ident ~loc (lid ~loc [ functor_name ]))
+                (A.pmod_structure ~loc
+                   (List.map
+                      (fun (name, expr) ->
+                        A.pstr_value ~loc Nonrecursive
+                          [
+                            A.value_binding ~loc ~pat:(pvar ~loc name)
+                              ~expr;
+                          ])
+                      bindings))))
+    in
+    let schema_policy_module =
+      schema_module "Schema_policy" "With_policy"
+        [
+          ("query_rules", list ~loc schema_query_rules);
+          ("mutation_rules", list ~loc schema_mutation_rules);
+        ]
+    in
+    let schema_hooks_module =
+      schema_module "Schema_hooks" "With_hooks"
+        [ ("mutation_hooks", list ~loc schema_mutation_hooks) ]
+    in
+    let schema_interceptors_module =
+      schema_module "Schema_interceptors" "With_interceptors"
+        [ ("query_interceptors", list ~loc schema_query_interceptors) ]
+    in
     let structure =
       [
         value_fun "all"
@@ -2538,6 +2601,9 @@ let gen_query_module td =
         with_policy_module;
         with_hooks_module;
         with_interceptors_module;
+        schema_policy_module;
+        schema_hooks_module;
+        schema_interceptors_module;
       ]
     in
     A.pstr_module ~loc
@@ -3227,6 +3293,16 @@ let gen_sig_for_type td =
                        ( { loc; txt = Some "Interceptors" },
                          interceptors_type ))
                     (A.pmty_signature ~loc base_store_items)));
+          A.psig_module ~loc
+            (A.module_declaration ~loc ~name:{ loc; txt = Some "Schema_policy" }
+               ~type_:(A.pmty_signature ~loc base_store_items));
+          A.psig_module ~loc
+            (A.module_declaration ~loc ~name:{ loc; txt = Some "Schema_hooks" }
+               ~type_:(A.pmty_signature ~loc base_store_items));
+          A.psig_module ~loc
+            (A.module_declaration ~loc
+               ~name:{ loc; txt = Some "Schema_interceptors" }
+               ~type_:(A.pmty_signature ~loc base_store_items));
         ]
     in
     A.psig_module ~loc

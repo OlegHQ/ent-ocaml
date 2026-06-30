@@ -41,6 +41,31 @@ type post = {
       required = true;
     };
   ]]
+[@@ent.query_rules [ (fun _ctx _query -> Ent_ocaml.Deny "schema no reads") ]]
+[@@ent.mutation_rules
+  [ (fun _ctx _mutation -> Ent_ocaml.Deny "schema no writes") ]]
+[@@ent.mutation_hooks
+  [
+    {
+      Ent_ocaml.wrap_mutation =
+        (fun next ctx mutation ->
+          next ctx
+            (Ent_ocaml.Mutation.set ("body", Ent_ocaml.V_string "schema hook")
+               mutation));
+    };
+  ]]
+[@@ent.query_interceptors
+  [
+    {
+      Ent_ocaml.wrap_query =
+        (fun next ctx query ->
+          next ctx
+            (query
+             |> Ent_ocaml.Query.where
+                  (Ent_ocaml.Eq
+                     ("status", Ent_ocaml.V_string "schema interceptor"))));
+    };
+  ]]
 [@@deriving ent]
 
 type publish_state = {
@@ -755,6 +780,7 @@ let test_generated_policy_store_api () =
   end in
   let module Read_store = Store.With_policy (Deny_reads) in
   let module Write_store = Store.With_policy (Deny_writes) in
+  let module Schema_policy = Store.Schema_policy in
   let decode = function
     | Ent_ocaml.V_string value -> Ok value
     | _ -> Error "expected string"
@@ -778,13 +804,22 @@ let test_generated_policy_store_api () =
     |> set (updated_at_ms 1L)
     |> set (published_at_ms None)
   in
-  match Write_store.insert () mutation with
+  (match Write_store.insert () mutation with
   | Error (`Denied "no writes") -> ()
   | Ok _ -> Alcotest.fail "expected write denial"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  (match Schema_policy.all () ~decode query with
+  | Error (`Denied "schema no reads") -> ()
+  | Ok _ -> Alcotest.fail "expected schema read denial"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  match Schema_policy.insert () mutation with
+  | Error (`Denied "schema no writes") -> ()
+  | Ok _ -> Alcotest.fail "expected schema write denial"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
 let test_generated_hook_store_api () =
   let module Store = Post.Store (Memory_backend) in
+  let module Schema_hooks = Store.Schema_hooks in
   let module Hooked = Store.With_hooks (struct
     let mutation_hooks =
       [
@@ -817,6 +852,13 @@ let test_generated_hook_store_api () =
       | _ -> Alcotest.fail "expected hooked status")
   | Ok _ -> Alcotest.fail "unexpected insert result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  (match Schema_hooks.insert () mutation with
+  | Ok (Ent_ocaml.V_doc fields) -> (
+      match List.assoc_opt "body" fields with
+      | Some (Ent_ocaml.V_string "schema hook") -> ()
+      | _ -> Alcotest.fail "expected schema hook body")
+  | Ok _ -> Alcotest.fail "unexpected schema hook insert result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
   match Hooked.insert_many () [ mutation ] with
   | Ok [ Ent_ocaml.V_doc fields ] -> (
       match List.assoc_opt "status" fields with
@@ -827,6 +869,7 @@ let test_generated_hook_store_api () =
 
 let test_generated_interceptor_store_api () =
   let module Store = Post.Store (Memory_backend) in
+  let module Schema_interceptors = Store.Schema_interceptors in
   let module Intercepted = Store.With_interceptors (struct
     let query_interceptors =
       [
@@ -853,6 +896,10 @@ let test_generated_interceptor_store_api () =
   (match Intercepted.count () query with
   | Ok 1 -> ()
   | Ok count -> Alcotest.failf "expected intercepted count, got %d" count
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  (match Schema_interceptors.count () query with
+  | Ok 1 -> ()
+  | Ok count -> Alcotest.failf "expected schema intercepted count, got %d" count
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
   let aggregate =
     let open Post in

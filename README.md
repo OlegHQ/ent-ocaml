@@ -154,6 +154,25 @@ let load_scoped ctx query =
   Scoped_posts.all ctx ~decode:post_of_bson_doc_result query
 ```
 
+Schemas can register policy, hook, and interceptor lists directly and expose
+generated modules for them:
+
+```ocaml
+type post = {
+  id : string;
+  body : string;
+}
+[@@ent.query_rules [ require_can_read_posts ]]
+[@@ent.mutation_hooks [ audit_post_mutations ]]
+[@@ent.query_interceptors [ scope_posts_to_current_user ]]
+[@@deriving ent]
+
+module Posts = Post.Store (Ent_ocaml_mongo)
+
+let load_scoped ctx query =
+  Posts.Schema_interceptors.all ctx ~decode:post_of_bson_doc_result query
+```
+
 Runtime dynamic filters validate against entity metadata and then become normal
 typed predicates:
 
