@@ -120,7 +120,7 @@ The initial package scaffold already provides:
 | Field validators | Generated `[@ent.validate [fn1; fn2]]` wrappers for primitive/enum fields | Checked before backend mutation |
 | Sensitive/deprecated/comments | Schema metadata and generated output controls | Hidden from display/debug helpers |
 | Indexes | Field, edge, compound, unique, partial/specialized annotations | Mongo indexes with options and partial filters |
-| Annotations | Backend/codegen metadata extension point | OCaml attributes and extensible annotation records |
+| Annotations | Backend/codegen metadata, only when needed by concrete backend features | OCaml attributes and typed metadata records |
 | Transactions | Tx client, with-tx helper, commit/rollback hooks | Mongo sessions/transactions where deployment supports them |
 | Schema/index checks | Runtime schema/index verification | Index manifests and optional collection validators |
 | Global IDs | Optional globally unique ID configuration | App-generated IDs or ObjectId strategy |
@@ -198,8 +198,8 @@ The initial package scaffold already provides:
 11. EntQL and backend-specific metadata:
    add runtime dynamic filters, schema snapshots, custom annotations when they
    directly support a backend feature, and typed backend-specific escape
-   hatches. Do not add a generator-template extension system unless a concrete
-   user need appears.
+   hatches. Do not add generator-template plugins unless a concrete user need
+   appears.
 
 12. Poster cutover and e2e:
    run unit tests, PPX expansion tests, Mongo driver e2e, Poster HTTP e2e, and
@@ -211,7 +211,8 @@ The initial package scaffold already provides:
 - Generated code must be ordinary readable OCaml.
 - Expected failures return `result`; exceptions are for bugs/cancellation.
 - Core does not depend on Mongo, BSON, Eio, Dream, or Poster.
-- Backend-specific features are typed extension points, not stringly flags.
+- Backend-specific features use typed metadata and escape hatches, not stringly
+  flags.
 - Domain validation remains outside generated BSON/entity codecs.
 - The first backend is MongoDB; no in-memory fallback.
 - Poster keeps one deployable binary.
