@@ -60,6 +60,11 @@ let ent_indexes_attr =
     Ast_pattern.(single_expr_payload (elist __))
     (fun indexes -> indexes)
 
+let ent_edges_attr =
+  Attribute.declare "ent.edges" Attribute.Context.type_declaration
+    Ast_pattern.(single_expr_payload (elist __))
+    (fun edges -> edges)
+
 let ent_optional_attr =
   Attribute.declare "ent.optional" Attribute.Context.label_declaration
     Ast_pattern.(pstr nil)
@@ -123,6 +128,11 @@ let parse_bool_expr expr =
   | Pexp_construct ({ txt = Lident "true"; _ }, None) -> true
   | Pexp_construct ({ txt = Lident "false"; _ }, None) -> false
   | _ -> Location.raise_errorf ~loc:expr.pexp_loc "ent index unique must be true or false"
+
+let parse_string_expr ~what expr =
+  match expr.pexp_desc with
+  | Pexp_constant (Pconst_string (value, _, _)) -> value
+  | _ -> Location.raise_errorf ~loc:expr.pexp_loc "ent %s must be a string" what
 
 let parse_name_expr expr =
   match expr.pexp_desc with
@@ -218,6 +228,124 @@ let parse_index_spec expr =
   | _ ->
       Location.raise_errorf ~loc:expr.pexp_loc
         "ent index must be a record: { name = \"...\"; fields = [ ... ]; unique = false }"
+
+let parse_edge_cardinality ~loc = function
+  | "one" -> constr ~loc [ "Ent_ocaml"; "One" ]
+  | "many" -> constr ~loc [ "Ent_ocaml"; "Many" ]
+  | value ->
+      Location.raise_errorf ~loc
+        "ent edge cardinality must be \"one\" or \"many\", got %S" value
+
+let parse_edge_direction ~loc ?ref_name = function
+  | "to" -> constr ~loc [ "Ent_ocaml"; "To" ]
+  | "from" ->
+      let ref_name =
+        match ref_name with
+        | Some ref_name -> ref_name
+        | None ->
+            Location.raise_errorf ~loc
+              "ent from-edge requires ref_name = \"...\""
+      in
+      constr_arg ~loc [ "Ent_ocaml"; "From" ]
+        (A.pexp_record ~loc
+           [
+             (lid ~loc [ "ref_name" ], str ~loc ref_name);
+           ]
+           None)
+  | value ->
+      Location.raise_errorf ~loc
+        "ent edge direction must be \"to\" or \"from\", got %S" value
+
+let parse_edge_spec expr =
+  match expr.pexp_desc with
+  | Pexp_record (fields, None) ->
+      let name = ref None in
+      let target = ref None in
+      let direction = ref "to" in
+      let cardinality = ref None in
+      let required = ref (Some false) in
+      let storage_key = ref None in
+      let ref_name = ref None in
+      List.iter
+        (fun (label, value) ->
+          match label_name label.txt with
+          | "name" -> name := Some (parse_string_expr ~what:"edge name" value)
+          | "target" ->
+              target := Some (parse_string_expr ~what:"edge target" value)
+          | "direction" ->
+              direction := parse_string_expr ~what:"edge direction" value
+          | "cardinality" ->
+              cardinality :=
+                Some (parse_string_expr ~what:"edge cardinality" value)
+          | "required" -> required := Some (parse_bool_expr value)
+          | "storage_key" ->
+              storage_key :=
+                Some (parse_string_expr ~what:"edge storage_key" value)
+          | "ref_name" ->
+              ref_name := Some (parse_string_expr ~what:"edge ref_name" value)
+          | field ->
+              Location.raise_errorf ~loc:value.pexp_loc
+                "unknown ent edge option: %s" field)
+        fields;
+      let loc = expr.pexp_loc in
+      let required =
+        match !required with
+        | Some required -> required
+        | None -> false
+      in
+      let name =
+        match !name with
+        | Some name -> name
+        | None -> Location.raise_errorf ~loc "ent edge record requires name"
+      in
+      let target =
+        match !target with
+        | Some target -> target
+        | None -> Location.raise_errorf ~loc "ent edge record requires target"
+      in
+      let cardinality =
+        match !cardinality with
+        | Some cardinality -> cardinality
+        | None -> Location.raise_errorf ~loc "ent edge record requires cardinality"
+      in
+      A.pexp_record ~loc
+        [
+          (lid ~loc [ "Ent_ocaml"; "name" ], str ~loc name);
+          (lid ~loc [ "Ent_ocaml"; "target" ], str ~loc target);
+          ( lid ~loc [ "Ent_ocaml"; "direction" ],
+            parse_edge_direction ~loc ?ref_name:!ref_name !direction );
+          ( lid ~loc [ "Ent_ocaml"; "cardinality" ],
+            parse_edge_cardinality ~loc cardinality );
+          (lid ~loc [ "Ent_ocaml"; "required" ], bool ~loc required);
+          ( lid ~loc [ "Ent_ocaml"; "storage_key" ],
+            option ~loc (Option.map (str ~loc) !storage_key) );
+        ]
+        None
+  | _ ->
+      Location.raise_errorf ~loc:expr.pexp_loc
+        "ent edge must be a record: { name = \"...\"; target = \"...\"; storage_key = \"...\"; cardinality = \"one\" }"
+
+let parse_edge_name expr =
+  match expr.pexp_desc with
+  | Pexp_record (fields, None) -> (
+      match
+        List.find_map
+          (fun (label, value) ->
+            match label_name label.txt with
+            | "name" -> Some (parse_string_expr ~what:"edge name" value)
+            | _ -> None)
+          fields
+      with
+      | Some name -> name
+      | None -> Location.raise_errorf ~loc:expr.pexp_loc "ent edge record requires name")
+  | _ ->
+      Location.raise_errorf ~loc:expr.pexp_loc
+        "ent edge must be a record"
+
+let edge_specs td =
+  Attribute.get ent_edges_attr td |> Option.value ~default:[]
+
+let edge_names td = edge_specs td |> List.map parse_edge_name
 
 let type_path_name path =
   match List.rev (type_path_parts path) with
@@ -777,13 +905,18 @@ let gen_entity td =
       |> Option.value ~default:[]
       |> List.map parse_index_spec)
   in
+  let edges =
+    Attribute.get ent_edges_attr td
+    |> Option.value ~default:[]
+    |> List.map parse_edge_spec
+  in
   let expr =
     A.pexp_record ~loc
       [
         (lid ~loc [ "Ent_ocaml"; "name" ], str ~loc entity_name);
         (lid ~loc [ "Ent_ocaml"; "collection" ], str ~loc collection);
         (lid ~loc [ "Ent_ocaml"; "fields" ], list ~loc (List.map field_expr fields));
-        (lid ~loc [ "Ent_ocaml"; "edges" ], list ~loc []);
+        (lid ~loc [ "Ent_ocaml"; "edges" ], list ~loc edges);
         (lid ~loc [ "Ent_ocaml"; "indexes" ], list ~loc indexes);
       ]
       None
@@ -819,6 +952,7 @@ let gen_value_converter td =
 let gen_query_module td =
   let loc = loc_of_type_decl td in
   let fields = ensure_record td in
+  let edges = edge_names td in
   let type_name = td.ptype_name.txt in
   let module_name = snake_to_pascal type_name in
   let query_body =
@@ -871,6 +1005,27 @@ let gen_query_module td =
                (constr_arg ~loc [ "Ent_ocaml"; "Not" ]
                   (evar ~loc "predicate")));
       ]
+  in
+  let edge_helper_items edge_name =
+    [
+      A.pstr_value ~loc Nonrecursive
+        [
+          A.value_binding ~loc ~pat:(pvar ~loc ("has_" ^ edge_name))
+            ~expr:
+              (A.pexp_fun ~loc Nolabel None (unit_pat ~loc)
+                 (constr_arg ~loc [ "Ent_ocaml"; "Has_edge" ]
+                    (str ~loc edge_name)));
+        ];
+      A.pstr_value ~loc Nonrecursive
+        [
+          A.value_binding ~loc ~pat:(pvar ~loc ("has_" ^ edge_name ^ "_with"))
+            ~expr:
+              (A.pexp_fun ~loc Nolabel None (pvar ~loc "predicates")
+                 (constr_arg ~loc [ "Ent_ocaml"; "Has_edge_with" ]
+                    (A.pexp_tuple ~loc
+                       [ str ~loc edge_name; evar ~loc "predicates" ])));
+        ];
+    ]
   in
   let mutation_record ~op ~predicates ~set ~clear ~add =
     A.pexp_record ~loc
@@ -950,7 +1105,8 @@ let gen_query_module td =
     :: update_fn "update" "Update"
     :: delete_fn "delete_one" "Delete_one"
     :: delete_fn "delete" "Delete"
-    :: List.concat_map field_helper_items fields
+    :: (List.concat_map edge_helper_items edges
+       @ List.concat_map field_helper_items fields)
   in
   A.pstr_module ~loc
     (A.module_binding ~loc ~name:{ loc; txt = Some module_name }
@@ -964,6 +1120,7 @@ let generate_str ~loc:_ ~path:_ (_rec_flag, tds) =
 let gen_sig_for_type td =
   let loc = loc_of_type_decl td in
   let fields = ensure_record td in
+  let edges = edge_names td in
   let type_name = td.ptype_name.txt in
   let module_name = snake_to_pascal type_name in
   let typ = A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "entity" ]) [] in
@@ -1020,6 +1177,13 @@ let gen_sig_for_type td =
       val_sig "and_" (arrow Nolabel predicates_typ predicate_typ);
       val_sig "or_" (arrow Nolabel predicates_typ predicate_typ);
       val_sig "not_" (arrow Nolabel predicate_typ predicate_typ);
+    ]
+  in
+  let edge_sig_items edge_name =
+    [
+      val_sig ("has_" ^ edge_name) (arrow Nolabel unit_typ predicate_typ);
+      val_sig ("has_" ^ edge_name ^ "_with")
+        (arrow Nolabel predicates_typ predicate_typ);
     ]
   in
   let update_sig name =
@@ -1107,7 +1271,8 @@ let gen_sig_for_type td =
     query_sig :: boolean_sig
     @ (create_sig :: create_many_sig :: update_sig "update_one" :: update_sig "update"
       :: delete_sig "delete_one" :: delete_sig "delete"
-      :: List.concat_map field_sig_items fields)
+      :: (List.concat_map edge_sig_items edges
+         @ List.concat_map field_sig_items fields))
   in
   [
     A.psig_value ~loc

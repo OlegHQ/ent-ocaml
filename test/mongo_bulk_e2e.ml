@@ -34,8 +34,28 @@ let post_entity =
             nillable = false;
             validators = [];
           };
+          {
+            name = "user_id";
+            storage_key = "user_id";
+            typ = String;
+            required = true;
+            unique = false;
+            immutable = false;
+            nillable = false;
+            validators = [];
+          };
         ];
-      edges = [];
+      edges =
+        [
+          {
+            name = "user";
+            target = "User";
+            direction = To;
+            cardinality = One;
+            required = true;
+            storage_key = Some "user_id";
+          };
+        ];
       indexes =
         [
           {
@@ -53,13 +73,18 @@ let post_entity =
         ];
     }
 
-let create id body =
+let create id user_id body =
   Ent_ocaml.
     {
       entity = post_entity;
       op = Create;
       predicates = [];
-      set = [ ("id", V_string id); ("body", V_string body) ];
+      set =
+        [
+          ("id", V_string id);
+          ("user_id", V_string user_id);
+          ("body", V_string body);
+        ];
       clear = [];
       add = [];
     }
@@ -70,7 +95,8 @@ let invalid_create_missing_body =
       entity = post_entity;
       op = Create;
       predicates = [];
-      set = [ ("id", V_string "post_missing_body") ];
+      set =
+        [ ("id", V_string "post_missing_body"); ("user_id", V_string "user_1") ];
       clear = [];
       add = [];
     }
@@ -80,6 +106,17 @@ let query_all =
     {
       entity = post_entity;
       predicates = [];
+      select = [];
+      orders = [ { field = "id"; direction = Asc } ];
+      limit = None;
+      offset = None;
+    }
+
+let query_user_1 =
+  Ent_ocaml.
+    {
+      entity = post_entity;
+      predicates = [ Has_edge_with ("user", [ Eq ("id", V_string "user_1") ]) ];
       select = [];
       orders = [ { field = "id"; direction = Asc } ];
       limit = None;
@@ -101,7 +138,7 @@ let run_flow client =
   | Ok () -> (
       match
         Ent_ocaml_mongo.insert_many_values ctx
-          [ create "post_1" "first"; create "post_2" "second" ]
+          [ create "post_1" "user_1" "first"; create "post_2" "user_2" "second" ]
       with
       | Error error -> Error error
       | Ok docs -> (
@@ -110,26 +147,35 @@ let run_flow client =
           | Error error -> Error error
           | Ok found -> (
               assert_true "bulk insert persisted rows" (List.length found = 2);
-              match
-                Ent_ocaml_mongo.insert_many_values ctx
-                  [ create "post_2" "duplicate"; create "post_3" "third" ]
-              with
-              | Error (`Constraint _) -> (
-                  assert_true "bulk duplicate maps to constraint" true;
+              match Ent_ocaml_mongo.find ctx query_user_1 with
+              | Error error -> Error error
+              | Ok user_posts -> (
+                  assert_true "edge predicate returns user posts"
+                    (List.length user_posts = 1);
                   match
                     Ent_ocaml_mongo.insert_many_values ctx
-                      [ invalid_create_missing_body ]
+                      [
+                        create "post_2" "user_2" "duplicate";
+                        create "post_3" "user_1" "third";
+                      ]
                   with
-                  | Error (`Bad_query message) ->
-                      assert_true "bulk create validates required fields"
-                        (message = "missing required field: body");
-                      Ok ()
+                  | Error (`Constraint _) -> (
+                      assert_true "bulk duplicate maps to constraint" true;
+                      match
+                        Ent_ocaml_mongo.insert_many_values ctx
+                          [ invalid_create_missing_body ]
+                      with
+                      | Error (`Bad_query message) ->
+                          assert_true "bulk create validates required fields"
+                            (message = "missing required field: body");
+                          Ok ()
+                      | Error error -> Error error
+                      | Ok _ ->
+                          Error
+                            (`Bad_query
+                              "invalid bulk create unexpectedly succeeded"))
                   | Error error -> Error error
-                  | Ok _ ->
-                      Error
-                        (`Bad_query "invalid bulk create unexpectedly succeeded"))
-              | Error error -> Error error
-              | Ok _ -> Error (`Constraint "duplicate bulk insert succeeded"))))
+                  | Ok _ -> Error (`Constraint "duplicate bulk insert succeeded")))))
 
 let () =
   Random.self_init ();

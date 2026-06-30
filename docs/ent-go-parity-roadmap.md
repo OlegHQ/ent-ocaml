@@ -61,12 +61,14 @@ The initial package scaffold already provides:
   decisions, and backend signatures.
 - Mongo planning and CRUD execution for scalar filters, boolean predicates,
   field selection/projection, ordering, limit/offset, insert, bulk insert,
-  update, delete, count, and basic value translation.
+  update, delete, count, stored-FK edge predicates, and basic value translation.
 - `[@@deriving ent]` generation for entity metadata, functional query helpers,
   typed field predicates, typed ordering helpers, create/update/delete mutation
   values, create-bulk helpers, field selector constants, create-time and
   update-time default values, typed validator wrappers, and matching `.mli`
-  signatures for generated helper modules.
+  signatures for generated helper modules. Type-level `[@@ent.edges ...]`
+  descriptors generate FK edge metadata plus `has_<edge>` and
+  `has_<edge>_with` predicate helpers.
 - Poster pilot integration for `User`, `Session`, `Post`, `Media`,
   `PublishState`, and `PublishAttempt` DTO entities.
 
@@ -153,7 +155,9 @@ The initial package scaffold already provides:
 6. Edges and traversals:
    implement O2O, O2M, M2O, M2M, same-type recursive edges, edge fields, and
    `has_edge_with` predicates. For Mongo, support both embedded FK fields and
-   join collections.
+   join collections. The stored-FK subset is implemented for `Has_edge` and
+   `Has_edge_with` target-ID equality/membership predicates; full traversal
+   chains, M2M join collections, and cross-collection predicate planning remain.
 
 7. Eager loading and named edges:
    add generated `with_<edge>` loaders, nested eager loading, per-edge filters,

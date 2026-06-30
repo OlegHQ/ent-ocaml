@@ -21,6 +21,16 @@ type post = {
       unique = false;
     };
   ]]
+[@@ent.edges
+  [
+    {
+      name = "user";
+      target = "User";
+      storage_key = "user_id";
+      cardinality = "one";
+      required = true;
+    };
+  ]]
 [@@deriving ent]
 
 type publish_state = {
@@ -47,6 +57,7 @@ let test_entity_metadata () =
   Alcotest.(check string) "collection" "posts" post_entity.collection;
   Alcotest.(check int) "field count" 8 (List.length post_entity.fields);
   Alcotest.(check int) "index count" 3 (List.length post_entity.indexes);
+  Alcotest.(check int) "edge count" 1 (List.length post_entity.edges);
   let id = find_field "id" in
   Alcotest.(check string) "id storage key" "_id" id.storage_key;
   Alcotest.(check bool) "id unique" true id.unique;
@@ -73,6 +84,13 @@ let test_entity_metadata () =
          && index.fields = [ "user_id"; "created_at_ms" ]
          && not index.unique)
        post_entity.indexes);
+  Alcotest.(check bool)
+    "user edge" true
+    (List.exists
+       (fun (edge : Ent_ocaml.edge) ->
+         edge.name = "user" && edge.target = "User"
+         && edge.storage_key = Some "user_id" && edge.required)
+       post_entity.edges);
   let published_at = find_field "published_at_ms" in
   Alcotest.(check bool) "option is not required" false published_at.required;
   Alcotest.(check bool) "option is nillable" true published_at.nillable;
@@ -98,13 +116,15 @@ let test_generated_query_api () =
           Post.body_contains "hello";
           Post.media_ids_eq [ "media_1"; "media_2" ];
           Post.published_at_ms_is_nil ();
+          Post.has_user_with
+            [ Ent_ocaml.Eq ("id", Ent_ocaml.V_string "user_1") ];
         ]
       ~select:[ Post.select_id; Post.select_body ]
       ~order:[ Post.published_at_ms_order ~direction:Ent_ocaml.Desc () ]
       ~limit:10 ()
   in
   Alcotest.(check string) "entity" "Post" query.entity.name;
-  Alcotest.(check int) "predicates" 6 (List.length query.predicates);
+  Alcotest.(check int) "predicates" 7 (List.length query.predicates);
   Alcotest.(check (list string)) "select" [ "id"; "body" ] query.select;
   Alcotest.(check int) "orders" 1 (List.length query.orders);
   Alcotest.(check (option int)) "limit" (Some 10) query.limit;

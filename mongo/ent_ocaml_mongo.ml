@@ -53,7 +53,47 @@ let doc fields =
     (fun acc (name, value) -> Bson.add_element name value acc)
     Bson.empty fields
 
-let rec predicate_to_bson = function
+let find_edge (entity : Ent_ocaml.entity) name =
+  List.find_opt (fun (edge : Ent_ocaml.edge) -> edge.name = name) entity.edges
+
+let edge_storage_key (entity : Ent_ocaml.entity) name =
+  match find_edge entity name with
+  | None -> Error (`Bad_query ("edge not found: " ^ name))
+  | Some { storage_key = Some key; _ } -> Ok key
+  | Some _ ->
+      Error
+        (`Bad_query
+          ("edge " ^ name ^ " does not have a stored foreign-key field"))
+
+let rec remap_id_predicate storage_key = function
+  | Ent_ocaml.Eq ("id", value) -> Ok (Ent_ocaml.Eq (storage_key, value))
+  | In ("id", values) -> Ok (In (storage_key, values))
+  | And predicates ->
+      remap_id_predicates storage_key predicates
+      |> Result.map (fun predicates -> Ent_ocaml.And predicates)
+  | Or predicates ->
+      remap_id_predicates storage_key predicates
+      |> Result.map (fun predicates -> Ent_ocaml.Or predicates)
+  | Not predicate ->
+      remap_id_predicate storage_key predicate
+      |> Result.map (fun predicate -> Ent_ocaml.Not predicate)
+  | _ ->
+      Error
+        (`Bad_query
+          "stored edge predicates currently support target id equality or membership")
+
+and remap_id_predicates storage_key predicates =
+  let rec loop acc = function
+    | [] -> Ok (List.rev acc)
+    | predicate :: rest -> (
+        match remap_id_predicate storage_key predicate with
+        | Ok predicate -> loop (predicate :: acc) rest
+        | Error _ as error -> error)
+  in
+  loop [] predicates
+
+let rec predicate_to_bson ?entity predicate =
+  match predicate with
   | Ent_ocaml.Eq (field, value) -> (
       match value_to_bson value with
       | Ok bson -> Ok (doc [ (field, bson) ])
@@ -74,10 +114,10 @@ let rec predicate_to_bson = function
                Bson.create_doc_element
                  (doc [ ("$ne", Bson.create_null ()) ]) );
            ])
-  | And predicates -> logical "$and" predicates
-  | Or predicates -> logical "$or" predicates
+  | And predicates -> logical ?entity "$and" predicates
+  | Or predicates -> logical ?entity "$or" predicates
   | Not predicate -> (
-      match predicate_to_bson predicate with
+      match predicate_to_bson ?entity predicate with
       | Ok bson -> Ok (doc [ ("$nor", Bson.create_list [ Bson.create_doc_element bson ]) ])
       | Error _ as error -> error)
   | Contains (field, value) ->
@@ -105,16 +145,44 @@ let rec predicate_to_bson = function
                Bson.create_doc_element
                  (doc [ ("$regex", Bson.create_string (value ^ "$")) ]) );
            ])
-  | Has_edge _ | Has_edge_with _ ->
-      Error (`Bad_query "edge predicates are not implemented in the Mongo backend yet")
+  | Has_edge edge_name -> (
+      match entity with
+      | None -> Error (`Bad_query "edge predicate needs entity context")
+      | Some entity -> (
+          match edge_storage_key entity edge_name with
+          | Error _ as error -> error
+          | Ok storage_key ->
+              Ok
+                (doc
+                   [
+                     ( storage_key,
+                       Bson.create_doc_element
+                         (doc
+                            [
+                              ("$exists", Bson.create_boolean true);
+                              ("$ne", Bson.create_null ());
+                            ]) );
+                   ])))
+  | Has_edge_with (edge_name, predicates) -> (
+      match entity with
+      | None -> Error (`Bad_query "edge predicate needs entity context")
+      | Some entity -> (
+          match edge_storage_key entity edge_name with
+          | Error _ as error -> error
+          | Ok storage_key -> (
+              match remap_id_predicates storage_key predicates with
+              | Error _ as error -> error
+              | Ok [] -> predicate_to_bson ~entity (Has_edge edge_name)
+              | Ok [ predicate ] -> predicate_to_bson ~entity predicate
+              | Ok predicates -> predicate_to_bson ~entity (And predicates))))
   | Backend (_, _) ->
       Error (`Bad_query "backend predicates need typed backend-specific support")
 
-and logical op predicates =
+and logical ?entity op predicates =
   let rec loop acc = function
     | [] -> Ok (doc [ (op, Bson.create_list (List.rev acc)) ])
     | predicate :: rest -> (
-        match predicate_to_bson predicate with
+        match predicate_to_bson ?entity predicate with
         | Ok bson -> loop (Bson.create_doc_element bson :: acc) rest
         | Error _ as error -> error)
   in
@@ -123,8 +191,8 @@ and logical op predicates =
 let filter_to_bson (query : Ent_ocaml.query) =
   match query.Ent_ocaml.predicates with
   | [] -> Ok Bson.empty
-  | [ predicate ] -> predicate_to_bson predicate
-  | predicates -> predicate_to_bson (And predicates)
+  | [ predicate ] -> predicate_to_bson ~entity:query.entity predicate
+  | predicates -> predicate_to_bson ~entity:query.entity (And predicates)
 
 let sort_to_bson orders =
   let direction = function
@@ -258,8 +326,8 @@ let update_to_bson (mutation : Ent_ocaml.mutation) =
 let selector (mutation : Ent_ocaml.mutation) =
   match mutation.Ent_ocaml.predicates with
   | [] -> Ok Bson.empty
-  | [ predicate ] -> predicate_to_bson predicate
-  | predicates -> predicate_to_bson (And predicates)
+  | [ predicate ] -> predicate_to_bson ~entity:mutation.entity predicate
+  | predicates -> predicate_to_bson ~entity:mutation.entity (And predicates)
 
 let find ctx (query : Ent_ocaml.query) =
   match find_options query with

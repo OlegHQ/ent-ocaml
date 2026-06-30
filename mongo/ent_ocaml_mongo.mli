@@ -10,7 +10,8 @@ val sort_to_bson : Ent_ocaml.order list -> Bson.t option
 val projection_to_bson : Ent_ocaml.query -> (Bson.t option, Ent_ocaml.error) result
 val document_to_bson : (string * Ent_ocaml.value) list -> (Bson.t, Ent_ocaml.error) result
 val update_to_bson : Ent_ocaml.mutation -> (Bson.t, Ent_ocaml.error) result
-val predicate_to_bson : Ent_ocaml.predicate -> (Bson.t, Ent_ocaml.error) result
+val predicate_to_bson :
+  ?entity:Ent_ocaml.entity -> Ent_ocaml.predicate -> (Bson.t, Ent_ocaml.error) result
 
 val index_storage_fields :
   Ent_ocaml.entity -> Ent_ocaml.index -> (string list, Ent_ocaml.error) result
