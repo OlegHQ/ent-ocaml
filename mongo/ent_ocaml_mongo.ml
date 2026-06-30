@@ -247,7 +247,7 @@ let filter_to_bson (query : Ent_ocaml.query) =
   | [ predicate ] -> predicate_to_bson ~entity:query.entity predicate
   | predicates -> predicate_to_bson ~entity:query.entity (And predicates)
 
-let sort_to_bson ?entity orders =
+let sort_to_bson ?entity (orders : Ent_ocaml.order list) =
   let direction = function
     | Ent_ocaml.Asc -> Bson.create_int32 1l
     | Desc -> Bson.create_int32 (-1l)
@@ -257,7 +257,7 @@ let sort_to_bson ?entity orders =
   | orders ->
       let fields =
         List.map
-          (fun order ->
+          (fun (order : Ent_ocaml.order) ->
             let field =
               match predicate_field ?entity order.Ent_ocaml.field with
               | Ok field -> field

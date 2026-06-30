@@ -91,6 +91,12 @@ type order = {
   direction : order_direction;
 }
 
+type cursor_term = {
+  field : string;
+  direction : order_direction;
+  value : value;
+}
+
 type query = {
   entity : entity;
   predicates : predicate list;
@@ -157,6 +163,8 @@ module Query : sig
     value ->
     query ->
     query
+  val after_cursor : cursor_term list -> query -> query
+  val before_cursor : cursor_term list -> query -> query
 end
 
 module Edge_query : sig

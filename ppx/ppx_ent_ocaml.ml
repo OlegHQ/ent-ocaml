@@ -725,6 +725,35 @@ let cursor_function ~loc name core_name field_name field =
                 (A.pexp_fun ~loc Nolabel None (pvar ~loc "query") body)));
     ]
 
+let cursor_term_function ~loc field_name field =
+  let direction =
+    A.pexp_apply ~loc
+      (ident ~loc [ "Option"; "value" ])
+      [
+        (Nolabel, evar ~loc "direction");
+        (Labelled "default", constr ~loc [ "Ent_ocaml"; "Asc" ]);
+      ]
+  in
+  let body =
+    A.pexp_let ~loc Nonrecursive
+      [ A.value_binding ~loc ~pat:(pvar ~loc "direction") ~expr:direction ]
+      (A.pexp_record ~loc
+         [
+           (lid ~loc [ "Ent_ocaml"; "field" ], str ~loc field_name);
+           (lid ~loc [ "Ent_ocaml"; "direction" ], evar ~loc "direction");
+           ( lid ~loc [ "Ent_ocaml"; "value" ],
+             value_expr ~loc field (evar ~loc "value") );
+         ]
+         None)
+  in
+  A.pstr_value ~loc Nonrecursive
+    [
+      A.value_binding ~loc ~pat:(pvar ~loc (field_name ^ "_cursor"))
+        ~expr:
+          (A.pexp_fun ~loc (Optional "direction") None (pvar ~loc "direction")
+             (A.pexp_fun ~loc Nolabel None (pvar ~loc "value") body));
+    ]
+
 let field_helper_items field =
   let loc = field.pld_loc in
   let field_name = field.pld_name.txt in
@@ -778,6 +807,7 @@ let field_helper_items field =
               [ "Ent_ocaml"; "Lte" ] field_name field;
             cursor_function ~loc ("after_" ^ field_name) "after" field_name field;
             cursor_function ~loc ("before_" ^ field_name) "before" field_name field;
+            cursor_term_function ~loc field_name field;
           ]
         else []
       in
@@ -1116,6 +1146,20 @@ let gen_query_module td =
                          constr_arg ~loc [ "Some" ] (evar ~loc "offset") );
                      ]
                      (Some (evar ~loc "query")))));
+        A.value_binding ~loc ~pat:(pvar ~loc "after_cursor")
+          ~expr:
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "terms")
+               (A.pexp_fun ~loc Nolabel None query_pat
+                  (app ~loc
+                     (ident ~loc [ "Ent_ocaml"; "Query"; "after_cursor" ])
+                     [ evar ~loc "terms"; evar ~loc "query" ])));
+        A.value_binding ~loc ~pat:(pvar ~loc "before_cursor")
+          ~expr:
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "terms")
+               (A.pexp_fun ~loc Nolabel None query_pat
+                  (app ~loc
+                     (ident ~loc [ "Ent_ocaml"; "Query"; "before_cursor" ])
+                     [ evar ~loc "terms"; evar ~loc "query" ])));
       ]
   in
   let aggregate_helpers =
@@ -1676,6 +1720,9 @@ let gen_sig_for_type td =
     A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "predicate" ]) []
   in
   let order_typ = A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "order" ]) [] in
+  let cursor_term_typ =
+    A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "cursor_term" ]) []
+  in
   let query_typ = A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "query" ]) [] in
   let edge_query_typ =
     A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "edge_query" ]) []
@@ -1780,6 +1827,12 @@ let gen_sig_for_type td =
         (arrow Nolabel orders_typ (arrow Nolabel query_typ query_typ));
       val_sig "limit" (arrow Nolabel int_typ (arrow Nolabel query_typ query_typ));
       val_sig "offset" (arrow Nolabel int_typ (arrow Nolabel query_typ query_typ));
+      val_sig "after_cursor"
+        (arrow Nolabel (list_typ cursor_term_typ)
+           (arrow Nolabel query_typ query_typ));
+      val_sig "before_cursor"
+        (arrow Nolabel (list_typ cursor_term_typ)
+           (arrow Nolabel query_typ query_typ));
     ]
   in
   let aggregate_sig =
@@ -1902,6 +1955,9 @@ let gen_sig_for_type td =
                 (arrow (Optional "direction") direction_typ
                    (arrow Nolabel field_typ
                       (arrow Nolabel query_typ query_typ)));
+              val_sig (field_name ^ "_cursor")
+                (arrow (Optional "direction") direction_typ
+                   (arrow Nolabel field_typ cursor_term_typ));
             ]
           else []
         in

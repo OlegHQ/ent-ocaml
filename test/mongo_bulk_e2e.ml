@@ -205,6 +205,16 @@ let query_after_post_1 =
        (Ent_ocaml.V_string "post_1")
   |> Ent_ocaml.Query.limit 1
 
+let query_after_views_post_2 =
+  Ent_ocaml.Query.make post_entity
+  |> Ent_ocaml.Query.after_cursor
+       Ent_ocaml.
+         [
+           { field = "views"; direction = Asc; value = V_int64 20L };
+           { field = "id"; direction = Asc; value = V_string "post_2" };
+         ]
+  |> Ent_ocaml.Query.limit 1
+
 let query_user_from_posts =
   Ent_ocaml.Edge_query.make ~edge:"user" ~target:user_entity query_user_1
 
@@ -272,15 +282,21 @@ let run_flow client =
       [
         create "post_1" "user_1" "first" 10L;
         create "post_2" "user_2" "second" 20L;
+        create "post_2b" "user_2" "second-b" 20L;
       ]
   in
-  assert_true "bulk insert returns docs" (List.length docs = 2);
+  assert_true "bulk insert returns docs" (List.length docs = 3);
   let* found = Ent_ocaml_mongo.find ctx query_all in
-  assert_true "bulk insert persisted rows" (List.length found = 2);
+  assert_true "bulk insert persisted rows" (List.length found = 3);
   let* page = Ent_ocaml_mongo.find ctx query_after_post_1 in
   assert_true "seek pagination returns next row"
     (match page with
     | [ doc ] -> Bson.get_string (Bson.get_element "_id" doc) = "post_2"
+    | _ -> false);
+  let* composite_page = Ent_ocaml_mongo.find ctx query_after_views_post_2 in
+  assert_true "composite cursor returns tied next row"
+    (match composite_page with
+    | [ doc ] -> Bson.get_string (Bson.get_element "_id" doc) = "post_2b"
     | _ -> false);
   let* user_posts = Ent_ocaml_mongo.find ctx query_user_1 in
   assert_true "edge predicate returns user posts" (List.length user_posts = 1);
@@ -306,7 +322,7 @@ let run_flow client =
   let* avg_value =
     Ent_ocaml_mongo.aggregate ctx (Ent_ocaml.Aggregate.avg "views" query_all)
   in
-  assert_float_value "aggregate avg returns all views" 15.0 avg_value;
+  assert_float_value "aggregate avg returns all views" (50.0 /. 3.0) avg_value;
   let* scanned =
     Ent_ocaml_mongo.aggregate_scan ctx
       (Ent_ocaml.Aggregate.scan
@@ -314,8 +330,8 @@ let run_flow client =
          query_all)
   in
   assert_true "aggregate scan returns count and sum"
-    (assoc_int64 "posts" scanned = Some 2L
-    && assoc_int64 "views" scanned = Some 30L);
+    (assoc_int64 "posts" scanned = Some 3L
+    && assoc_int64 "views" scanned = Some 50L);
   let* grouped =
     Ent_ocaml_mongo.group ctx
       (Ent_ocaml.Aggregate.group_by "user_id"
@@ -324,12 +340,12 @@ let run_flow client =
   assert_true "group aggregate returns user_1 views"
     (group_value "user_1" grouped = Some 10L);
   assert_true "group aggregate returns user_2 views"
-    (group_value "user_2" grouped = Some 20L);
+    (group_value "user_2" grouped = Some 40L);
   let* () =
     Ent_ocaml_mongo.upsert_one ctx (upsert "post_3" "user_1" "third")
   in
   let* found_after_insert = Ent_ocaml_mongo.find ctx query_all in
-  assert_true "upsert inserts missing row" (List.length found_after_insert = 3);
+  assert_true "upsert inserts missing row" (List.length found_after_insert = 4);
   let* () =
     Ent_ocaml_mongo.upsert_one ctx
       (upsert "post_3" "user_1" "third updated")

@@ -238,6 +238,26 @@ let test_generated_cursor_api () =
     | [ { Ent_ocaml.field = "created_at_ms"; direction = Desc } ] -> true
     | _ -> false)
 
+let test_generated_composite_cursor_api () =
+  let query =
+    let open Post in
+    query ()
+    |> after_cursor
+         [
+           created_at_ms_cursor ~direction:Ent_ocaml.Desc 1_700_000_100L;
+           id_cursor ~direction:Ent_ocaml.Desc "post_2";
+         ]
+    |> limit 20
+  in
+  Alcotest.(check (option int)) "limit" (Some 20) query.limit;
+  Alcotest.(check int) "cursor predicates" 1 (List.length query.predicates);
+  Alcotest.(check bool)
+    "cursor predicate" true
+    (match query.predicates with
+    | [ Ent_ocaml.Or [ Lt ("created_at_ms", V_int64 _); And _ ] ] -> true
+    | _ -> false);
+  Alcotest.(check int) "cursor orders" 2 (List.length query.orders)
+
 let test_generated_traversal_api () =
   let edge_query =
     let open Post in
@@ -565,6 +585,8 @@ let () =
             test_generated_query_api;
           Alcotest.test_case "generated cursor api" `Quick
             test_generated_cursor_api;
+          Alcotest.test_case "generated composite cursor api" `Quick
+            test_generated_composite_cursor_api;
           Alcotest.test_case "generated traversal api" `Quick
             test_generated_traversal_api;
           Alcotest.test_case "generated mutation api" `Quick

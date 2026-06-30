@@ -203,6 +203,34 @@ let test_query_seek_pagination () =
   Alcotest.(check int) "existing order preserved once" 1
     (List.length before_query.orders)
 
+let test_query_composite_cursor_pagination () =
+  let query =
+    Ent_ocaml.Query.make post_entity
+    |> Ent_ocaml.Query.after_cursor
+         Ent_ocaml.
+           [
+             { field = "created_at_ms"; direction = Desc; value = V_int64 10L };
+             { field = "id"; direction = Desc; value = V_string "post_2" };
+           ]
+  in
+  Alcotest.(check int) "cursor orders" 2 (List.length query.orders);
+  Alcotest.(check bool)
+    "composite cursor predicate" true
+    (match query.predicates with
+    | [
+        Ent_ocaml.Or
+          [
+            Lt ("created_at_ms", V_int64 10L);
+            And
+              [
+                Eq ("created_at_ms", V_int64 10L);
+                Lt ("id", V_string "post_2");
+              ];
+          ];
+      ] ->
+        true
+    | _ -> false)
+
 let test_result_syntax () =
   let open Ent_ocaml.Result_syntax in
   let result =
@@ -539,6 +567,8 @@ let () =
             test_query_pipeline_api;
           Alcotest.test_case "query seek pagination" `Quick
             test_query_seek_pagination;
+          Alcotest.test_case "query composite cursor pagination" `Quick
+            test_query_composite_cursor_pagination;
           Alcotest.test_case "result syntax" `Quick test_result_syntax;
         ] );
       ( "mongo",

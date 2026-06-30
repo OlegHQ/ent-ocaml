@@ -91,6 +91,12 @@ type order = {
   direction : order_direction;
 }
 
+type cursor_term = {
+  field : string;
+  direction : order_direction;
+  value : value;
+}
+
 type query = {
   entity : entity;
   predicates : predicate list;
@@ -144,10 +150,46 @@ module Query = struct
   let limit limit query = { query with limit = Some limit }
   let offset offset query = { query with offset = Some offset }
 
-  let ensure_order order query =
-    if List.exists (fun existing -> existing.field = order.field) query.orders
+  let ensure_order (order : order) (query : query) =
+    if List.exists (fun (existing : order) -> existing.field = order.field) query.orders
     then query
     else { query with orders = query.orders @ [ order ] }
+
+  let ensure_cursor_orders (terms : cursor_term list) query =
+    List.fold_left
+      (fun query term ->
+        ensure_order
+          ({ field = term.field; direction = term.direction } : order)
+          query)
+      query terms
+
+  let cursor_compare ~after (term : cursor_term) =
+    match (after, term.direction) with
+    | true, Asc | false, Desc -> Gt (term.field, term.value)
+    | true, Desc | false, Asc -> Lt (term.field, term.value)
+
+  let cursor_predicate ~after (terms : cursor_term list) =
+    let rec loop equals = function
+      | [] -> []
+      | term :: rest ->
+          let comparison = cursor_compare ~after term in
+          let branch =
+            match List.rev equals with
+            | [] -> comparison
+            | equals -> And (equals @ [ comparison ])
+          in
+          branch :: loop (Eq (term.field, term.value) :: equals) rest
+    in
+    match loop [] terms with
+    | [] -> None
+    | [ predicate ] -> Some predicate
+    | predicates -> Some (Or predicates)
+
+  let seek ~after terms query =
+    let query = ensure_cursor_orders terms query in
+    match cursor_predicate ~after terms with
+    | None -> query
+    | Some predicate -> where predicate query
 
   let after ~field ~direction value query =
     let predicate =
@@ -168,6 +210,9 @@ module Query = struct
     query
     |> where predicate
     |> ensure_order { field; direction }
+
+  let after_cursor terms query = seek ~after:true terms query
+  let before_cursor terms query = seek ~after:false terms query
 end
 
 module Edge_query = struct

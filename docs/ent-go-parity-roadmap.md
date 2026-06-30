@@ -71,13 +71,14 @@ The initial package scaffold already provides:
 - Mongo planning and CRUD execution for scalar filters, boolean predicates,
   field selection/projection, ordering, limit/offset, insert, bulk insert,
   update, upsert-one with `$setOnInsert`, delete, count, filtered and grouped
-  min/max/sum/avg aggregates, named aggregate scans, single-field seek
-  pagination, stored-FK edge predicates, stored-FK to-one traversal and eager
+  min/max/sum/avg aggregates, named aggregate scans, single-field and composite
+  seek pagination, stored-FK edge predicates, stored-FK to-one traversal and eager
   loading, storage-key mapping for filters/sorts/mutations/indexes, and basic
   value translation.
 - `[@@deriving ent]` generation for entity metadata, functional query helpers,
   typed field predicates, typed ordering helpers, typed `after_<field>` and
-  `before_<field>` seek helpers, create/update/delete mutation values,
+  `before_<field>` seek helpers, typed `<field>_cursor` terms plus
+  `after_cursor`/`before_cursor`, create/update/delete mutation values,
   functional upsert mutation helpers with insert-only field setters, functional
   mutation pipeline helpers, aggregate and group-by constructors, record create
   helpers, create-bulk helpers, named aggregate scan constructors, field
@@ -113,7 +114,7 @@ The initial package scaffold already provides:
 | Eager loading | Stored-FK to-one `with_<edge>` loading implemented; nested and multi-edge loading pending | Batch secondary queries; named loaders |
 | Named edges | Generated named edge storage | Map from edge name/alias to loaded rows |
 | Bidirectional edge refs | Optional generated in-memory backrefs | Set after eager load, avoid cycles by default |
-| Pagination | Limit/offset and single-field seek cursors implemented; composite cursors pending | `limit`, `skip`, sort, stable cursor keys |
+| Pagination | Limit/offset plus single-field and composite seek cursors implemented | `limit`, `skip`, sort, stable cursor keys |
 | Ordering | Field and edge-count/edge-field ordering | sort, aggregation for edge terms |
 | Aggregation | count, filtered/grouped min/max/sum/avg, and named scans implemented | aggregation pipeline |
 | Hooks | Mutation middleware, global and entity-specific | Around generated mutators |
@@ -197,9 +198,9 @@ The initial package scaffold already provides:
 
 9. Aggregation, ordering, and pagination:
    filtered and grouped count/min/max/sum/avg, named aggregate scans, and
-   single-field seek cursors are implemented. Edge counts, edge-field ordering,
-   composite cursor pagination, selected order values, and custom backend terms
-   are still pending.
+   single-field/composite seek cursors are implemented. Edge counts,
+   edge-field ordering, selected order values, and custom backend terms are
+   still pending.
 
 10. Mongo schema/index checks:
    generate index manifests, `ensure_indexes`, drift checks, collection
