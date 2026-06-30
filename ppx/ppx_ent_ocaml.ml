@@ -2584,6 +2584,9 @@ let gen_query_module td =
         (A.ptyp_constr ~loc (lid ~loc path) [])
     in
     let edge_query_pat = typed_pat "edge_query" [ "Ent_ocaml"; "edge_query" ] in
+    let edge_chain_pat =
+      typed_pat "edge_chain" [ "Ent_ocaml"; "edge_chain" ]
+    in
     let aggregate_pat = typed_pat "aggregate" [ "Ent_ocaml"; "aggregate" ] in
     let aggregate_scan_pat =
       typed_pat "scan" [ "Ent_ocaml"; "aggregate_scan" ]
@@ -3070,6 +3073,20 @@ let gen_query_module td =
                              (Nolabel, evar ~loc "edge_query");
                              (Labelled "decode", evar ~loc "decode");
                            ])))));
+          value_fun "traverse_chain"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc (Labelled "decode") None (pvar ~loc "decode")
+                  (A.pexp_fun ~loc Nolabel None edge_chain_pat
+                     (guarded `Query
+                        (A.pexp_apply ~loc
+                           (ident ~loc [ "Ent_ocaml"; "Edge_chain"; "source" ])
+                           [ (Nolabel, evar ~loc "edge_chain") ])
+                        (backend_apply "traverse_chain_as"
+                           [
+                             (Nolabel, evar ~loc "ctx");
+                             (Nolabel, evar ~loc "edge_chain");
+                             (Labelled "decode", evar ~loc "decode");
+                           ])))));
           value_fun "load_edge"
             (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
                (A.pexp_fun ~loc (Labelled "decode_source") None
@@ -3280,6 +3297,16 @@ let gen_query_module td =
                           (Nolabel, evar ~loc "edge_query");
                           (Labelled "decode", evar ~loc "decode");
                         ]))));
+          value_fun "traverse_chain"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc (Labelled "decode") None (pvar ~loc "decode")
+                  (A.pexp_fun ~loc Nolabel None edge_chain_pat
+                     (backend_apply "traverse_chain_as"
+                        [
+                          (Nolabel, evar ~loc "ctx");
+                          (Nolabel, evar ~loc "edge_chain");
+                          (Labelled "decode", evar ~loc "decode");
+                        ]))));
           value_fun "load_edge"
             (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
                (A.pexp_fun ~loc (Labelled "decode_source") None
@@ -3403,6 +3430,18 @@ let gen_query_module td =
           [ (lid ~loc [ "Ent_ocaml"; "source" ], evar ~loc "query") ]
           (Some (evar ~loc "edge_query"))
       in
+      let edge_chain_with_source =
+        let first =
+          A.pexp_record ~loc
+            [ (lid ~loc [ "Ent_ocaml"; "source" ], evar ~loc "query") ]
+            (Some
+               (A.pexp_field ~loc (evar ~loc "edge_chain")
+                  (lid ~loc [ "Ent_ocaml"; "chain_first" ])))
+        in
+        A.pexp_record ~loc
+          [ (lid ~loc [ "Ent_ocaml"; "chain_first" ], first) ]
+          (Some (evar ~loc "edge_chain"))
+      in
       let group_with_query =
         let aggregate =
           A.pexp_record ~loc
@@ -3468,6 +3507,20 @@ let gen_query_module td =
                            [
                              (Nolabel, evar ~loc "ctx");
                              (Nolabel, edge_query_with_source);
+                             (Labelled "decode", evar ~loc "decode");
+                           ])))));
+          value_fun "traverse_chain"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc (Labelled "decode") None (pvar ~loc "decode")
+                  (A.pexp_fun ~loc Nolabel None edge_chain_pat
+                     (run_query
+                        (A.pexp_apply ~loc
+                           (ident ~loc [ "Ent_ocaml"; "Edge_chain"; "source" ])
+                           [ (Nolabel, evar ~loc "edge_chain") ])
+                        (backend_apply "traverse_chain_as"
+                           [
+                             (Nolabel, evar ~loc "ctx");
+                             (Nolabel, edge_chain_with_source);
                              (Labelled "decode", evar ~loc "decode");
                            ])))));
           value_fun "load_edge"
@@ -3674,6 +3727,16 @@ let gen_query_module td =
                       [
                         (Nolabel, evar ~loc "ctx");
                         (Nolabel, evar ~loc "edge_query");
+                        (Labelled "decode", evar ~loc "decode");
+                      ]))));
+        value_fun "traverse_chain"
+          (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+             (A.pexp_fun ~loc (Labelled "decode") None (pvar ~loc "decode")
+                (A.pexp_fun ~loc Nolabel None (pvar ~loc "edge_chain")
+                   (backend_apply "traverse_chain_as"
+                      [
+                        (Nolabel, evar ~loc "ctx");
+                        (Nolabel, evar ~loc "edge_chain");
                         (Labelled "decode", evar ~loc "decode");
                       ]))));
         value_fun "load_edge"
@@ -4034,6 +4097,8 @@ let gen_query_module td =
         value_fun "values" (client_call_from store "values");
         value_fun "value" (client_call_from store "value");
         value_fun "traverse" (client_decode_call_from store "traverse");
+        value_fun "traverse_chain"
+          (client_decode_call_from store "traverse_chain");
         value_fun "load_edge" (client_load_edge_call_from store);
         value_fun "load_edge_named" (client_load_edge_named_call_from store);
         value_fun "load_edges_named" (client_load_edges_named_call_from store);

@@ -101,9 +101,9 @@ The initial package scaffold already provides:
   same source and target decoder shape, and generated `load_edges_map` helpers
   support heterogeneous named loads by mapping each typed edge case into a
   caller-defined result variant.
-  Core `Ent_ocaml.Edge_chain` values and Mongo
-  `traverse_chain_as` execute multi-hop graph traversal across stored-FK and
-  join-backed to-many edges by carrying target IDs into each next hop.
+  Core `Ent_ocaml.Edge_chain` values and generated Store/Client
+  `traverse_chain` helpers execute multi-hop graph traversal across stored-FK
+  and join-backed to-many edges by carrying target IDs into each next hop.
   Generated `Client (Backend)` modules capture backend context for entity-local
   reads and mutations and expose `with_transaction` plus `Tx` operation modules
   through the backend transaction boundary. The Mongo backend runs transaction
@@ -198,7 +198,7 @@ The initial package scaffold already provides:
 | JSON predicates | Generated nested path predicates and ordering implemented for `[@ent.json]` fields | Dotted paths and aggregation expressions |
 | Edge predicates | `has_edge`, `has_edge_with`, and target-aware generated edge aliases implemented for stored-FK to-one and Mongo join-backed to-many edges | FK fields, join collections, or `$lookup` depending edge |
 | Boolean predicates | `and_`, `or_`, `not_` combinators | `$and`, `$or`, `$nor` |
-| Graph traversals | Stored-FK to-one/to-many and Mongo join-backed to-many `query_<edge>` traversal implemented, including target predicates, ordering, limits, and offsets; core `Edge_chain` plus Mongo `traverse_chain_as` implemented for multi-hop stored-FK/join-backed traversal; generated Store/Client chain helpers pending | Additional queries or aggregation `$lookup` |
+| Graph traversals | Stored-FK to-one/to-many and Mongo join-backed to-many `query_<edge>` traversal implemented, including target predicates, ordering, limits, and offsets; core `Edge_chain` plus generated Store/Client `traverse_chain` implemented for multi-hop stored-FK/join-backed traversal | Additional queries or aggregation `$lookup` |
 | Eager loading | Stored-FK to-one/to-many and Mongo join-backed to-many `with_<edge>` loading, target predicates/order/limit/offset, alias metadata, named loaded-edge records, same-shape grouped named loads, and heterogeneous typed edge maps implemented; nested multi-edge loading pending | Batch secondary queries; named loaders |
 | Named edges | Generated `with_<edge> ~as_` alias metadata, single-edge named load results, ordered same-shape multi-edge groups, and typed heterogeneous `load_edges_map` result variants implemented | Map from edge name/alias to loaded rows |
 | Bidirectional edge refs | Optional generated in-memory backrefs | Set after eager load, avoid cycles by default |
@@ -289,10 +289,9 @@ The initial package scaffold already provides:
    and target collections.
    Stored-FK to-one/to-many and Mongo join-backed to-many `query_<edge>`
    traversal are implemented through generated Store executors. Core
-   `Edge_chain` values and Mongo `traverse_chain_as` execute multi-hop
-   stored-FK/join-backed traversal. Generated Store/Client chain helpers,
-   nested traversal filters, and broader cross-collection predicate planning
-   remain.
+   `Edge_chain` values and generated Store/Client `traverse_chain` helpers
+   execute multi-hop stored-FK/join-backed traversal. Nested traversal filters
+   and broader cross-collection predicate planning remain.
 
 7. Eager loading and named edges:
    stored-FK to-one/to-many and Mongo join-backed to-many `with_<edge>` eager

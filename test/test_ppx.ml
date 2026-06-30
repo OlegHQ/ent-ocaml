@@ -335,6 +335,15 @@ module Memory_backend = struct
     | Ok value -> Ok [ value ]
     | Error message -> Error (`Decode message)
 
+  let traverse_chain_as () (edge_chain : Ent_ocaml.edge_chain) ~decode =
+    match
+      decode
+        (Ent_ocaml.V_string
+           (Ent_ocaml.Edge_chain.target edge_chain).Ent_ocaml.name)
+    with
+    | Ok value -> Ok [ value ]
+    | Error message -> Error (`Decode message)
+
   let load_edge_as () (edge_query : Ent_ocaml.edge_query) ~decode_source
       ~decode_target =
     match
@@ -794,6 +803,15 @@ let test_generated_traversal_api () =
   | Ok [ "User" ] -> ()
   | Ok _ -> Alcotest.fail "unexpected traverse result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  let edge_chain =
+    edge_query
+    |> Ent_ocaml.Edge_chain.start
+    |> Ent_ocaml.Edge_chain.then_ ~edge:"posts" ~target:post_entity
+  in
+  (match Store.traverse_chain () ~decode edge_chain with
+  | Ok [ "Post" ] -> ()
+  | Ok _ -> Alcotest.fail "unexpected traverse_chain result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
   (match
      Store.load_edge () ~decode_source:decode ~decode_target:decode edge_query
    with
@@ -902,9 +920,9 @@ let test_generated_traversal_api () =
   let module Client = Post.Client (Memory_backend) in
   let client = Client.make () in
   (match
-    Client.load_edge_named client ~decode_source:decode ~decode_target:decode
-      edge_query
-  with
+     Client.load_edge_named client ~decode_source:decode ~decode_target:decode
+       edge_query
+   with
   | Ok
       [
         {
@@ -917,6 +935,10 @@ let test_generated_traversal_api () =
       ] ->
       ()
   | Ok _ -> Alcotest.fail "unexpected client named load_edge result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  (match Client.traverse_chain client ~decode edge_chain with
+  | Ok [ "Post" ] -> ()
+  | Ok _ -> Alcotest.fail "unexpected client traverse_chain result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
   match
     Client.load_edges_named client ~decode_source:decode ~decode_target:decode

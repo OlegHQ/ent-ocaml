@@ -1830,6 +1830,12 @@ module type STORE_BACKEND = sig
     decode:(doc -> ('a, string) result) ->
     ('a list, error) result
 
+  val traverse_chain_as :
+    ctx ->
+    edge_chain ->
+    decode:(doc -> ('a, string) result) ->
+    ('a list, error) result
+
   val load_edge_as :
     ctx ->
     edge_query ->
