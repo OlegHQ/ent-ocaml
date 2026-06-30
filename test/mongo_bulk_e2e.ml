@@ -1281,6 +1281,35 @@ let run_flow client =
     Ent_ocaml_mongo.aggregate ctx (Ent_ocaml.Aggregate.sum "views" query_user_1)
   in
   assert_int64_value "aggregate sum returns user views" 10L sum;
+  let* alice_target_sum =
+    Ent_ocaml_mongo.aggregate ctx
+      (Ent_ocaml.Aggregate.sum "views"
+         (Ent_ocaml.Query.make post_entity
+            ~where:
+              Ent_ocaml.
+                [
+                  Has_edge_with_target
+                    {
+                      edge = "user";
+                      target = user_entity;
+                      predicates = [ Eq ("username", V_string "alice") ];
+                    };
+                ]))
+  in
+  assert_int64_value "target edge aggregate sum returns user views" 10L
+    alice_target_sum;
+  let* engineering_sum =
+    match
+      Ent_ocaml.Query.make post_entity
+      |> Ent_ocaml.Entql.where ~targets:[ user_entity; org_entity ]
+           {|user.org.slug == "engineering"|}
+    with
+    | Ok query ->
+        Ent_ocaml_mongo.aggregate ctx (Ent_ocaml.Aggregate.sum "views" query)
+    | Error _ as error -> error
+  in
+  assert_int64_value "nested target edge aggregate sum returns org views" 10L
+    engineering_sum;
   let* avg =
     Ent_ocaml_mongo.aggregate ctx (Ent_ocaml.Aggregate.avg "views" query_all)
   in
@@ -1293,6 +1322,21 @@ let run_flow client =
   in
   assert_true "aggregate scan returns count and sum"
     (assoc_int64 "posts" scan = Some 3L && assoc_int64 "views" scan = Some 50L);
+  let* tagged_scan =
+    match
+      Ent_ocaml.Query.make post_entity
+      |> Ent_ocaml.Entql.where ~targets:[ tag_entity ] {|tags.name == "ocaml"|}
+    with
+    | Ok query ->
+        Ent_ocaml_mongo.aggregate_scan ctx
+          (Ent_ocaml.Aggregate.scan
+             Ent_ocaml.Aggregate.[ count_as "posts"; sum_as "views" "views" ]
+             query)
+    | Error _ as error -> error
+  in
+  assert_true "join target aggregate scan returns count and sum"
+    (assoc_int64 "posts" tagged_scan = Some 2L
+    && assoc_int64 "views" tagged_scan = Some 30L);
   let* grouped =
     Ent_ocaml_mongo.group ctx
       (Ent_ocaml.Aggregate.group_by "user_id"
@@ -1302,6 +1346,21 @@ let run_flow client =
     (group_value "user_1" grouped = Some 10L);
   assert_true "group aggregate returns user_2 views"
     (group_value "user_2" grouped = Some 40L);
+  let* grouped_tagged =
+    match
+      Ent_ocaml.Query.make post_entity
+      |> Ent_ocaml.Entql.where ~targets:[ tag_entity ] {|tags.name == "ocaml"|}
+    with
+    | Ok query ->
+        Ent_ocaml_mongo.group ctx
+          (Ent_ocaml.Aggregate.group_by "user_id"
+             (Ent_ocaml.Aggregate.sum "views" query))
+    | Error _ as error -> error
+  in
+  assert_true "join target group aggregate returns user_1 views"
+    (group_value "user_1" grouped_tagged = Some 10L);
+  assert_true "join target group aggregate returns user_2 views"
+    (group_value "user_2" grouped_tagged = Some 20L);
   let* () =
     Ent_ocaml_mongo.upsert_one ctx (upsert "post_3" "user_1" "third")
   in

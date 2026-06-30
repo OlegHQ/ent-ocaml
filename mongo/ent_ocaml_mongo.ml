@@ -2478,9 +2478,32 @@ let run_aggregate ctx (query : Ent_ocaml.query) pipeline =
   | Error error -> Error (backend_error "aggregate" query.Ent_ocaml.entity error)
   | Ok response -> Ok (Mongo_command.cursor_batch response.Mongo_command.body)
 
+let aggregate_query_prefix (query : Ent_ocaml.query) =
+  find_aggregate_pipeline
+    {
+      query with
+      Ent_ocaml.select = [];
+      orders = [];
+      limit = None;
+      offset = None;
+    }
+
+let aggregate_query_without_predicates (query : Ent_ocaml.query) =
+  { query with Ent_ocaml.predicates = [] }
+
 let aggregate ctx (aggregate : Ent_ocaml.aggregate) =
   let query = aggregate.Ent_ocaml.query in
-  match aggregate_pipeline_to_bson aggregate with
+  let planned =
+    match aggregate_query_prefix query with
+    | Error _ as error -> error
+    | Ok prefix ->
+        let aggregate =
+          { aggregate with Ent_ocaml.query = aggregate_query_without_predicates query }
+        in
+        Result.map (fun pipeline -> prefix @ pipeline)
+          (aggregate_pipeline_to_bson aggregate)
+  in
+  match planned with
   | Error _ as error -> error
   | Ok pipeline -> (
       match run_aggregate ctx query pipeline with
@@ -2493,7 +2516,17 @@ let aggregate ctx (aggregate : Ent_ocaml.aggregate) =
 
 let aggregate_scan ctx (scan : Ent_ocaml.aggregate_scan) =
   let query = scan.Ent_ocaml.query in
-  match aggregate_scan_pipeline_to_bson scan with
+  let planned =
+    match aggregate_query_prefix query with
+    | Error _ as error -> error
+    | Ok prefix ->
+        let scan =
+          { scan with Ent_ocaml.query = aggregate_query_without_predicates query }
+        in
+        Result.map (fun pipeline -> prefix @ pipeline)
+          (aggregate_scan_pipeline_to_bson scan)
+  in
+  match planned with
   | Error _ as error -> error
   | Ok pipeline -> (
       match run_aggregate ctx query pipeline with
@@ -2533,7 +2566,20 @@ let group ctx (group : Ent_ocaml.group_aggregate) =
                 | Ok value ->
                     Ok { Ent_ocaml.group = group_value; value = Some value })))
   in
-  match group_pipeline_to_bson group with
+  let planned =
+    match aggregate_query_prefix query with
+    | Error _ as error -> error
+    | Ok prefix ->
+        let aggregate =
+          {
+            group.Ent_ocaml.aggregate with
+            query = aggregate_query_without_predicates query;
+          }
+        in
+        let group = { group with Ent_ocaml.aggregate } in
+        Result.map (fun pipeline -> prefix @ pipeline) (group_pipeline_to_bson group)
+  in
+  match planned with
   | Error _ as error -> error
   | Ok pipeline -> (
       match run_aggregate ctx query pipeline with

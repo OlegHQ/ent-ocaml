@@ -648,6 +648,10 @@ let summary =
   |> Posts.aggregate_scan ctx
 ```
 
+Mongo aggregate, group, and scan execution accepts the same composed query
+predicates as `all`, `one`, and `count`, including edge target filters,
+join-backed edge filters, nested EntQL relationship paths, and JSON predicates.
+
 Stored foreign-key edge traversals are also first-class values:
 
 ```ocaml
