@@ -170,6 +170,11 @@ type ('source, 'target) loaded_edge_group = {
   loaded_group_rows : ('source, 'target) loaded_edge list;
 }
 
+type ('source, 'target) loaded_edge_targets = {
+  loaded_source : 'source;
+  loaded_targets : 'target list;
+}
+
 type ('doc, 'source, 'out) loaded_edge_case =
   | Loaded_edge_case : {
       edge_case_query : edge_query;
@@ -592,6 +597,29 @@ module Edge_load = struct
     }
 
   let group_of_pairs edge_query rows = group edge_query (of_pairs edge_query rows)
+
+  let targets loaded_source loaded_targets = { loaded_source; loaded_targets }
+
+  let group_targets rows =
+    let add source target groups =
+      let rec loop acc = function
+        | [] ->
+            let targets = match target with None -> [] | Some value -> [ value ] in
+            List.rev ({ loaded_source = source; loaded_targets = targets } :: acc)
+        | group :: rest when group.loaded_source = source ->
+            let loaded_targets =
+              match target with
+              | None -> group.loaded_targets
+              | Some value -> group.loaded_targets @ [ value ]
+            in
+            List.rev_append acc ({ group with loaded_targets } :: rest)
+        | group :: rest -> loop (group :: acc) rest
+      in
+      loop [] groups
+    in
+    List.fold_left
+      (fun groups (source, target) -> add source target groups)
+      [] rows
 
   let case edge_query ~decode_target ~map =
     Loaded_edge_case
@@ -1843,12 +1871,26 @@ module type STORE_BACKEND = sig
     decode_target:(doc -> ('target, string) result) ->
     (('source * 'target option) list, error) result
 
+  val load_edge_grouped_as :
+    ctx ->
+    edge_query ->
+    decode_source:(doc -> ('source, string) result) ->
+    decode_target:(doc -> ('target, string) result) ->
+    (('source, 'target) loaded_edge_targets list, error) result
+
   val load_edge_chain_as :
     ctx ->
     edge_chain ->
     decode_source:(doc -> ('source, string) result) ->
     decode_target:(doc -> ('target, string) result) ->
     (('source * 'target option) list, error) result
+
+  val load_edge_chain_grouped_as :
+    ctx ->
+    edge_chain ->
+    decode_source:(doc -> ('source, string) result) ->
+    decode_target:(doc -> ('target, string) result) ->
+    (('source, 'target) loaded_edge_targets list, error) result
 
   val insert_values : ctx -> mutation -> (doc, error) result
 

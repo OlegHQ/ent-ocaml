@@ -2656,6 +2656,76 @@ let gen_query_module td =
                                    ]));
                        ])))))
     in
+    let load_edge_grouped_value =
+      value_fun "load_edge_grouped"
+        (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+           (A.pexp_fun ~loc (Labelled "decode_source") None
+              (pvar ~loc "decode_source")
+              (A.pexp_fun ~loc (Labelled "decode_target") None
+                 (pvar ~loc "decode_target")
+                 (A.pexp_fun ~loc Nolabel None edge_query_pat
+                    (A.pexp_match ~loc
+                       (A.pexp_apply ~loc (evar ~loc "load_edge")
+                          [
+                            (Nolabel, evar ~loc "ctx");
+                            (Labelled "decode_source", evar ~loc "decode_source");
+                            (Labelled "decode_target", evar ~loc "decode_target");
+                            (Nolabel, evar ~loc "edge_query");
+                          ])
+                       [
+                         error_case;
+                         A.case
+                           ~lhs:
+                             (A.ppat_construct ~loc (lid ~loc [ "Ok" ])
+                                (Some (pvar ~loc "rows")))
+                           ~guard:None
+                           ~rhs:
+                             (constr_arg ~loc [ "Ok" ]
+                                (A.pexp_apply ~loc
+                                   (ident ~loc
+                                      [
+                                        "Ent_ocaml";
+                                        "Edge_load";
+                                        "group_targets";
+                                      ])
+                                   [ (Nolabel, evar ~loc "rows") ]));
+                       ])))))
+    in
+    let load_edge_chain_grouped_value =
+      value_fun "load_edge_chain_grouped"
+        (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+           (A.pexp_fun ~loc (Labelled "decode_source") None
+              (pvar ~loc "decode_source")
+              (A.pexp_fun ~loc (Labelled "decode_target") None
+                 (pvar ~loc "decode_target")
+                 (A.pexp_fun ~loc Nolabel None edge_chain_pat
+                    (A.pexp_match ~loc
+                       (A.pexp_apply ~loc (evar ~loc "load_edge_chain")
+                          [
+                            (Nolabel, evar ~loc "ctx");
+                            (Labelled "decode_source", evar ~loc "decode_source");
+                            (Labelled "decode_target", evar ~loc "decode_target");
+                            (Nolabel, evar ~loc "edge_chain");
+                          ])
+                       [
+                         error_case;
+                         A.case
+                           ~lhs:
+                             (A.ppat_construct ~loc (lid ~loc [ "Ok" ])
+                                (Some (pvar ~loc "rows")))
+                           ~guard:None
+                           ~rhs:
+                             (constr_arg ~loc [ "Ok" ]
+                                (A.pexp_apply ~loc
+                                   (ident ~loc
+                                      [
+                                        "Ent_ocaml";
+                                        "Edge_load";
+                                        "group_targets";
+                                      ])
+                                   [ (Nolabel, evar ~loc "rows") ]));
+                       ])))))
+    in
     let load_edges_named_value =
       value_fun "load_edges_named"
         (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
@@ -3253,6 +3323,8 @@ let gen_query_module td =
                 (A.pmod_structure ~loc
                    (structure
                    @ [
+                       load_edge_grouped_value;
+                       load_edge_chain_grouped_value;
                        load_edge_named_value;
                        load_edges_named_value;
                        edge_case_value;
@@ -3447,6 +3519,8 @@ let gen_query_module td =
                 (A.pmod_structure ~loc
                    (structure
                    @ [
+                       load_edge_grouped_value;
+                       load_edge_chain_grouped_value;
                        load_edge_named_value;
                        load_edges_named_value;
                        edge_case_value;
@@ -3716,6 +3790,8 @@ let gen_query_module td =
                 (A.pmod_structure ~loc
                    (structure
                    @ [
+                       load_edge_grouped_value;
+                       load_edge_chain_grouped_value;
                        load_edge_named_value;
                        load_edges_named_value;
                        edge_case_value;
@@ -4019,6 +4095,8 @@ let gen_query_module td =
                 (A.pmod_structure ~loc
                    (base_structure @ edge_structure
                    @ [
+                       load_edge_grouped_value;
+                       load_edge_chain_grouped_value;
                        load_edge_named_value;
                        load_edges_named_value;
                        edge_case_value;
@@ -4114,6 +4192,8 @@ let gen_query_module td =
               (A.pmod_structure ~loc
                  (structure
                  @ [
+                     load_edge_grouped_value;
+                     load_edge_chain_grouped_value;
                      load_edge_named_value;
                      load_edges_named_value;
                      edge_case_value;
@@ -4173,6 +4253,36 @@ let gen_query_module td =
               (pvar ~loc "decode_target")
               (A.pexp_fun ~loc Nolabel None (pvar ~loc "edge_chain")
                  (store_apply_from store "load_edge_chain"
+                    [
+                      (Nolabel, evar ~loc "client");
+                      (Labelled "decode_source", evar ~loc "decode_source");
+                      (Labelled "decode_target", evar ~loc "decode_target");
+                      (Nolabel, evar ~loc "edge_chain");
+                    ]))))
+    in
+    let client_load_edge_grouped_call_from store =
+      A.pexp_fun ~loc Nolabel None (pvar ~loc "client")
+        (A.pexp_fun ~loc (Labelled "decode_source") None
+           (pvar ~loc "decode_source")
+           (A.pexp_fun ~loc (Labelled "decode_target") None
+              (pvar ~loc "decode_target")
+              (A.pexp_fun ~loc Nolabel None (pvar ~loc "edge_query")
+                 (store_apply_from store "load_edge_grouped"
+                    [
+                      (Nolabel, evar ~loc "client");
+                      (Labelled "decode_source", evar ~loc "decode_source");
+                      (Labelled "decode_target", evar ~loc "decode_target");
+                      (Nolabel, evar ~loc "edge_query");
+                    ]))))
+    in
+    let client_load_edge_chain_grouped_call_from store =
+      A.pexp_fun ~loc Nolabel None (pvar ~loc "client")
+        (A.pexp_fun ~loc (Labelled "decode_source") None
+           (pvar ~loc "decode_source")
+           (A.pexp_fun ~loc (Labelled "decode_target") None
+              (pvar ~loc "decode_target")
+              (A.pexp_fun ~loc Nolabel None (pvar ~loc "edge_chain")
+                 (store_apply_from store "load_edge_chain_grouped"
                     [
                       (Nolabel, evar ~loc "client");
                       (Labelled "decode_source", evar ~loc "decode_source");
@@ -4244,6 +4354,9 @@ let gen_query_module td =
           (client_decode_call_from store "traverse_chain");
         value_fun "load_edge" (client_load_edge_call_from store);
         value_fun "load_edge_chain" (client_load_edge_chain_call_from store);
+        value_fun "load_edge_grouped" (client_load_edge_grouped_call_from store);
+        value_fun "load_edge_chain_grouped"
+          (client_load_edge_chain_grouped_call_from store);
         value_fun "load_edge_named" (client_load_edge_named_call_from store);
         value_fun "load_edges_named" (client_load_edges_named_call_from store);
         value_fun "load_edges_map" (client_load_edges_map_call_from store);
@@ -4648,6 +4761,11 @@ let gen_sig_for_type td =
   let loaded_edge_group_typ source target =
     A.ptyp_constr ~loc
       (lid ~loc [ "Ent_ocaml"; "loaded_edge_group" ])
+      [ source; target ]
+  in
+  let loaded_edge_targets_typ source target =
+    A.ptyp_constr ~loc
+      (lid ~loc [ "Ent_ocaml"; "loaded_edge_targets" ])
       [ source; target ]
   in
   let loaded_edge_case_typ doc source out =
@@ -5153,6 +5271,16 @@ let gen_sig_for_type td =
                                (A.ptyp_constr ~loc (lid ~loc [ "option" ])
                                   [ A.ptyp_var ~loc "target" ])))
                          error_typ)))));
+        value_sig "load_edge_grouped"
+          (arrow Nolabel backend_ctx
+             (arrow (Labelled "decode_source") decode_source_typ
+                (arrow (Labelled "decode_target") decode_target_typ
+                   (arrow Nolabel edge_query_typ
+                      (result_typ
+                         (list_typ
+                            (loaded_edge_targets_typ (A.ptyp_var ~loc "source")
+                               (A.ptyp_var ~loc "target")))
+                         error_typ)))));
         value_sig "load_edge_chain"
           (arrow Nolabel backend_ctx
              (arrow (Labelled "decode_source") decode_source_typ
@@ -5163,6 +5291,16 @@ let gen_sig_for_type td =
                             (pair_typ (A.ptyp_var ~loc "source")
                                (A.ptyp_constr ~loc (lid ~loc [ "option" ])
                                   [ A.ptyp_var ~loc "target" ])))
+                         error_typ)))));
+        value_sig "load_edge_chain_grouped"
+          (arrow Nolabel backend_ctx
+             (arrow (Labelled "decode_source") decode_source_typ
+                (arrow (Labelled "decode_target") decode_target_typ
+                   (arrow Nolabel edge_chain_typ
+                      (result_typ
+                         (list_typ
+                            (loaded_edge_targets_typ (A.ptyp_var ~loc "source")
+                               (A.ptyp_var ~loc "target")))
                          error_typ)))));
         value_sig "load_edge_named"
           (arrow Nolabel backend_ctx
@@ -5487,6 +5625,11 @@ let gen_sig_for_type td =
              (arrow (Labelled "decode") decode_typ
                 (arrow Nolabel edge_query_typ
                    (result_typ (list_typ (A.ptyp_var ~loc "a")) error_typ))));
+        value_sig "traverse_chain"
+          (arrow Nolabel receiver_t
+             (arrow (Labelled "decode") decode_typ
+                (arrow Nolabel edge_chain_typ
+                   (result_typ (list_typ (A.ptyp_var ~loc "a")) error_typ))));
         value_sig "load_edge"
           (arrow Nolabel receiver_t
              (arrow (Labelled "decode_source") decode_source_typ
@@ -5497,6 +5640,37 @@ let gen_sig_for_type td =
                             (pair_typ (A.ptyp_var ~loc "source")
                                (A.ptyp_constr ~loc (lid ~loc [ "option" ])
                                   [ A.ptyp_var ~loc "target" ])))
+                         error_typ)))));
+        value_sig "load_edge_grouped"
+          (arrow Nolabel receiver_t
+             (arrow (Labelled "decode_source") decode_source_typ
+                (arrow (Labelled "decode_target") decode_target_typ
+                   (arrow Nolabel edge_query_typ
+                      (result_typ
+                         (list_typ
+                            (loaded_edge_targets_typ (A.ptyp_var ~loc "source")
+                               (A.ptyp_var ~loc "target")))
+                         error_typ)))));
+        value_sig "load_edge_chain"
+          (arrow Nolabel receiver_t
+             (arrow (Labelled "decode_source") decode_source_typ
+                (arrow (Labelled "decode_target") decode_target_typ
+                   (arrow Nolabel edge_chain_typ
+                      (result_typ
+                         (list_typ
+                            (pair_typ (A.ptyp_var ~loc "source")
+                               (A.ptyp_constr ~loc (lid ~loc [ "option" ])
+                                  [ A.ptyp_var ~loc "target" ])))
+                         error_typ)))));
+        value_sig "load_edge_chain_grouped"
+          (arrow Nolabel receiver_t
+             (arrow (Labelled "decode_source") decode_source_typ
+                (arrow (Labelled "decode_target") decode_target_typ
+                   (arrow Nolabel edge_chain_typ
+                      (result_typ
+                         (list_typ
+                            (loaded_edge_targets_typ (A.ptyp_var ~loc "source")
+                               (A.ptyp_var ~loc "target")))
                          error_typ)))));
         value_sig "load_edge_named"
           (arrow Nolabel receiver_t

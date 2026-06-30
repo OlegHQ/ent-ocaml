@@ -1216,6 +1216,16 @@ let run_flow client =
   in
   assert_true "stored to-many eager load returns source and posts"
     (loaded_posts = [ ("bob", Some "post_2"); ("bob", Some "post_2b") ]);
+  let* grouped_posts =
+    Ent_ocaml_mongo.load_edge_grouped_as ctx query_posts_from_user
+      ~decode_source:(fun doc ->
+        Ok (Bson.get_string (Bson.get_element "username" doc)))
+      ~decode_target:(fun doc ->
+        Ok (Bson.get_string (Bson.get_element "_id" doc)))
+  in
+  assert_true "stored to-many grouped eager load returns source with posts"
+    (grouped_posts
+    = [ { Ent_ocaml.loaded_source = "bob"; loaded_targets = [ "post_2"; "post_2b" ] } ]);
   let* traversed_filtered_posts =
     Ent_ocaml_mongo.traverse_as ctx query_latest_filtered_post_from_user
       ~decode:(fun doc -> Ok (Bson.get_string (Bson.get_element "_id" doc)))
@@ -1281,6 +1291,16 @@ let run_flow client =
   in
   assert_true "graph eager chain returns source and tags through posts"
     (loaded_user_post_tags = [ ("bob", Some "mongo"); ("bob", Some "ocaml") ]);
+  let* grouped_user_post_tags =
+    Ent_ocaml_mongo.load_edge_chain_grouped_as ctx user_post_tags
+      ~decode_source:(fun doc ->
+        Ok (Bson.get_string (Bson.get_element "username" doc)))
+      ~decode_target:(fun doc ->
+        Ok (Bson.get_string (Bson.get_element "name" doc)))
+  in
+  assert_true "graph grouped eager chain returns source with tags"
+    (grouped_user_post_tags
+    = [ { Ent_ocaml.loaded_source = "bob"; loaded_targets = [ "mongo"; "ocaml" ] } ]);
   let editor_edge =
     Ent_ocaml.Edge_query.make ~as_:"editor" ~edge:"user" ~target:user_entity
       query_user_1

@@ -711,6 +711,14 @@ let users_with_posts ctx =
   |> Users.load_edge ctx
        ~decode_source:user_of_bson_doc_result
        ~decode_target:post_of_bson_doc_result
+
+let users_with_grouped_posts ctx =
+  let open User in
+  query ()
+  |> with_posts ~as_:"posts" ~target:Post.post_entity
+  |> Users.load_edge_grouped ctx
+       ~decode_source:user_of_bson_doc_result
+       ~decode_target:post_of_bson_doc_result
 ```
 
 Graph traversals can be composed as explicit edge chains when a workflow needs
@@ -737,6 +745,16 @@ let users_with_post_tags ctx user_id =
   |> Ent_ocaml.Edge_chain.start
   |> Post.then_tags ~as_:"labels" ~target:Tag.tag_entity
   |> Users.load_edge_chain ctx
+       ~decode_source:user_of_bson_doc_result
+       ~decode_target:tag_of_bson_doc_result
+
+let users_with_grouped_post_tags ctx user_id =
+  let open User in
+  by_id user_id
+  |> query_posts ~target:Post.post_entity
+  |> Ent_ocaml.Edge_chain.start
+  |> Post.then_tags ~as_:"labels" ~target:Tag.tag_entity
+  |> Users.load_edge_chain_grouped ctx
        ~decode_source:user_of_bson_doc_result
        ~decode_target:tag_of_bson_doc_result
 ```

@@ -2566,6 +2566,68 @@ let target_docs_by_source_id source_entity rows =
   in
   loop [] rows
 
+let add_grouped_target key source_doc target_doc groups =
+  let target_docs =
+    match target_doc with None -> [] | Some doc -> [ doc ]
+  in
+  let rec loop acc = function
+    | [] -> List.rev ((key, source_doc, target_docs) :: acc)
+    | (existing_key, existing_source, targets) :: rest when existing_key = key ->
+        let targets =
+          match target_doc with
+          | None -> targets
+          | Some doc -> targets @ [ doc ]
+        in
+        List.rev_append acc ((existing_key, existing_source, targets) :: rest)
+    | item :: rest -> loop (item :: acc) rest
+  in
+  loop [] groups
+
+let group_edge_docs_by_source source_entity rows =
+  let rec loop groups = function
+    | [] -> Ok groups
+    | (source_doc, target_doc) :: rest -> (
+        match document_id source_entity source_doc with
+        | Error _ as error -> error
+        | Ok source_id ->
+            loop (add_grouped_target source_id source_doc target_doc groups) rest)
+  in
+  loop [] rows
+
+let decode_grouped_edge_docs source_entity rows ~decode_source ~decode_target =
+  match group_edge_docs_by_source source_entity rows with
+  | Error _ as error -> error
+  | Ok groups ->
+      let decode_targets docs =
+        let rec loop acc = function
+          | [] -> Ok (List.rev acc)
+          | doc :: rest -> (
+              match decode_document ~decode:decode_target doc with
+              | Error _ as error -> error
+              | Ok target -> loop (target :: acc) rest)
+        in
+        loop [] docs
+      in
+      let rec loop acc = function
+        | [] -> Ok (List.rev acc)
+        | (_source_id, source_doc, target_docs) :: rest -> (
+            match
+              ( decode_document ~decode:decode_source source_doc,
+                decode_targets target_docs )
+            with
+            | Error _ as error, _ | _, (Error _ as error) -> error
+            | Ok source, Ok targets ->
+                loop (Ent_ocaml.Edge_load.targets source targets :: acc) rest)
+      in
+      loop [] groups
+
+let load_edge_grouped_as ctx edge_query ~decode_source ~decode_target =
+  match load_edge_docs ctx edge_query with
+  | Error _ as error -> error
+  | Ok rows ->
+      decode_grouped_edge_docs edge_query.source.entity rows ~decode_source
+        ~decode_target
+
 let expand_edge_chain_rows current_entity rows hop_rows =
   match target_docs_by_source_id current_entity hop_rows with
   | Error _ as error -> error
@@ -2640,6 +2702,13 @@ let load_edge_chain_as ctx chain ~decode_source ~decode_target =
             | Ok source, Ok target -> loop ((source, target) :: acc) rest)
       in
       loop [] rows
+
+let load_edge_chain_grouped_as ctx chain ~decode_source ~decode_target =
+  match load_edge_chain_docs ctx chain with
+  | Error _ as error -> error
+  | Ok rows ->
+      decode_grouped_edge_docs chain.chain_first.source.entity rows ~decode_source
+        ~decode_target
 
 let run_aggregate ctx (query : Ent_ocaml.query) pipeline =
   let session = transaction_session ctx in

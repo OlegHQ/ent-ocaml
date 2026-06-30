@@ -122,12 +122,26 @@ val load_edge_as :
   decode_target:(Bson.t -> ('target, string) result) ->
   (('source * 'target option) list, Ent_ocaml.error) result
 
+val load_edge_grouped_as :
+  ctx ->
+  Ent_ocaml.edge_query ->
+  decode_source:(Bson.t -> ('source, string) result) ->
+  decode_target:(Bson.t -> ('target, string) result) ->
+  (('source, 'target) Ent_ocaml.loaded_edge_targets list, Ent_ocaml.error) result
+
 val load_edge_chain_as :
   ctx ->
   Ent_ocaml.edge_chain ->
   decode_source:(Bson.t -> ('source, string) result) ->
   decode_target:(Bson.t -> ('target, string) result) ->
   (('source * 'target option) list, Ent_ocaml.error) result
+
+val load_edge_chain_grouped_as :
+  ctx ->
+  Ent_ocaml.edge_chain ->
+  decode_source:(Bson.t -> ('source, string) result) ->
+  decode_target:(Bson.t -> ('target, string) result) ->
+  (('source, 'target) Ent_ocaml.loaded_edge_targets list, Ent_ocaml.error) result
 
 val count : ctx -> Ent_ocaml.query -> (int, Ent_ocaml.error) result
 val ensure_indexes : ctx -> Ent_ocaml.entity list -> (unit, Ent_ocaml.error) result

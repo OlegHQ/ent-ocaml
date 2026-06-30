@@ -170,6 +170,11 @@ type ('source, 'target) loaded_edge_group = {
   loaded_group_rows : ('source, 'target) loaded_edge list;
 }
 
+type ('source, 'target) loaded_edge_targets = {
+  loaded_source : 'source;
+  loaded_targets : 'target list;
+}
+
 type ('doc, 'source, 'out) loaded_edge_case =
   | Loaded_edge_case : {
       edge_case_query : edge_query;
@@ -322,6 +327,11 @@ module Edge_load : sig
     edge_query ->
     ('source * 'target option) list ->
     ('source, 'target) loaded_edge_group
+
+  val targets : 'source -> 'target list -> ('source, 'target) loaded_edge_targets
+
+  val group_targets :
+    ('source * 'target option) list -> ('source, 'target) loaded_edge_targets list
 
   val case :
     edge_query ->
@@ -624,12 +634,26 @@ module type STORE_BACKEND = sig
     decode_target:(doc -> ('target, string) result) ->
     (('source * 'target option) list, error) result
 
+  val load_edge_grouped_as :
+    ctx ->
+    edge_query ->
+    decode_source:(doc -> ('source, string) result) ->
+    decode_target:(doc -> ('target, string) result) ->
+    (('source, 'target) loaded_edge_targets list, error) result
+
   val load_edge_chain_as :
     ctx ->
     edge_chain ->
     decode_source:(doc -> ('source, string) result) ->
     decode_target:(doc -> ('target, string) result) ->
     (('source * 'target option) list, error) result
+
+  val load_edge_chain_grouped_as :
+    ctx ->
+    edge_chain ->
+    decode_source:(doc -> ('source, string) result) ->
+    decode_target:(doc -> ('target, string) result) ->
+    (('source, 'target) loaded_edge_targets list, error) result
 
   val insert_values : ctx -> mutation -> (doc, error) result
 

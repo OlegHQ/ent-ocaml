@@ -350,9 +350,14 @@ module Memory_backend = struct
       ( decode_source
           (Ent_ocaml.V_string edge_query.Ent_ocaml.source.entity.name),
         decode_target (Ent_ocaml.V_string edge_query.target.name) )
-    with
-    | Ok source, Ok target -> Ok [ (source, Some target) ]
-    | Error message, _ | _, Error message -> Error (`Decode message)
+  with
+  | Ok source, Ok target -> Ok [ (source, Some target) ]
+  | Error message, _ | _, Error message -> Error (`Decode message)
+
+  let load_edge_grouped_as () edge_query ~decode_source ~decode_target =
+    match load_edge_as () edge_query ~decode_source ~decode_target with
+    | Error _ as error -> error
+    | Ok rows -> Ok (Ent_ocaml.Edge_load.group_targets rows)
 
   let load_edge_chain_as () (edge_chain : Ent_ocaml.edge_chain) ~decode_source
       ~decode_target =
@@ -363,9 +368,14 @@ module Memory_backend = struct
         decode_target
           (Ent_ocaml.V_string
              (Ent_ocaml.Edge_chain.target edge_chain).Ent_ocaml.name) )
-    with
-    | Ok source, Ok target -> Ok [ (source, Some target) ]
-    | Error message, _ | _, Error message -> Error (`Decode message)
+  with
+  | Ok source, Ok target -> Ok [ (source, Some target) ]
+  | Error message, _ | _, Error message -> Error (`Decode message)
+
+  let load_edge_chain_grouped_as () edge_chain ~decode_source ~decode_target =
+    match load_edge_chain_as () edge_chain ~decode_source ~decode_target with
+    | Error _ as error -> error
+    | Ok rows -> Ok (Ent_ocaml.Edge_load.group_targets rows)
 
   let insert_values () (mutation : Ent_ocaml.mutation) =
     Ok (Ent_ocaml.V_doc mutation.set)
@@ -864,6 +874,22 @@ let test_generated_traversal_api () =
   | Ok _ -> Alcotest.fail "unexpected load_edge result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
   (match
+     Store.load_edge_grouped () ~decode_source:decode ~decode_target:decode
+       edge_query
+   with
+  | Ok [ { Ent_ocaml.loaded_source = "Post"; loaded_targets = [ "User" ] } ] ->
+      ()
+  | Ok _ -> Alcotest.fail "unexpected grouped load_edge result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  (match
+     Store.load_edge_chain_grouped () ~decode_source:decode
+       ~decode_target:decode edge_chain
+   with
+  | Ok [ { Ent_ocaml.loaded_source = "Post"; loaded_targets = [ "Post" ] } ] ->
+      ()
+  | Ok _ -> Alcotest.fail "unexpected grouped load_edge_chain result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  (match
      Store.load_edge_named () ~decode_source:decode ~decode_target:decode
        edge_query
    with
@@ -991,6 +1017,22 @@ let test_generated_traversal_api () =
    with
   | Ok [ ("Post", Some "Post") ] -> ()
   | Ok _ -> Alcotest.fail "unexpected client load_edge_chain result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  (match
+     Client.load_edge_grouped client ~decode_source:decode ~decode_target:decode
+       edge_query
+   with
+  | Ok [ { Ent_ocaml.loaded_source = "Post"; loaded_targets = [ "User" ] } ] ->
+      ()
+  | Ok _ -> Alcotest.fail "unexpected client grouped load_edge result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  (match
+     Client.load_edge_chain_grouped client ~decode_source:decode
+       ~decode_target:decode edge_chain
+   with
+  | Ok [ { Ent_ocaml.loaded_source = "Post"; loaded_targets = [ "Post" ] } ] ->
+      ()
+  | Ok _ -> Alcotest.fail "unexpected client grouped load_edge_chain result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
   match
     Client.load_edges_named client ~decode_source:decode ~decode_target:decode
