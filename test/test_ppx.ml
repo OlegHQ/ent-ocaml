@@ -1198,6 +1198,26 @@ let test_generated_entql_api () =
   | Ok _ -> Alcotest.fail "unexpected generated entql result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
+let test_generated_entql_edge_path_api () =
+  let open Ent_ocaml.Result_syntax in
+  let result =
+    let open Post in
+    query () |> where_entql {|user.id == "user_1"|}
+  in
+  match result with
+  | Ok
+      {
+        Ent_ocaml.predicates =
+          [
+            Ent_ocaml.Has_edge_with
+              ("user", [ Ent_ocaml.Eq ("id", Ent_ocaml.V_string "user_1") ]);
+          ];
+        _;
+      } ->
+      ()
+  | Ok _ -> Alcotest.fail "unexpected generated entql edge path result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+
 let test_generated_json_predicate_api () =
   let query =
     let open Event in
@@ -1316,6 +1336,8 @@ let () =
             test_generated_dynamic_filter_api;
           Alcotest.test_case "generated entql api" `Quick
             test_generated_entql_api;
+          Alcotest.test_case "generated entql edge path api" `Quick
+            test_generated_entql_edge_path_api;
           Alcotest.test_case "generated json predicate api" `Quick
             test_generated_json_predicate_api;
           Alcotest.test_case "generated nested value api" `Quick

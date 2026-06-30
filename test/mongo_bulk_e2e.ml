@@ -561,6 +561,16 @@ let run_flow client =
     | _ -> false);
   let* user_posts = Ent_ocaml_mongo.find ctx query_user_1 in
   assert_true "edge predicate returns user posts" (List.length user_posts = 1);
+  let* entql_user_posts =
+    match
+      Ent_ocaml.Query.make post_entity
+      |> Ent_ocaml.Entql.where {|user.id == "user_1"|}
+    with
+    | Ok query -> Ent_ocaml_mongo.find ctx query
+    | Error _ as error -> error
+  in
+  assert_true "entql edge path returns user posts"
+    (List.length entql_user_posts = 1);
   assert_true "named edge alias preserved"
     (query_user_from_posts.Ent_ocaml.edge_alias = Some "author");
   let* traversed_users =

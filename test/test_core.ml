@@ -501,6 +501,17 @@ let test_entql_api () =
   | Ok (Not (Contains ("body", "draft"))) -> ()
   | Ok _ -> Alcotest.fail "unexpected entql not predicate"
   | Error error -> Alcotest.fail (error_to_string error));
+  (match Entql.predicate post_entity {|user.id == "user_1"|} with
+  | Ok (Has_edge_with ("user", [ Eq ("id", V_string "user_1") ])) -> ()
+  | Ok _ -> Alcotest.fail "unexpected entql edge id predicate"
+  | Error error -> Alcotest.fail (error_to_string error));
+  (match Entql.predicate post_entity {|user.id in ["user_1", "user_2"]|} with
+  | Ok
+      (Has_edge_with
+        ("user", [ In ("id", [ V_string "user_1"; V_string "user_2" ]) ])) ->
+      ()
+  | Ok _ -> Alcotest.fail "unexpected entql edge id list predicate"
+  | Error error -> Alcotest.fail (error_to_string error));
   (match Entql.predicate post_entity {|published_at_ms == "soon"|} with
   | Error (`Bad_query "entql: expected int64 value: \"soon\"") -> ()
   | Ok _ -> Alcotest.fail "expected entql type error"

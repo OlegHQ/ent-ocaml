@@ -884,6 +884,36 @@ module Entql = struct
     | Some field -> Ok field
     | None -> bad ("field not found on " ^ entity.name ^ ": " ^ name)
 
+  let edge entity name =
+    match List.find_opt (fun (edge : edge) -> edge.name = name) entity.edges with
+    | Some edge -> Ok edge
+    | None -> bad ("edge not found on " ^ entity.name ^ ": " ^ name)
+
+  let edge_id_type entity edge_name =
+    let open Result_syntax in
+    let* edge = edge entity edge_name in
+    match edge.storage_key with
+    | None ->
+        bad
+          ("edge path currently requires a stored foreign-key edge: "
+         ^ edge_name ^ ".id")
+    | Some storage_key -> (
+        match
+          List.find_opt
+            (fun (field : field) -> field.name = storage_key || field.storage_key = storage_key)
+            entity.fields
+        with
+        | Some field -> Ok field.typ
+        | None ->
+            bad
+              ("edge storage field not found on " ^ entity.name ^ ": "
+             ^ storage_key))
+
+  let split_field_path name =
+    match String.split_on_char '.' name with
+    | [ edge_name; "id" ] when edge_name <> "" -> Some edge_name
+    | _ -> None
+
   let binary entity expression operator op =
     match find_outside operator expression with
     | None -> None
@@ -909,6 +939,62 @@ module Entql = struct
                 (fun value -> Dynamic_filter.make ~field:field.name ~value op)
                 value)
 
+  let predicate_of_filter entity filter =
+    Dynamic_filter.predicate entity filter
+
+  let edge_id_predicate edge_name op value =
+    let field = "id" in
+    match op with
+    | Dynamic_filter.Equal -> Ok (Has_edge_with (edge_name, [ Eq (field, value) ]))
+    | Not_equal -> Ok (Has_edge_with (edge_name, [ Neq (field, value) ]))
+    | Greater_than -> Ok (Has_edge_with (edge_name, [ Gt (field, value) ]))
+    | Greater_or_equal -> Ok (Has_edge_with (edge_name, [ Gte (field, value) ]))
+    | Less_than -> Ok (Has_edge_with (edge_name, [ Lt (field, value) ]))
+    | Less_or_equal -> Ok (Has_edge_with (edge_name, [ Lte (field, value) ]))
+    | In_list -> (
+        match value with
+        | V_list values -> Ok (Has_edge_with (edge_name, [ In (field, values) ]))
+        | _ -> bad ("expected list value for edge path: " ^ edge_name ^ ".id"))
+    | Not_in_list -> (
+        match value with
+        | V_list values ->
+            Ok (Has_edge_with (edge_name, [ Not_in (field, values) ]))
+        | _ -> bad ("expected list value for edge path: " ^ edge_name ^ ".id"))
+    | Contains | Has_prefix | Has_suffix | Is_null | Not_null ->
+        bad ("operator is not valid for edge path: " ^ edge_name ^ ".id")
+
+  let binary_predicate entity expression operator op =
+    match find_outside operator expression with
+    | None -> None
+    | Some index ->
+        let field_name = trim (String.sub expression 0 index) in
+        let literal =
+          trim
+            (String.sub expression
+               (index + String.length operator)
+               (String.length expression - index - String.length operator))
+        in
+        Some
+          (match split_field_path field_name with
+          | Some edge_name ->
+              let open Result_syntax in
+              let* typ = edge_id_type entity edge_name in
+              let* value =
+                match op with
+                | Dynamic_filter.In_list | Dynamic_filter.Not_in_list ->
+                    list_value_of_literal typ literal
+                | _ -> value_of_literal typ literal
+              in
+              edge_id_predicate edge_name op value
+          | None ->
+              let open Result_syntax in
+              let* filter =
+                match binary entity expression operator op with
+                | Some result -> result
+                | None -> bad ("could not parse expression: " ^ expression)
+              in
+              predicate_of_filter entity filter)
+
   let unary entity expression suffix op =
     if ends_with expression suffix then
       let field_name =
@@ -919,6 +1005,26 @@ module Entql = struct
         (match field entity field_name with
         | Error _ as error -> error
         | Ok field -> Ok (Dynamic_filter.make ~field:field.name op))
+    else None
+
+  let unary_predicate entity expression suffix op =
+    if ends_with expression suffix then
+      let field_name =
+        String.sub expression 0 (String.length expression - String.length suffix)
+        |> trim
+      in
+      Some
+        (match split_field_path field_name with
+        | Some edge_name ->
+            bad ("operator is not valid for edge path: " ^ edge_name ^ ".id")
+        | None ->
+            let open Result_syntax in
+            let* filter =
+              match unary entity expression suffix op with
+              | Some result -> result
+              | None -> bad ("could not parse expression: " ^ expression)
+            in
+            predicate_of_filter entity filter)
     else None
 
   let parse_filter entity expression =
@@ -938,6 +1044,29 @@ module Entql = struct
         binary entity expression "<" Dynamic_filter.Less_than;
         unary entity expression " is_null" Dynamic_filter.Is_null;
         unary entity expression " not_null" Dynamic_filter.Not_null;
+      ]
+    in
+    match List.find_map Fun.id candidates with
+    | Some result -> result
+    | None -> bad ("could not parse expression: " ^ expression)
+
+  let parse_predicate_filter entity expression =
+    let expression = trim expression in
+    let candidates =
+      [
+        binary_predicate entity expression " not in " Dynamic_filter.Not_in_list;
+        binary_predicate entity expression " in " Dynamic_filter.In_list;
+        binary_predicate entity expression " contains " Dynamic_filter.Contains;
+        binary_predicate entity expression " has_prefix " Dynamic_filter.Has_prefix;
+        binary_predicate entity expression " has_suffix " Dynamic_filter.Has_suffix;
+        binary_predicate entity expression ">=" Dynamic_filter.Greater_or_equal;
+        binary_predicate entity expression "<=" Dynamic_filter.Less_or_equal;
+        binary_predicate entity expression "==" Dynamic_filter.Equal;
+        binary_predicate entity expression "!=" Dynamic_filter.Not_equal;
+        binary_predicate entity expression ">" Dynamic_filter.Greater_than;
+        binary_predicate entity expression "<" Dynamic_filter.Less_than;
+        unary_predicate entity expression " is_null" Dynamic_filter.Is_null;
+        unary_predicate entity expression " not_null" Dynamic_filter.Not_null;
       ]
     in
     match List.find_map Fun.id candidates with
@@ -997,9 +1126,7 @@ module Entql = struct
                   (String.sub expression 4 (String.length expression - 4))
               in
               Not predicate
-            else
-              let* filter = parse_filter entity expression in
-              Dynamic_filter.predicate entity filter)
+            else parse_predicate_filter entity expression)
 
   let where expression (query : query) =
     let open Result_syntax in
