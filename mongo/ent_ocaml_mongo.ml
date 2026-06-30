@@ -1593,6 +1593,17 @@ let selector (mutation : Ent_ocaml.mutation) =
   | [ predicate ] -> predicate_to_bson ~entity:mutation.entity predicate
   | predicates -> predicate_to_bson ~entity:mutation.entity (And predicates)
 
+let mutation_query (mutation : Ent_ocaml.mutation) =
+  Ent_ocaml.
+    {
+      entity = mutation.entity;
+      predicates = mutation.predicates;
+      select = [ "id" ];
+      orders = [];
+      limit = None;
+      offset = None;
+    }
+
 let edge_order_lookup_stages (query : Ent_ocaml.query) index
     (order : Ent_ocaml.order) =
   let ({ Ent_ocaml.target = order_target; _ } : Ent_ocaml.order) = order in
@@ -2161,6 +2172,22 @@ let collect_document_values storage_key docs =
 let foreign_key_value = document_value
 let collect_foreign_keys = collect_document_values
 
+let selector_with_query_planning ctx (mutation : Ent_ocaml.mutation) =
+  let query = mutation_query mutation in
+  if has_edge_target_predicate query || has_join_edge_predicate query then
+    match field_storage_key mutation.entity "id" with
+    | Error _ as error -> error
+    | Ok id_key -> (
+        match find ctx query with
+        | Error _ as error -> error
+        | Ok docs -> (
+            match collect_document_values id_key docs with
+            | Error _ as error -> error
+            | Ok ids ->
+                predicate_to_bson ~entity:mutation.entity
+                  (Ent_ocaml.In ("id", ids))))
+  else selector mutation
+
 let find_collection_docs ctx ~collection filter =
   let options = Mongo_crud.default_find collection filter in
   let session = transaction_session ctx in
@@ -2672,7 +2699,7 @@ let update ctx (mutation : Ent_ocaml.mutation) =
       match Ent_ocaml.validate_mutation mutation with
       | Error _ as error -> error
       | Ok () -> (
-          match (selector mutation, update_to_bson mutation) with
+          match (selector_with_query_planning ctx mutation, update_to_bson mutation) with
           | Error _ as error, _ | _, (Error _ as error) -> error
           | Ok selector, Ok update_doc -> (
           let session = transaction_session ctx in
@@ -2704,7 +2731,7 @@ let update_one ctx (mutation : Ent_ocaml.mutation) =
       match Ent_ocaml.validate_mutation mutation with
       | Error _ as error -> error
       | Ok () -> (
-          match (selector mutation, update_to_bson mutation) with
+          match (selector_with_query_planning ctx mutation, update_to_bson mutation) with
           | Error _ as error, _ | _, (Error _ as error) -> error
           | Ok selector, Ok update_doc -> (
           let session = transaction_session ctx in
@@ -2746,7 +2773,7 @@ let delete ctx (mutation : Ent_ocaml.mutation) =
       match Ent_ocaml.validate_mutation mutation with
       | Error _ as error -> error
       | Ok () -> (
-          match selector mutation with
+          match selector_with_query_planning ctx mutation with
           | Error _ as error -> error
           | Ok selector -> (
           let session = transaction_session ctx in

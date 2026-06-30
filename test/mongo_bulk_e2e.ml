@@ -1377,6 +1377,57 @@ let run_flow client =
          Bson.get_string (Bson.get_element "_id" doc) = "post_3"
          && Bson.get_string (Bson.get_element "body" doc) = "third updated")
        user_posts_after_upsert);
+  let* engineering_update_query =
+    Ent_ocaml.Query.make post_entity
+    |> Ent_ocaml.Entql.where ~targets:[ user_entity; org_entity ]
+         {|user.org.slug == "engineering"|}
+  in
+  let* updated_engineering =
+    Ent_ocaml_mongo.update ctx
+      Ent_ocaml.
+        {
+          entity = post_entity;
+          op = Update;
+          predicates = engineering_update_query.predicates;
+          set = [ ("body", V_string "engineering updated") ];
+          clear = [];
+          add = [];
+          on_insert = [];
+        }
+  in
+  assert_true "nested target edge update modifies engineering posts"
+    (updated_engineering = 2);
+  let* updated_engineering_posts = Ent_ocaml_mongo.find ctx query_user_1 in
+  assert_true "nested target edge update persists changed body"
+    (List.for_all
+       (fun doc ->
+         Bson.get_string (Bson.get_element "body" doc) = "engineering updated")
+       updated_engineering_posts);
+  let* mongo_tag_delete_query =
+    Ent_ocaml.Query.make post_entity
+    |> Ent_ocaml.Entql.where ~targets:[ tag_entity ] {|tags.name == "mongo"|}
+  in
+  let* deleted_mongo_tagged =
+    Ent_ocaml_mongo.delete ctx
+      Ent_ocaml.
+        {
+          entity = post_entity;
+          op = Delete;
+          predicates = mongo_tag_delete_query.predicates;
+          set = [];
+          clear = [];
+          add = [];
+          on_insert = [];
+        }
+  in
+  assert_true "join target edge delete removes tagged posts"
+    (deleted_mongo_tagged = 1);
+  let* remaining_after_edge_delete = Ent_ocaml_mongo.find ctx query_all in
+  assert_true "join target edge delete persists removal"
+    (not
+       (List.exists
+          (fun doc -> Bson.get_string (Bson.get_element "_id" doc) = "post_2")
+          remaining_after_edge_delete));
   let duplicate =
     Ent_ocaml_mongo.insert_many_values ctx
       [ create "dupe" "user_1" "duplicate" 1L; create "dupe" "user_1" "duplicate" 1L ]

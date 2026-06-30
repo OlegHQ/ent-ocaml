@@ -49,6 +49,12 @@ let mutation =
   |> set (body body)
 ```
 
+Mongo update and delete execution accepts the same composed query predicates as
+reads, including edge target filters, join-backed edge filters, nested EntQL
+relationship paths, and JSON predicates. Keep upserts on stable identity
+predicates such as `by_id id |> upsert_where`, because an upsert selector must
+also describe the row to insert when no document matches.
+
 Entities with an `id` field also get primary-key helpers for the unscoped path:
 
 ```ocaml
