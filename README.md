@@ -757,6 +757,31 @@ let named_people ctx =
     ]
 ```
 
+When named loads target different entity types, build typed edge cases and map
+each group into a caller-defined variant:
+
+```ocaml
+type post_load =
+  | Authors of (post, user) Ent_ocaml.loaded_edge_group
+  | Labels of (post, tag) Ent_ocaml.loaded_edge_group
+
+let named_post_loads ctx =
+  let open Post in
+  let drafts = query () |> where (status_eq "draft") in
+  Posts.load_edges_map ctx
+    ~decode_source:post_of_bson_doc_result
+    [
+      Posts.edge_case
+        (drafts |> with_user ~as_:"author" ~target:User.user_entity)
+        ~decode_target:user_of_bson_doc_result
+        ~map:(fun group -> Authors group);
+      Posts.edge_case
+        (drafts |> with_tags ~as_:"labels" ~target:Tag.tag_entity)
+        ~decode_target:tag_of_bson_doc_result
+        ~map:(fun group -> Labels group);
+    ]
+```
+
 Backends execute those
 typed values with `result`-returning functions such as
 `Ent_ocaml_mongo.insert_many_values`. Core mutation validation catches missing

@@ -158,6 +158,14 @@ type ('source, 'target) loaded_edge_group = {
   loaded_group_rows : ('source, 'target) loaded_edge list;
 }
 
+type ('doc, 'source, 'out) loaded_edge_case =
+  | Loaded_edge_case : {
+      edge_case_query : edge_query;
+      edge_case_decode_target : 'doc -> ('target, string) result;
+      edge_case_map : ('source, 'target) loaded_edge_group -> 'out;
+    }
+      -> ('doc, 'source, 'out) loaded_edge_case
+
 type aggregate_op = Count | Min of string | Max of string | Sum of string | Avg of string
 
 type aggregate = {
@@ -287,6 +295,12 @@ module Edge_load : sig
     edge_query ->
     ('source * 'target option) list ->
     ('source, 'target) loaded_edge_group
+
+  val case :
+    edge_query ->
+    decode_target:('doc -> ('target, string) result) ->
+    map:(('source, 'target) loaded_edge_group -> 'out) ->
+    ('doc, 'source, 'out) loaded_edge_case
 end
 
 module Aggregate : sig

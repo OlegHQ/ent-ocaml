@@ -827,6 +827,44 @@ let test_generated_traversal_api () =
       ()
   | Ok _ -> Alcotest.fail "unexpected named load_edges result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  let tags_edge_query =
+    let open Post in
+    query () |> with_tags ~as_:"labels" ~target:tag_entity
+  in
+  let decode_user = function
+    | Ent_ocaml.V_string value -> Ok (`User value)
+    | _ -> Error "expected user string"
+  in
+  let decode_tag = function
+    | Ent_ocaml.V_string value -> Ok (String.length value)
+    | _ -> Error "expected tag string"
+  in
+  let heterogeneous_cases =
+    [
+      Store.edge_case edge_query ~decode_target:decode_user ~map:(fun group ->
+          let users =
+            List.filter_map
+              (fun row -> row.Ent_ocaml.loaded_target)
+              group.loaded_group_rows
+          in
+          `Author (group.loaded_group_name, users));
+      Store.edge_case tags_edge_query ~decode_target:decode_tag ~map:(fun group ->
+          let total =
+            List.fold_left
+              (fun acc row ->
+                match row.Ent_ocaml.loaded_target with
+                | Some value -> acc + value
+                | None -> acc)
+              0 group.loaded_group_rows
+          in
+          `Tag_name_total (group.loaded_group_name, total));
+    ]
+  in
+  (match Store.load_edges_map () ~decode_source:decode heterogeneous_cases with
+  | Ok [ `Author ("author", [ `User "User" ]); `Tag_name_total ("labels", 3) ] ->
+      ()
+  | Ok _ -> Alcotest.fail "unexpected heterogeneous edge map result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
   let module Client = Post.Client (Memory_backend) in
   let client = Client.make () in
   (match
@@ -854,7 +892,28 @@ let test_generated_traversal_api () =
       Alcotest.(check string)
         "client first edge group" "author" author_group.loaded_group_name;
       Alcotest.(check string)
-        "client second edge group" "editor" editor_group.loaded_group_name
+        "client second edge group" "editor" editor_group.loaded_group_name;
+      let client_cases =
+        [
+          Ent_ocaml.Edge_load.case edge_query ~decode_target:decode_user
+            ~map:(fun group -> `Author group.loaded_group_name);
+          Ent_ocaml.Edge_load.case tags_edge_query ~decode_target:decode_tag
+            ~map:(fun group ->
+              let total =
+                List.fold_left
+                  (fun acc row ->
+                    match row.Ent_ocaml.loaded_target with
+                    | Some value -> acc + value
+                    | None -> acc)
+                  0 group.loaded_group_rows
+              in
+              `Tag_name_total (group.loaded_group_name, total));
+        ]
+      in
+      (match Client.load_edges_map client ~decode_source:decode client_cases with
+      | Ok [ `Author "author"; `Tag_name_total ("labels", 3) ] -> ()
+      | Ok _ -> Alcotest.fail "unexpected client heterogeneous edge map result"
+      | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error))
   | Ok _ -> Alcotest.fail "unexpected client named load_edges result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 

@@ -2727,6 +2727,178 @@ let gen_query_module td =
                        (app ~loc (evar ~loc "loop")
                           [ list ~loc []; evar ~loc "edge_queries" ]))))))
     in
+    let edge_case_value =
+      value_fun "edge_case"
+        (A.pexp_fun ~loc Nolabel None edge_query_pat
+           (A.pexp_fun ~loc (Labelled "decode_target") None
+              (pvar ~loc "decode_target")
+              (A.pexp_fun ~loc (Labelled "map") None (pvar ~loc "map")
+                 (A.pexp_apply ~loc
+                    (ident ~loc [ "Ent_ocaml"; "Edge_load"; "case" ])
+                    [
+                      (Nolabel, evar ~loc "edge_query");
+                      (Labelled "decode_target", evar ~loc "decode_target");
+                      (Labelled "map", evar ~loc "map");
+                    ]))))
+    in
+    let edge_case_field field =
+      A.pexp_field ~loc (evar ~loc "edge_case")
+        (lid ~loc [ field ])
+    in
+    let load_edges_map_value =
+      value_fun "load_edges_map"
+        (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+           (A.pexp_fun ~loc (Labelled "decode_source") None
+              (pvar ~loc "decode_source")
+              (A.pexp_fun ~loc Nolabel None (pvar ~loc "edge_cases")
+                 (A.pexp_let ~loc Recursive
+                    [
+                      A.value_binding ~loc ~pat:(pvar ~loc "loop")
+                        ~expr:
+                          (A.pexp_fun ~loc Nolabel None (pvar ~loc "acc")
+                             (A.pexp_fun ~loc Nolabel None
+                                (pvar ~loc "edge_cases")
+                                (A.pexp_match ~loc (evar ~loc "edge_cases")
+                                   [
+                                     A.case
+                                       ~lhs:
+                                         (A.ppat_construct ~loc
+                                            (lid ~loc [ "[]" ])
+                                            None)
+                                       ~guard:None
+                                       ~rhs:
+                                         (constr_arg ~loc [ "Ok" ]
+                                            (app ~loc
+                                               (ident ~loc [ "List"; "rev" ])
+                                               [ evar ~loc "acc" ]));
+                                     A.case
+                                       ~lhs:
+                                         (A.ppat_construct ~loc
+                                            (lid ~loc [ "::" ])
+                                            (Some
+                                               (A.ppat_tuple ~loc
+                                                  [
+                                                    pvar ~loc "packed_case";
+                                                    pvar ~loc "rest";
+                                                  ])))
+                                       ~guard:None
+                                       ~rhs:
+                                         (A.pexp_match ~loc
+                                            (evar ~loc "packed_case")
+                                            [
+                                              A.case
+                                                ~lhs:
+                                                  (A.ppat_construct ~loc
+                                                     (lid ~loc
+                                                        [
+                                                          "Ent_ocaml";
+                                                          "Loaded_edge_case";
+                                                        ])
+                                                     (Some
+                                                        (pvar ~loc "edge_case")))
+                                                ~guard:None
+                                                ~rhs:
+                                                  (A.pexp_match ~loc
+                                                     (A.pexp_apply ~loc
+                                                        (evar ~loc
+                                                           "load_edge_named")
+                                                        [
+                                                          ( Nolabel,
+                                                            evar ~loc "ctx" );
+                                                          ( Labelled
+                                                              "decode_source",
+                                                            evar ~loc
+                                                              "decode_source"
+                                                          );
+                                                          ( Labelled
+                                                              "decode_target",
+                                                            edge_case_field
+                                                              "edge_case_decode_target"
+                                                          );
+                                                          ( Nolabel,
+                                                            edge_case_field
+                                                              "edge_case_query"
+                                                          );
+                                                        ])
+                                                     [
+                                                       error_case;
+                                                       A.case
+                                                         ~lhs:
+                                                           (A.ppat_construct
+                                                              ~loc
+                                                              (lid ~loc [ "Ok" ])
+                                                              (Some
+                                                                 (pvar ~loc
+                                                                    "rows")))
+                                                         ~guard:None
+                                                         ~rhs:
+                                                           (A.pexp_let ~loc
+                                                              Nonrecursive
+                                                              [
+                                                                A.value_binding
+                                                                  ~loc
+                                                                  ~pat:
+                                                                    (pvar ~loc
+                                                                       "group")
+                                                                  ~expr:
+                                                                    (A.pexp_apply
+                                                                       ~loc
+                                                                       (ident
+                                                                          ~loc
+                                                                          [
+                                                                            "Ent_ocaml";
+                                                                            "Edge_load";
+                                                                            "group";
+                                                                          ])
+                                                                       [
+                                                                         ( Nolabel,
+                                                                           edge_case_field
+                                                                             "edge_case_query"
+                                                                         );
+                                                                         ( Nolabel,
+                                                                           evar
+                                                                             ~loc
+                                                                             "rows"
+                                                                         );
+                                                                       ]);
+                                                              ]
+                                                              (app ~loc
+                                                                 (evar ~loc
+                                                                    "loop")
+                                                                 [
+                                                                   A.pexp_construct
+                                                                     ~loc
+                                                                     (lid ~loc
+                                                                        [ "::" ])
+                                                                     (Some
+                                                                        (A.pexp_tuple
+                                                                           ~loc
+                                                                           [
+                                                                             A.pexp_apply
+                                                                               ~loc
+                                                                               (edge_case_field
+                                                                                  "edge_case_map")
+                                                                               [
+                                                                                 ( Nolabel,
+                                                                                   evar
+                                                                                     ~loc
+                                                                                     "group"
+                                                                                 );
+                                                                               ];
+                                                                             evar
+                                                                               ~loc
+                                                                               "acc";
+                                                                           ]));
+                                                                   evar ~loc
+                                                                     "rest";
+                                                                 ]));
+                                                     ]);
+                                            ]);
+                                   ])));
+                    ]
+                    (app ~loc (evar ~loc "loop")
+                       [ list ~loc []; evar ~loc "edge_cases" ])))))
+    in
     let ok_case body =
       A.case
         ~lhs:
@@ -3015,7 +3187,12 @@ let gen_query_module td =
                 (Named ({ loc; txt = Some "Policy" }, policy_type))
                 (A.pmod_structure ~loc
                    (structure
-                   @ [ load_edge_named_value; load_edges_named_value ]))))
+                   @ [
+                       load_edge_named_value;
+                       load_edges_named_value;
+                       edge_case_value;
+                       load_edges_map_value;
+                     ]))))
     in
     let with_hooks_module =
       let hook_run backend_name =
@@ -3180,7 +3357,12 @@ let gen_query_module td =
                 (Named ({ loc; txt = Some "Hooks" }, hooks_type))
                 (A.pmod_structure ~loc
                    (structure
-                   @ [ load_edge_named_value; load_edges_named_value ]))))
+                   @ [
+                       load_edge_named_value;
+                       load_edges_named_value;
+                       edge_case_value;
+                       load_edges_map_value;
+                     ]))))
     in
     let with_interceptors_module =
       let run_query query_expr body =
@@ -3399,7 +3581,12 @@ let gen_query_module td =
                 (Named ({ loc; txt = Some "Interceptors" }, interceptors_type))
                 (A.pmod_structure ~loc
                    (structure
-                   @ [ load_edge_named_value; load_edges_named_value ]))))
+                   @ [
+                       load_edge_named_value;
+                       load_edges_named_value;
+                       edge_case_value;
+                       load_edges_map_value;
+                     ]))))
     in
     let schema_module name functor_name bindings =
       A.pstr_module ~loc
@@ -3631,7 +3818,12 @@ let gen_query_module td =
                    ({ loc; txt = Some "Edge_interceptors" }, edge_interceptors_type))
                 (A.pmod_structure ~loc
                    (base_structure @ edge_structure
-                   @ [ load_edge_named_value; load_edges_named_value ]))))
+                   @ [
+                       load_edge_named_value;
+                       load_edges_named_value;
+                       edge_case_value;
+                       load_edges_map_value;
+                     ]))))
     in
     let schema_edge_interceptors_module =
       schema_module "Schema_edge_interceptors" "With_edge_interceptors"
@@ -3720,7 +3912,13 @@ let gen_query_module td =
            (A.pmod_functor ~loc
               (Named ({ loc; txt = Some "Backend" }, backend_type))
               (A.pmod_structure ~loc
-                 (structure @ [ load_edge_named_value; load_edges_named_value ]))))
+                 (structure
+                 @ [
+                     load_edge_named_value;
+                     load_edges_named_value;
+                     edge_case_value;
+                     load_edges_map_value;
+                   ]))))
   in
   let client_module =
     let backend_type =
@@ -3797,6 +3995,18 @@ let gen_query_module td =
                       (Nolabel, evar ~loc "edge_queries");
                     ]))))
     in
+    let client_load_edges_map_call_from store =
+      A.pexp_fun ~loc Nolabel None (pvar ~loc "client")
+        (A.pexp_fun ~loc (Labelled "decode_source") None
+           (pvar ~loc "decode_source")
+           (A.pexp_fun ~loc Nolabel None (pvar ~loc "edge_cases")
+              (store_apply_from store "load_edges_map"
+                 [
+                   (Nolabel, evar ~loc "client");
+                   (Labelled "decode_source", evar ~loc "decode_source");
+                   (Nolabel, evar ~loc "edge_cases");
+                 ])))
+    in
     let client_insert_many_call_from store =
       A.pexp_fun ~loc (Optional "ordered") None (pvar ~loc "ordered")
         (A.pexp_fun ~loc Nolabel None (pvar ~loc "client")
@@ -3818,6 +4028,7 @@ let gen_query_module td =
         value_fun "load_edge" (client_load_edge_call_from store);
         value_fun "load_edge_named" (client_load_edge_named_call_from store);
         value_fun "load_edges_named" (client_load_edges_named_call_from store);
+        value_fun "load_edges_map" (client_load_edges_map_call_from store);
         value_fun "count" (client_call_from store "count");
         value_fun "aggregate" (client_call_from store "aggregate");
         value_fun "aggregate_scan" (client_call_from store "aggregate_scan");
@@ -4217,6 +4428,11 @@ let gen_sig_for_type td =
     A.ptyp_constr ~loc
       (lid ~loc [ "Ent_ocaml"; "loaded_edge_group" ])
       [ source; target ]
+  in
+  let loaded_edge_case_typ doc source out =
+    A.ptyp_constr ~loc
+      (lid ~loc [ "Ent_ocaml"; "loaded_edge_case" ])
+      [ doc; source; out ]
   in
   let entity_typ =
     A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "entity" ]) []
@@ -4723,6 +4939,26 @@ let gen_sig_for_type td =
                             (loaded_edge_group_typ (A.ptyp_var ~loc "source")
                                (A.ptyp_var ~loc "target")))
                          error_typ)))));
+        value_sig "edge_case"
+          (arrow Nolabel edge_query_typ
+             (arrow (Labelled "decode_target") decode_target_typ
+                (arrow (Labelled "map")
+                   (arrow Nolabel
+                      (loaded_edge_group_typ (A.ptyp_var ~loc "source")
+                         (A.ptyp_var ~loc "target"))
+                      (A.ptyp_var ~loc "out"))
+                   (loaded_edge_case_typ backend_doc
+                      (A.ptyp_var ~loc "source")
+                      (A.ptyp_var ~loc "out")))));
+        value_sig "load_edges_map"
+          (arrow Nolabel backend_ctx
+             (arrow (Labelled "decode_source") decode_source_typ
+                (arrow Nolabel
+                   (list_typ
+                      (loaded_edge_case_typ backend_doc
+                         (A.ptyp_var ~loc "source")
+                         (A.ptyp_var ~loc "out")))
+                   (result_typ (list_typ (A.ptyp_var ~loc "out")) error_typ))));
         value_sig "count" (arrow Nolabel backend_ctx (arrow Nolabel query_typ int_result));
         value_sig "aggregate"
           (arrow Nolabel backend_ctx
@@ -5037,6 +5273,15 @@ let gen_sig_for_type td =
                             (loaded_edge_group_typ (A.ptyp_var ~loc "source")
                                (A.ptyp_var ~loc "target")))
                          error_typ)))));
+        value_sig "load_edges_map"
+          (arrow Nolabel receiver_t
+             (arrow (Labelled "decode_source") decode_source_typ
+                (arrow Nolabel
+                   (list_typ
+                      (loaded_edge_case_typ backend_doc
+                         (A.ptyp_var ~loc "source")
+                         (A.ptyp_var ~loc "out")))
+                   (result_typ (list_typ (A.ptyp_var ~loc "out")) error_typ))));
         value_sig "count" (arrow Nolabel receiver_t (arrow Nolabel query_typ int_result));
         value_sig "aggregate"
           (arrow Nolabel receiver_t
