@@ -205,6 +205,20 @@ let save ctx mutation =
   Hooked_posts.insert ctx mutation
 ```
 
+When code carries a generated client value, register mutation hooks on the
+client module instead of threading hook lists through each call:
+
+```ocaml
+module Audited_posts =
+  Post_client.With_hooks (struct
+    let mutation_hooks = [ audit_post_mutations ]
+  end)
+
+let save ctx mutation =
+  let client = Audited_posts.make ctx in
+  Audited_posts.insert client mutation
+```
+
 Query interceptors wrap generated read paths:
 
 ```ocaml

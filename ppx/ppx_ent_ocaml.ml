@@ -3240,40 +3240,40 @@ let gen_query_module td =
     let backend_type =
       A.pmty_ident ~loc (lid ~loc [ "Ent_ocaml"; "STORE_BACKEND" ])
     in
-    let store_apply name args =
+    let store_apply_from store name args =
       A.pexp_apply ~loc
-        (A.pexp_ident ~loc (lid ~loc [ "Entity_store"; name ]))
+        (A.pexp_ident ~loc (lid ~loc [ store; name ]))
         args
     in
     let value_fun name body =
       A.pstr_value ~loc Nonrecursive
         [ A.value_binding ~loc ~pat:(pvar ~loc name) ~expr:body ]
     in
-    let client_call name =
+    let client_call_from store name =
       A.pexp_fun ~loc Nolabel None (pvar ~loc "client")
         (A.pexp_fun ~loc Nolabel None (pvar ~loc "value")
-           (store_apply name
+           (store_apply_from store name
               [ (Nolabel, evar ~loc "client"); (Nolabel, evar ~loc "value") ]))
     in
-    let client_decode_call name =
+    let client_decode_call_from store name =
       A.pexp_fun ~loc Nolabel None (pvar ~loc "client")
         (A.pexp_fun ~loc (Labelled "decode") None (pvar ~loc "decode")
            (A.pexp_fun ~loc Nolabel None (pvar ~loc "value")
-              (store_apply name
+              (store_apply_from store name
                  [
                    (Nolabel, evar ~loc "client");
                    (Labelled "decode", evar ~loc "decode");
                    (Nolabel, evar ~loc "value");
                  ])))
     in
-    let client_load_edge_call =
+    let client_load_edge_call_from store =
       A.pexp_fun ~loc Nolabel None (pvar ~loc "client")
         (A.pexp_fun ~loc (Labelled "decode_source") None
            (pvar ~loc "decode_source")
            (A.pexp_fun ~loc (Labelled "decode_target") None
               (pvar ~loc "decode_target")
               (A.pexp_fun ~loc Nolabel None (pvar ~loc "edge_query")
-                 (store_apply "load_edge"
+                 (store_apply_from store "load_edge"
                     [
                       (Nolabel, evar ~loc "client");
                       (Labelled "decode_source", evar ~loc "decode_source");
@@ -3281,38 +3281,38 @@ let gen_query_module td =
                       (Nolabel, evar ~loc "edge_query");
                     ]))))
     in
-    let client_insert_many_call =
+    let client_insert_many_call_from store =
       A.pexp_fun ~loc (Optional "ordered") None (pvar ~loc "ordered")
         (A.pexp_fun ~loc Nolabel None (pvar ~loc "client")
            (A.pexp_fun ~loc Nolabel None (pvar ~loc "mutations")
-              (store_apply "insert_many"
+              (store_apply_from store "insert_many"
                  [
                    (Optional "ordered", evar ~loc "ordered");
                    (Nolabel, evar ~loc "client");
                    (Nolabel, evar ~loc "mutations");
                  ])))
     in
-    let client_values =
+    let client_values store =
       [
-        value_fun "all" (client_decode_call "all");
-        value_fun "one" (client_decode_call "one");
-        value_fun "values" (client_call "values");
-        value_fun "value" (client_call "value");
-        value_fun "traverse" (client_decode_call "traverse");
-        value_fun "load_edge" client_load_edge_call;
-        value_fun "count" (client_call "count");
-        value_fun "aggregate" (client_call "aggregate");
-        value_fun "aggregate_scan" (client_call "aggregate_scan");
-        value_fun "group" (client_call "group");
-        value_fun "insert" (client_call "insert");
-        value_fun "insert_many" client_insert_many_call;
-        value_fun "update_one" (client_call "update_one");
-        value_fun "update" (client_call "update");
-        value_fun "upsert_one" (client_call "upsert_one");
-        value_fun "delete" (client_call "delete");
+        value_fun "all" (client_decode_call_from store "all");
+        value_fun "one" (client_decode_call_from store "one");
+        value_fun "values" (client_call_from store "values");
+        value_fun "value" (client_call_from store "value");
+        value_fun "traverse" (client_decode_call_from store "traverse");
+        value_fun "load_edge" (client_load_edge_call_from store);
+        value_fun "count" (client_call_from store "count");
+        value_fun "aggregate" (client_call_from store "aggregate");
+        value_fun "aggregate_scan" (client_call_from store "aggregate_scan");
+        value_fun "group" (client_call_from store "group");
+        value_fun "insert" (client_call_from store "insert");
+        value_fun "insert_many" (client_insert_many_call_from store);
+        value_fun "update_one" (client_call_from store "update_one");
+        value_fun "update" (client_call_from store "update");
+        value_fun "upsert_one" (client_call_from store "upsert_one");
+        value_fun "delete" (client_call_from store "delete");
       ]
     in
-    let tx_module =
+    let tx_module_for store =
       A.pstr_module ~loc
         (A.module_binding ~loc ~name:{ loc; txt = Some "Tx" }
            ~expr:
@@ -3333,7 +3333,79 @@ let gen_query_module td =
                      (A.pexp_fun ~loc Nolabel None (pvar ~loc "client")
                         (evar ~loc "client"));
                  ]
-                @ client_values)))
+                @ client_values store)))
+    in
+    let with_transaction_value =
+      value_fun "with_transaction"
+        (A.pexp_fun ~loc (Optional "hooks") (Some (list ~loc []))
+           (pvar ~loc "hooks")
+           (A.pexp_fun ~loc Nolabel None (pvar ~loc "client")
+              (A.pexp_fun ~loc Nolabel None (pvar ~loc "f")
+                 (A.pexp_apply ~loc
+                    (ident ~loc [ "Ent_ocaml"; "Transaction"; "run" ])
+                    [
+                      (Nolabel, evar ~loc "hooks");
+                      (Nolabel, ident ~loc [ "Backend"; "transaction" ]);
+                      (Nolabel, evar ~loc "client");
+                      ( Nolabel,
+                        A.pexp_fun ~loc Nolabel None (pvar ~loc "tx_ctx")
+                          (A.pexp_apply ~loc (evar ~loc "f")
+                             [ (Nolabel, evar ~loc "tx_ctx") ]) );
+                    ]))))
+    in
+    let hooks_type =
+      let backend_ctx =
+        A.ptyp_constr ~loc (lid ~loc [ "Backend"; "ctx" ]) []
+      in
+      let mutation_hook_typ =
+        A.ptyp_constr ~loc
+          (lid ~loc [ "Ent_ocaml"; "mutation_hook" ])
+          [ backend_ctx ]
+      in
+      let value_sig name type_ =
+        A.psig_value ~loc
+          (A.value_description ~loc ~name:{ loc; txt = name } ~type_ ~prim:[])
+      in
+      let list_typ typ = A.ptyp_constr ~loc (lid ~loc [ "list" ]) [ typ ] in
+      A.pmty_signature ~loc
+        [ value_sig "mutation_hooks" (list_typ mutation_hook_typ) ]
+    in
+    let with_hooks_module =
+      let structure =
+        [
+          A.pstr_module ~loc
+            (A.module_binding ~loc ~name:{ loc; txt = Some "Hooked_store" }
+               ~expr:
+                 (A.pmod_apply ~loc
+                    (A.pmod_ident ~loc
+                       (lid ~loc [ "Entity_store"; "With_hooks" ]))
+                    (A.pmod_ident ~loc (lid ~loc [ "Hooks" ]))));
+          A.pstr_type ~loc Recursive
+            [
+              A.type_declaration ~loc ~name:{ loc; txt = "t" } ~params:[]
+                ~cstrs:[] ~kind:Ptype_abstract ~private_:Public
+                ~manifest:
+                  (Some
+                     (A.ptyp_constr ~loc
+                        (lid ~loc [ "Backend"; "ctx" ])
+                        []));
+            ];
+          value_fun "make"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx") (evar ~loc "ctx"));
+          value_fun "ctx"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "client")
+               (evar ~loc "client"));
+          tx_module_for "Hooked_store";
+          with_transaction_value;
+        ]
+        @ client_values "Hooked_store"
+      in
+      A.pstr_module ~loc
+        (A.module_binding ~loc ~name:{ loc; txt = Some "With_hooks" }
+           ~expr:
+             (A.pmod_functor ~loc
+                (Named ({ loc; txt = Some "Hooks" }, hooks_type))
+                (A.pmod_structure ~loc structure)))
     in
     let structure =
       [
@@ -3356,25 +3428,11 @@ let gen_query_module td =
         value_fun "ctx"
           (A.pexp_fun ~loc Nolabel None (pvar ~loc "client")
              (evar ~loc "client"));
-        tx_module;
-        value_fun "with_transaction"
-          (A.pexp_fun ~loc (Optional "hooks") (Some (list ~loc []))
-             (pvar ~loc "hooks")
-             (A.pexp_fun ~loc Nolabel None (pvar ~loc "client")
-                (A.pexp_fun ~loc Nolabel None (pvar ~loc "f")
-                   (A.pexp_apply ~loc
-                      (ident ~loc [ "Ent_ocaml"; "Transaction"; "run" ])
-                      [
-                        (Nolabel, evar ~loc "hooks");
-                        (Nolabel, ident ~loc [ "Backend"; "transaction" ]);
-                        (Nolabel, evar ~loc "client");
-                        ( Nolabel,
-                          A.pexp_fun ~loc Nolabel None (pvar ~loc "tx_ctx")
-                            (A.pexp_apply ~loc (evar ~loc "f")
-                               [ (Nolabel, evar ~loc "tx_ctx") ]) );
-                      ]))));
+        tx_module_for "Entity_store";
+        with_transaction_value;
+        with_hooks_module;
       ]
-      @ client_values
+      @ client_values "Entity_store"
     in
     A.pstr_module ~loc
       (A.module_binding ~loc ~name:{ loc; txt = Some "Client" }
@@ -4042,6 +4100,15 @@ let gen_sig_for_type td =
         (lid ~loc [ "Ent_ocaml"; "transaction_hook" ])
         [ backend_ctx ]
     in
+    let hooks_type =
+      let mutation_hook_typ =
+        A.ptyp_constr ~loc
+          (lid ~loc [ "Ent_ocaml"; "mutation_hook" ])
+          [ backend_ctx ]
+      in
+      A.pmty_signature ~loc
+        [ value_sig "mutation_hooks" (list_typ mutation_hook_typ) ]
+    in
     let doc_result = result_typ backend_doc error_typ in
     let docs_result = result_typ (list_typ backend_doc) error_typ in
     let int_result = result_typ int_typ error_typ in
@@ -4137,7 +4204,7 @@ let gen_sig_for_type td =
       ]
       @ operation_items client_t
     in
-    let client_items =
+    let client_base_items =
       [
         A.psig_type ~loc Recursive
           [
@@ -4158,6 +4225,17 @@ let gen_sig_for_type td =
                    (result_typ (A.ptyp_var ~loc "a") error_typ))));
       ]
       @ operation_items client_t
+    in
+    let client_items =
+      client_base_items
+      @ [
+          A.psig_module ~loc
+            (A.module_declaration ~loc ~name:{ loc; txt = Some "With_hooks" }
+               ~type_:
+                 (A.pmty_functor ~loc
+                    (Named ({ loc; txt = Some "Hooks" }, hooks_type))
+                    (A.pmty_signature ~loc client_base_items)));
+        ]
     in
     A.psig_module ~loc
       (A.module_declaration ~loc ~name:{ loc; txt = Some "Client" }

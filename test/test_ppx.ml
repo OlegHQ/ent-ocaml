@@ -959,6 +959,49 @@ let test_generated_client_transaction_hooks () =
   | Ok () -> Alcotest.fail "expected client rollback error"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
+let test_generated_client_hook_api () =
+  let module Client = Post.Client (Memory_backend) in
+  let module Hooked =
+    Client.With_hooks (struct
+      let mutation_hooks =
+        [
+          {
+            Ent_ocaml.wrap_mutation =
+              (fun next ctx mutation ->
+                next ctx
+                  (Ent_ocaml.Mutation.set
+                     ("body", Ent_ocaml.V_string "client hook")
+                     mutation));
+          };
+        ]
+    end)
+  in
+  let client = Hooked.make () in
+  let mutation =
+    let open Post in
+    create ()
+    |> set (id "post_1")
+    |> set (user_id "user_1")
+    |> set (body "body")
+    |> set (media_ids [])
+    |> set (created_at_ms 1L)
+    |> set (updated_at_ms 1L)
+    |> set (published_at_ms None)
+  in
+  let check_hooked label = function
+    | Ok (Ent_ocaml.V_doc fields) ->
+        Alcotest.(check (option string))
+          label (Some "client hook")
+          (match List.assoc_opt "body" fields with
+          | Some (Ent_ocaml.V_string value) -> Some value
+          | Some _ | None -> None)
+    | Ok _ -> Alcotest.fail "unexpected hooked client insert result"
+    | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+  in
+  check_hooked "client hook insert" (Hooked.insert client mutation);
+  check_hooked "client hook tx insert"
+    (Hooked.with_transaction client (fun tx -> Hooked.Tx.insert tx mutation))
+
 let test_generated_policy_store_api () =
   let module Store = Post.Store (Memory_backend) in
   let module Deny_reads = struct
@@ -1261,6 +1304,8 @@ let () =
             test_generated_client_api;
           Alcotest.test_case "generated client transaction hooks" `Quick
             test_generated_client_transaction_hooks;
+          Alcotest.test_case "generated client hook api" `Quick
+            test_generated_client_hook_api;
           Alcotest.test_case "generated policy store api" `Quick
             test_generated_policy_store_api;
           Alcotest.test_case "generated hook store api" `Quick
