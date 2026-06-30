@@ -7,3 +7,7 @@
  (libraries ent-ocaml alcotest)
  (preprocess
   (pps ent-ocaml-ppx)))
+
+(executable
+ (name mongo_bulk_e2e)
+ (libraries ent-ocaml ent-ocaml-mongo mongo eio_main unix))
