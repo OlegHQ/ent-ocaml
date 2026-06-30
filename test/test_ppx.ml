@@ -162,47 +162,45 @@ let test_generated_query_api () =
     | _ -> false)
 
 let test_generated_mutation_api () =
-  let create =
-    Post.create
-      [
-        Post.id "post_1";
-        Post.user_id "user_1";
-        Post.body "hello";
-        Post.media_ids [ "media_1"; "media_2" ];
-        Post.status "draft";
-        Post.created_at_ms 1_700_000_000L;
-        Post.updated_at_ms 1_700_000_000L;
-        Post.published_at_ms None;
-      ]
+  let open Post in
+  let create_mutation =
+    create ()
+    |> set (id "post_1")
+    |> set (user_id "user_1")
+    |> set (body "hello")
+    |> set (media_ids [ "media_1"; "media_2" ])
+    |> set (status "draft")
+    |> set (created_at_ms 1_700_000_000L)
+    |> set (updated_at_ms 1_700_000_000L)
+    |> set (published_at_ms None)
   in
   Alcotest.(check bool)
     "create op" true
-    (match create.op with Ent_ocaml.Create -> true | _ -> false);
-  Alcotest.(check int) "create fields" 8 (List.length create.set);
+    (match create_mutation.op with Ent_ocaml.Create -> true | _ -> false);
+  Alcotest.(check int) "create fields" 8 (List.length create_mutation.set);
+  let record_1 =
+    {
+      id = "post_1";
+      user_id = "user_1";
+      body = "hello";
+      media_ids = [];
+      status = "draft";
+      created_at_ms = 1L;
+      updated_at_ms = 1L;
+      published_at_ms = None;
+    }
+  in
+  let record_2 =
+    {
+      record_1 with
+      id = "post_2";
+      body = "second";
+      created_at_ms = 2L;
+      updated_at_ms = 2L;
+    }
+  in
   let create_many =
-    Post.create_many
-      [
-        [
-          Post.id "post_1";
-          Post.user_id "user_1";
-          Post.body "hello";
-          Post.media_ids [];
-          Post.status "draft";
-          Post.created_at_ms 1L;
-          Post.updated_at_ms 1L;
-          Post.published_at_ms None;
-        ];
-        [
-          Post.id "post_2";
-          Post.user_id "user_1";
-          Post.body "second";
-          Post.media_ids [];
-          Post.status "draft";
-          Post.created_at_ms 2L;
-          Post.updated_at_ms 2L;
-          Post.published_at_ms None;
-        ];
-      ]
+    create_many [ record_1; record_2 ]
   in
   Alcotest.(check int) "bulk create rows" 2 (List.length create_many);
   Alcotest.(check bool)
@@ -212,16 +210,14 @@ let test_generated_mutation_api () =
          match mutation.Ent_ocaml.op with Ent_ocaml.Create -> true | _ -> false)
        create_many);
   let create_with_default =
-    Post.create
-      [
-        Post.id "post_3";
-        Post.user_id "user_1";
-        Post.body "default status";
-        Post.media_ids [];
-        Post.created_at_ms 3L;
-        Post.updated_at_ms 3L;
-        Post.published_at_ms None;
-      ]
+    create ()
+    |> set (id "post_3")
+    |> set (user_id "user_1")
+    |> set (body "default status")
+    |> set (media_ids [])
+    |> set (created_at_ms 3L)
+    |> set (updated_at_ms 3L)
+    |> set (published_at_ms None)
   in
   Alcotest.(check bool)
     "default status" true
@@ -234,16 +230,14 @@ let test_generated_mutation_api () =
   | Ok () -> ()
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
   let create_invalid =
-    Post.create
-      [
-        Post.id "post_invalid";
-        Post.user_id "user_1";
-        Post.body "";
-        Post.media_ids [];
-        Post.created_at_ms 4L;
-        Post.updated_at_ms 4L;
-        Post.published_at_ms None;
-      ]
+    create ()
+    |> set (id "post_invalid")
+    |> set (user_id "user_1")
+    |> set (body "")
+    |> set (media_ids [])
+    |> set (created_at_ms 4L)
+    |> set (updated_at_ms 4L)
+    |> set (published_at_ms None)
   in
   (match Ent_ocaml.validate_mutation create_invalid with
   | Ok () -> Alcotest.fail "expected generated validator error"
@@ -321,7 +315,17 @@ let test_generated_store_api () =
   (match Store.count () query with
   | Ok count -> Alcotest.(check int) "count" 2 count
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
-  let mutation = Post.create [ Post.id "post_1"; Post.user_id "user_1"; Post.body "body"; Post.media_ids []; Post.created_at_ms 1L; Post.updated_at_ms 1L; Post.published_at_ms None ] in
+  let mutation =
+    let open Post in
+    create ()
+    |> set (id "post_1")
+    |> set (user_id "user_1")
+    |> set (body "body")
+    |> set (media_ids [])
+    |> set (created_at_ms 1L)
+    |> set (updated_at_ms 1L)
+    |> set (published_at_ms None)
+  in
   (match Store.insert () mutation with
   | Ok (Ent_ocaml.V_doc fields) ->
       Alcotest.(check bool) "inserted id" true (List.mem_assoc "id" fields)
@@ -332,8 +336,8 @@ let test_generated_store_api () =
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
 let test_generated_nested_value_api () =
-  let state = { kind = "confirmed"; external_id = Some "ext_1" } in
-  let value = publish_state_to_ent_value state in
+  let state_value = { kind = "confirmed"; external_id = Some "ext_1" } in
+  let value = publish_state_to_ent_value state_value in
   Alcotest.(check bool)
     "state value" true
     (match value with
@@ -345,11 +349,10 @@ let test_generated_nested_value_api () =
         true
     | _ -> false);
   let create =
-    PublishAttempt.create
-      [
-        PublishAttempt.id "attempt_1";
-        PublishAttempt.state state;
-      ]
+    let open PublishAttempt in
+    create ()
+    |> set (id "attempt_1")
+    |> set (state state_value)
   in
   Alcotest.(check bool)
     "nested create" true

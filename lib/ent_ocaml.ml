@@ -127,6 +127,43 @@ type mutation = {
   add : (string * value) list;
 }
 
+module Mutation = struct
+  let field_name = fst
+
+  let remove_field name fields =
+    List.filter (fun (field, _) -> field <> name) fields
+
+  let set field mutation =
+    let name = field_name field in
+    {
+      mutation with
+      set = remove_field name mutation.set @ [ field ];
+      add = remove_field name mutation.add;
+      clear = List.filter (( <> ) name) mutation.clear;
+    }
+
+  let set_all fields mutation =
+    List.fold_left (fun mutation field -> set field mutation) mutation fields
+
+  let clear name mutation =
+    {
+      mutation with
+      set = remove_field name mutation.set;
+      add = remove_field name mutation.add;
+      clear =
+        if List.mem name mutation.clear then mutation.clear
+        else mutation.clear @ [ name ];
+    }
+
+  let add field mutation =
+    let name = field_name field in
+    {
+      mutation with
+      add = remove_field name mutation.add @ [ field ];
+      clear = List.filter (( <> ) name) mutation.clear;
+    }
+end
+
 type error =
   [ `Backend of string
   | `Bad_schema of string

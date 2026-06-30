@@ -1127,12 +1127,55 @@ let gen_query_module td =
         ~set:(evar ~loc "fields") ~clear:(list ~loc [])
         ~add:(list ~loc [])
     in
+    let body =
+      A.pexp_let ~loc Nonrecursive
+        [
+          A.value_binding ~loc ~pat:(pvar ~loc "fields")
+            ~expr:(list ~loc []);
+        ]
+        (apply_default_bindings ~loc fields body)
+    in
     A.pstr_value ~loc Nonrecursive
       [
         A.value_binding ~loc ~pat:(pvar ~loc "create")
           ~expr:
+            (A.pexp_fun ~loc Nolabel None (unit_pat ~loc) body);
+      ]
+  in
+  let create_values =
+    let body =
+      mutation_record ~op:"Create" ~predicates:(list ~loc [])
+        ~set:(evar ~loc "fields") ~clear:(list ~loc [])
+        ~add:(list ~loc [])
+    in
+    A.pstr_value ~loc Nonrecursive
+      [
+        A.value_binding ~loc ~pat:(pvar ~loc "create_values")
+          ~expr:
             (A.pexp_fun ~loc Nolabel None (pvar ~loc "fields")
                (apply_default_bindings ~loc fields body));
+      ]
+  in
+  let create_record =
+    let fields_expr =
+      A.pexp_match ~loc
+        (app ~loc (evar ~loc (type_name ^ "_to_ent_value"))
+           [ evar ~loc "value" ])
+        [
+          A.case ~lhs:(A.ppat_construct ~loc (lid ~loc [ "Ent_ocaml"; "V_doc" ]) (Some (pvar ~loc "fields")))
+            ~guard:None ~rhs:(evar ~loc "fields");
+          A.case ~lhs:(A.ppat_any ~loc) ~guard:None
+            ~rhs:(list ~loc []);
+        ]
+    in
+    let body =
+      mutation_record ~op:"Create" ~predicates:(list ~loc [])
+        ~set:fields_expr ~clear:(list ~loc []) ~add:(list ~loc [])
+    in
+    A.pstr_value ~loc Nonrecursive
+      [
+        A.value_binding ~loc ~pat:(pvar ~loc "create_record")
+          ~expr:(A.pexp_fun ~loc Nolabel None (pvar ~loc "value") body);
       ]
   in
   let create_many =
@@ -1142,7 +1185,46 @@ let gen_query_module td =
           ~expr:
             (A.pexp_fun ~loc Nolabel None (pvar ~loc "rows")
                (app ~loc (ident ~loc [ "List"; "map" ])
-                  [ evar ~loc "create"; evar ~loc "rows" ]));
+                  [ evar ~loc "create_record"; evar ~loc "rows" ]));
+      ]
+  in
+  let create_many_values =
+    A.pstr_value ~loc Nonrecursive
+      [
+        A.value_binding ~loc ~pat:(pvar ~loc "create_many_values")
+          ~expr:
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "rows")
+               (app ~loc (ident ~loc [ "List"; "map" ])
+                  [ evar ~loc "create_values"; evar ~loc "rows" ]));
+      ]
+  in
+  let mutation_pipe_helpers =
+    A.pstr_value ~loc Nonrecursive
+      [
+        A.value_binding ~loc ~pat:(pvar ~loc "set")
+          ~expr:
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "field")
+               (A.pexp_fun ~loc Nolabel None (pvar ~loc "mutation")
+                  (app ~loc (ident ~loc [ "Ent_ocaml"; "Mutation"; "set" ])
+                     [ evar ~loc "field"; evar ~loc "mutation" ])));
+        A.value_binding ~loc ~pat:(pvar ~loc "set_all")
+          ~expr:
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "fields")
+               (A.pexp_fun ~loc Nolabel None (pvar ~loc "mutation")
+                  (app ~loc (ident ~loc [ "Ent_ocaml"; "Mutation"; "set_all" ])
+                     [ evar ~loc "fields"; evar ~loc "mutation" ])));
+        A.value_binding ~loc ~pat:(pvar ~loc "clear")
+          ~expr:
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "field")
+               (A.pexp_fun ~loc Nolabel None (pvar ~loc "mutation")
+                  (app ~loc (ident ~loc [ "Ent_ocaml"; "Mutation"; "clear" ])
+                     [ evar ~loc "field"; evar ~loc "mutation" ])));
+        A.value_binding ~loc ~pat:(pvar ~loc "add")
+          ~expr:
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "field")
+               (A.pexp_fun ~loc Nolabel None (pvar ~loc "mutation")
+                  (app ~loc (ident ~loc [ "Ent_ocaml"; "Mutation"; "add" ])
+                     [ evar ~loc "field"; evar ~loc "mutation" ])));
       ]
   in
   let update_fn name op =
@@ -1314,7 +1396,8 @@ let gen_query_module td =
               (A.pmod_structure ~loc structure)))
   in
   let structure =
-    query :: boolean_predicates :: query_pipe_helpers :: create :: create_many
+    query :: boolean_predicates :: query_pipe_helpers :: create :: create_values
+    :: create_record :: create_many :: create_many_values :: mutation_pipe_helpers
     :: update_fn "update_one" "Update_one"
     :: update_fn "update" "Update"
     :: update_query_fn "update_one_where" "Update_one"
@@ -1389,11 +1472,30 @@ let gen_sig_for_type td =
                      (arrow Nolabel unit_typ query_typ))))))
   in
   let create_sig =
-    val_sig "create" (arrow Nolabel field_values_typ mutation_typ)
+    val_sig "create" (arrow Nolabel unit_typ mutation_typ)
+  in
+  let create_values_sig =
+    val_sig "create_values" (arrow Nolabel field_values_typ mutation_typ)
+  in
+  let create_record_sig =
+    val_sig "create_record" (arrow Nolabel record_typ mutation_typ)
   in
   let create_many_sig =
     val_sig "create_many"
+      (arrow Nolabel (list_typ record_typ) (list_typ mutation_typ))
+  in
+  let create_many_values_sig =
+    val_sig "create_many_values"
       (arrow Nolabel (list_typ field_values_typ) (list_typ mutation_typ))
+  in
+  let mutation_pipe_sig =
+    [
+      val_sig "set" (arrow Nolabel field_value_typ (arrow Nolabel mutation_typ mutation_typ));
+      val_sig "set_all"
+        (arrow Nolabel field_values_typ (arrow Nolabel mutation_typ mutation_typ));
+      val_sig "clear" (arrow Nolabel string_typ (arrow Nolabel mutation_typ mutation_typ));
+      val_sig "add" (arrow Nolabel field_value_typ (arrow Nolabel mutation_typ mutation_typ));
+    ]
   in
   let boolean_sig =
     [
@@ -1570,16 +1672,29 @@ let gen_sig_for_type td =
               (A.pmty_signature ~loc store_items)))
   in
   let module_items =
-    query_sig :: boolean_sig @ query_pipe_sig
-    @ (create_sig :: create_many_sig :: update_sig "update_one" :: update_sig "update"
-      :: update_query_sig "update_one_where"
-      :: update_query_sig "update_where"
-      :: delete_sig "delete_one" :: delete_sig "delete"
-      :: delete_query_sig "delete_one_where"
-      :: delete_query_sig "delete_where"
-      :: store_sig
-      :: (List.concat_map edge_sig_items edges
-         @ List.concat_map field_sig_items fields))
+    [ query_sig ]
+    @ boolean_sig @ query_pipe_sig
+    @ [
+        create_sig;
+        create_values_sig;
+        create_record_sig;
+        create_many_sig;
+        create_many_values_sig;
+      ]
+    @ mutation_pipe_sig
+    @ [
+        update_sig "update_one";
+        update_sig "update";
+        update_query_sig "update_one_where";
+        update_query_sig "update_where";
+        delete_sig "delete_one";
+        delete_sig "delete";
+        delete_query_sig "delete_one_where";
+        delete_query_sig "delete_where";
+        store_sig;
+      ]
+    @ List.concat_map edge_sig_items edges
+    @ List.concat_map field_sig_items fields
   in
   [
     A.psig_value ~loc

@@ -129,6 +129,13 @@ type mutation = {
   add : (string * value) list;
 }
 
+module Mutation : sig
+  val set : string * value -> mutation -> mutation
+  val set_all : (string * value) list -> mutation -> mutation
+  val clear : string -> mutation -> mutation
+  val add : string * value -> mutation -> mutation
+end
+
 type error =
   [ `Backend of string
   | `Bad_schema of string

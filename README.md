@@ -33,7 +33,20 @@ let mutation =
   Post.query ()
   |> Post.where (Post.id_eq post_id)
   |> Post.where (Post.user (User.id_eq user_id))
-  |> Post.update_one_where ~set:[ Post.body body ]
+  |> Post.update_one_where
+  |> Post.set (Post.body body)
+```
+
+Create mutations can be built as pipelines or directly from records:
+
+```ocaml
+let mutation =
+  Post.create ()
+  |> Post.set (Post.id post.id)
+  |> Post.set (Post.user_id post.user_id)
+  |> Post.set (Post.body post.body)
+
+let from_record = Post.create_record post_doc
 ```
 
 Generated entity modules also expose a backend-agnostic `Store` functor:
