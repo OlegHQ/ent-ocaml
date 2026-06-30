@@ -1168,6 +1168,30 @@ let gen_query_module td =
                            (apply_update_default_bindings ~loc fields body))))));
       ]
   in
+  let update_query_fn name op =
+    let body =
+      mutation_record ~op
+        ~predicates:
+          (A.pexp_field ~loc (evar ~loc "query")
+             (lid ~loc [ "Ent_ocaml"; "predicates" ]))
+        ~set:(evar ~loc "set")
+        ~clear:(evar ~loc "clear")
+        ~add:(evar ~loc "add")
+    in
+    A.pstr_value ~loc Nonrecursive
+      [
+        A.value_binding ~loc ~pat:(pvar ~loc name)
+          ~expr:
+            (A.pexp_fun ~loc (Optional "set") (Some (list ~loc []))
+               (pvar ~loc "set")
+               (A.pexp_fun ~loc (Optional "clear") (Some (list ~loc []))
+                  (pvar ~loc "clear")
+                  (A.pexp_fun ~loc (Optional "add") (Some (list ~loc []))
+                     (pvar ~loc "add")
+                     (A.pexp_fun ~loc Nolabel None query_pat
+                        (apply_update_default_bindings ~loc fields body)))));
+      ]
+  in
   let delete_fn name op =
     A.pstr_value ~loc Nonrecursive
       [
@@ -1181,12 +1205,30 @@ let gen_query_module td =
                      ~add:(list ~loc []))));
       ]
   in
+  let delete_query_fn name op =
+    A.pstr_value ~loc Nonrecursive
+      [
+        A.value_binding ~loc ~pat:(pvar ~loc name)
+          ~expr:
+            (A.pexp_fun ~loc Nolabel None query_pat
+               (mutation_record ~op
+                  ~predicates:
+                    (A.pexp_field ~loc (evar ~loc "query")
+                       (lid ~loc [ "Ent_ocaml"; "predicates" ]))
+                  ~set:(list ~loc []) ~clear:(list ~loc [])
+                  ~add:(list ~loc [])));
+      ]
+  in
   let structure =
     query :: boolean_predicates :: query_pipe_helpers :: create :: create_many
     :: update_fn "update_one" "Update_one"
     :: update_fn "update" "Update"
+    :: update_query_fn "update_one_where" "Update_one"
+    :: update_query_fn "update_where" "Update"
     :: delete_fn "delete_one" "Delete_one"
     :: delete_fn "delete" "Delete"
+    :: delete_query_fn "delete_one_where" "Delete_one"
+    :: delete_query_fn "delete_where" "Delete"
     :: (List.concat_map edge_helper_items edges
        @ List.concat_map field_helper_items fields)
   in
@@ -1290,10 +1332,20 @@ let gen_sig_for_type td =
                (arrow (Optional "add") field_values_typ
                   (arrow Nolabel unit_typ mutation_typ)))))
   in
+  let update_query_sig name =
+    val_sig name
+      (arrow (Optional "set") field_values_typ
+         (arrow (Optional "clear") (list_typ string_typ)
+            (arrow (Optional "add") field_values_typ
+               (arrow Nolabel query_typ mutation_typ))))
+  in
   let delete_sig name =
     val_sig name
       (arrow (Optional "where") predicates_typ
          (arrow Nolabel unit_typ mutation_typ))
+  in
+  let delete_query_sig name =
+    val_sig name (arrow Nolabel query_typ mutation_typ)
   in
   let field_sig_items field =
     let field_name = field.pld_name.txt in
@@ -1366,7 +1418,11 @@ let gen_sig_for_type td =
   let module_items =
     query_sig :: boolean_sig @ query_pipe_sig
     @ (create_sig :: create_many_sig :: update_sig "update_one" :: update_sig "update"
+      :: update_query_sig "update_one_where"
+      :: update_query_sig "update_where"
       :: delete_sig "delete_one" :: delete_sig "delete"
+      :: delete_query_sig "delete_one_where"
+      :: delete_query_sig "delete_where"
       :: (List.concat_map edge_sig_items edges
          @ List.concat_map field_sig_items fields))
   in

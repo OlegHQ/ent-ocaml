@@ -240,6 +240,15 @@ let test_generated_mutation_api () =
          | _ -> false)
        update.set);
   Alcotest.(check int) "update clear" 1 (List.length update.clear);
+  let update_from_query =
+    Post.query ()
+    |> Post.where (Post.id_eq "post_1")
+    |> Post.where (Post.user (Ent_ocaml.Eq ("id", Ent_ocaml.V_string "user_1")))
+    |> Post.update_one_where ~set:[ Post.body "from query" ]
+  in
+  Alcotest.(check int)
+    "update from query predicates" 2
+    (List.length update_from_query.predicates);
   let clear_updated =
     Post.update_one ~where:[ Post.id_eq "post_1" ]
       ~clear:[ "updated_at_ms" ] ()
@@ -252,6 +261,14 @@ let test_generated_mutation_api () =
          | _ -> false)
        clear_updated.set);
   let delete = Post.delete_one ~where:[ Post.id_eq "post_1" ] () in
+  let delete_from_query =
+    Post.query ()
+    |> Post.where (Post.id_eq "post_1")
+    |> Post.delete_one_where
+  in
+  Alcotest.(check int)
+    "delete from query predicates" 1
+    (List.length delete_from_query.predicates);
   Alcotest.(check bool)
     "delete one op" true
     (match delete.op with Ent_ocaml.Delete_one -> true | _ -> false)

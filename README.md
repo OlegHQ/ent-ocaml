@@ -26,6 +26,16 @@ let query =
   |> Post.limit 20
 ```
 
+The same composed query value can feed mutations:
+
+```ocaml
+let mutation =
+  Post.query ()
+  |> Post.where (Post.id_eq post_id)
+  |> Post.where (Post.user (User.id_eq user_id))
+  |> Post.update_one_where ~set:[ Post.body body ]
+```
+
 Backends execute those
 typed values with `result`-returning functions such as
 `Ent_ocaml_mongo.insert_many_values`. Core mutation validation catches missing
