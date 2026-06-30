@@ -413,9 +413,10 @@ let save_audited ctx mutation =
   Post_client.Schema_hooks.insert client mutation
 ```
 
-Reusable middleware modules can be registered on a schema with `[@@ent.mixins]`.
-Mixin modules expose the same five lists as schema middleware, and EntoCaml
-composes mixins in the order listed before the schema-local attributes:
+Reusable middleware and index metadata modules can be registered on a schema
+with `[@@ent.mixins]`. Mixin modules expose the same five middleware lists as
+schema middleware plus an `indexes` list, and EntoCaml composes mixins in the
+order listed before the schema-local attributes:
 
 ```ocaml
 module Audit_mixin = struct
@@ -424,6 +425,17 @@ module Audit_mixin = struct
   let mutation_hooks = [ stamp_audit_fields ]
   let query_interceptors = []
   let edge_interceptors = []
+  let indexes =
+    [
+      Ent_ocaml.
+        {
+          name = Some "posts_audit_state";
+          fields = [ "audit_state" ];
+          edges = [];
+          unique = false;
+          partial_filter = [];
+        };
+    ]
 end
 
 type post = {

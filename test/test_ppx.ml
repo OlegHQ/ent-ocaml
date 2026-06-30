@@ -66,6 +66,18 @@ module Ordered_mixin = struct
             next ctx edge_query);
       };
     ]
+
+  let indexes =
+    [
+      Ent_ocaml.
+        {
+          name = Some "ordered_mixin_status";
+          fields = [ "status" ];
+          edges = [];
+          unique = false;
+          partial_filter = [];
+        };
+    ]
 end
 
 type ordered = {
@@ -403,7 +415,7 @@ let test_entity_metadata () =
        (fun (index : Ent_ocaml.index) ->
          index.name = Some "posts_by_user" && index.fields = [ "user_id" ]
          && not index.unique)
-       post_entity.indexes);
+      post_entity.indexes);
   Alcotest.(check bool)
     "compound user created index" true
     (List.exists
@@ -414,6 +426,13 @@ let test_entity_metadata () =
          && index.partial_filter
             = [ Ent_ocaml.Eq ("status", Ent_ocaml.V_string "published") ])
        post_entity.indexes);
+  Alcotest.(check bool)
+    "mixin index" true
+    (List.exists
+       (fun (index : Ent_ocaml.index) ->
+         index.name = Some "ordered_mixin_status"
+         && index.fields = [ "status" ] && not index.unique)
+       ordered_entity.indexes);
   Alcotest.(check bool)
     "user edge" true
     (List.exists
@@ -479,7 +498,22 @@ let test_generated_schema_snapshot () =
                        = Some (Ent_ocaml.V_string "Post body text")
                 | _ -> false)
               field_values
-        | _ -> false)
+        | _ -> false);
+      (match ordered_schema_snapshot with
+      | Ent_ocaml.V_doc ordered_fields ->
+          Alcotest.(check bool)
+            "mixin index snapshot" true
+            (match List.assoc_opt "indexes" ordered_fields with
+            | Some (Ent_ocaml.V_list indexes) ->
+                List.exists
+                  (function
+                    | Ent_ocaml.V_doc index ->
+                        List.assoc_opt "name" index
+                        = Some (Ent_ocaml.V_string "ordered_mixin_status")
+                    | _ -> false)
+                  indexes
+            | _ -> false)
+      | _ -> Alcotest.fail "expected ordered schema snapshot document")
   | _ -> Alcotest.fail "expected generated schema snapshot document"
 
 let test_generated_schema_manifest () =

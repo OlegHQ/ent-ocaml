@@ -187,6 +187,15 @@ let mixin_module_parts expr =
       Location.raise_errorf ~loc:expr.pexp_loc
         "ent.mixins expects module paths, for example [ Audit_mixin ]"
 
+let schema_mixin_parts td =
+  Attribute.get ent_mixins_attr td |> Option.value ~default:[]
+  |> List.map mixin_module_parts
+
+let concat_lists_expr ~loc values =
+  A.pexp_apply ~loc
+    (ident ~loc [ "List"; "concat" ])
+    [ (Nolabel, list ~loc values) ]
+
 let label_name = function
   | Longident.Lident name -> name
   | Ldot (_, name) -> name
@@ -1516,11 +1525,19 @@ let gen_entity td =
   let collection =
     Option.value (Attribute.get ent_collection_attr td) ~default:(pluralize type_name)
   in
-  let indexes =
+  let schema_mixins = schema_mixin_parts td in
+  let local_indexes =
     (fields |> List.filter_map (index_expr ~loc ~collection))
     @ (Attribute.get ent_indexes_attr td
       |> Option.value ~default:[]
       |> List.map parse_index_spec)
+  in
+  let indexes_expr =
+    concat_lists_expr ~loc
+      (List.map
+         (fun mixin_parts -> ident ~loc (mixin_parts @ [ "indexes" ]))
+         schema_mixins
+      @ [ list ~loc local_indexes ])
   in
   let edges =
     Attribute.get ent_edges_attr td
@@ -1534,7 +1551,7 @@ let gen_entity td =
         (lid ~loc [ "Ent_ocaml"; "collection" ], str ~loc collection);
         (lid ~loc [ "Ent_ocaml"; "fields" ], list ~loc (List.map field_expr fields));
         (lid ~loc [ "Ent_ocaml"; "edges" ], list ~loc edges);
-        (lid ~loc [ "Ent_ocaml"; "indexes" ], list ~loc indexes);
+        (lid ~loc [ "Ent_ocaml"; "indexes" ], indexes_expr);
       ]
       None
   in
@@ -1664,39 +1681,31 @@ let gen_query_module td =
   let schema_edge_interceptors =
     Attribute.get ent_edge_interceptors_attr td |> Option.value ~default:[]
   in
-  let schema_mixins =
-    Attribute.get ent_mixins_attr td |> Option.value ~default:[]
-    |> List.map mixin_module_parts
-  in
-  let concat_lists values =
-    A.pexp_apply ~loc
-      (ident ~loc [ "List"; "concat" ])
-      [ (Nolabel, list ~loc values) ]
-  in
+  let schema_mixins = schema_mixin_parts td in
   let mixin_values field_name =
     List.map
       (fun mixin_parts -> ident ~loc (mixin_parts @ [ field_name ]))
       schema_mixins
   in
   let schema_query_rules_expr =
-    concat_lists
+    concat_lists_expr ~loc
       (mixin_values "query_rules" @ [ list ~loc schema_query_rules ])
   in
   let schema_mutation_rules_expr =
-    concat_lists
+    concat_lists_expr ~loc
       (mixin_values "mutation_rules" @ [ list ~loc schema_mutation_rules ])
   in
   let schema_mutation_hooks_expr =
-    concat_lists
+    concat_lists_expr ~loc
       (mixin_values "mutation_hooks" @ [ list ~loc schema_mutation_hooks ])
   in
   let schema_query_interceptors_expr =
-    concat_lists
+    concat_lists_expr ~loc
       (mixin_values "query_interceptors"
       @ [ list ~loc schema_query_interceptors ])
   in
   let schema_edge_interceptors_expr =
-    concat_lists
+    concat_lists_expr ~loc
       (mixin_values "edge_interceptors"
       @ [ list ~loc schema_edge_interceptors ])
   in
