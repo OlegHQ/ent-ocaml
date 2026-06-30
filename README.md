@@ -10,6 +10,12 @@ one Git submodule that contains three packages:
 - `ent-ocaml-ppx`: PPX generator for entity-specific clients, predicates, and
   builders.
 
+The roadmap is intentionally scoped to Poster's needs. Migrations and
+extension/plugin registration systems are not planned; use explicit
+deployment/admin operations for schema changes and ordinary OCaml modules for
+composition. Backend-specific metadata belongs in `ent-ocaml` only when a
+concrete backend feature needs it.
+
 The generated API is intentionally OCaml-shaped. For example, a schema record
 deriving `ent` produces a module with `query`, `create`, `create_many`,
 `update_one`, `update`, `delete_one`, `delete`, field predicates, field value
