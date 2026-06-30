@@ -368,8 +368,9 @@ let count_scoped ctx query =
       Scoped_post_client.Tx.count tx query)
 ```
 
-Edge interceptors wrap traversal and eager-loading edge queries when middleware
-needs the edge name, alias, target, and source query together:
+Edge interceptors wrap traversal, traversal-chain first hops, and eager-loading
+edge queries when middleware needs the edge name, alias, target, and source
+query together:
 
 ```ocaml
 module Scoped_edges =
