@@ -1205,6 +1205,11 @@ let gen_query_module td =
                             (Nolabel, evar ~loc "query");
                           ]))));
         ];
+      A.pstr_value ~loc Nonrecursive
+        [
+          A.value_binding ~loc ~pat:(pvar ~loc ("with_" ^ edge_name))
+            ~expr:(evar ~loc ("query_" ^ edge_name));
+        ];
     ]
   in
   let mutation_record ~op ~predicates ~set ~clear ~add ~on_insert =
@@ -1487,6 +1492,20 @@ let gen_query_module td =
                         (Nolabel, evar ~loc "edge_query");
                         (Labelled "decode", evar ~loc "decode");
                       ]))));
+        value_fun "load_edge"
+          (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+             (A.pexp_fun ~loc (Labelled "decode_source") None
+                (pvar ~loc "decode_source")
+                (A.pexp_fun ~loc (Labelled "decode_target") None
+                   (pvar ~loc "decode_target")
+                   (A.pexp_fun ~loc Nolabel None (pvar ~loc "edge_query")
+                      (backend_apply "load_edge_as"
+                         [
+                           (Nolabel, evar ~loc "ctx");
+                           (Nolabel, evar ~loc "edge_query");
+                           (Labelled "decode_source", evar ~loc "decode_source");
+                           (Labelled "decode_target", evar ~loc "decode_target");
+                         ])))));
         value_fun "count"
           (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
              (A.pexp_fun ~loc Nolabel None query_pat
@@ -1736,6 +1755,10 @@ let gen_sig_for_type td =
         (arrow (Optional "target_query") query_typ
            (arrow (Labelled "target") entity_typ
               (arrow Nolabel query_typ edge_query_typ)));
+      val_sig ("with_" ^ edge_name)
+        (arrow (Optional "target_query") query_typ
+           (arrow (Labelled "target") entity_typ
+              (arrow Nolabel query_typ edge_query_typ)));
     ]
   in
   let update_sig name =
@@ -1852,6 +1875,14 @@ let gen_sig_for_type td =
       arrow Nolabel backend_doc
         (result_typ (A.ptyp_var ~loc "a") string_typ)
     in
+    let decode_source_typ =
+      arrow Nolabel backend_doc
+        (result_typ (A.ptyp_var ~loc "source") string_typ)
+    in
+    let decode_target_typ =
+      arrow Nolabel backend_doc
+        (result_typ (A.ptyp_var ~loc "target") string_typ)
+    in
     let value_sig name type_ =
       A.psig_value ~loc
         (A.value_description ~loc ~name:{ loc; txt = name } ~type_ ~prim:[])
@@ -1891,6 +1922,17 @@ let gen_sig_for_type td =
                       (A.ptyp_constr ~loc (lid ~loc [ "list" ])
                          [ A.ptyp_var ~loc "a" ])
                       error_typ))));
+        value_sig "load_edge"
+          (arrow Nolabel backend_ctx
+             (arrow (Labelled "decode_source") decode_source_typ
+                (arrow (Labelled "decode_target") decode_target_typ
+                   (arrow Nolabel edge_query_typ
+                      (result_typ
+                         (list_typ
+                            (pair_typ (A.ptyp_var ~loc "source")
+                               (A.ptyp_constr ~loc (lid ~loc [ "option" ])
+                                  [ A.ptyp_var ~loc "target" ])))
+                         error_typ)))));
         value_sig "count" (arrow Nolabel backend_ctx (arrow Nolabel query_typ int_result));
         value_sig "aggregate"
           (arrow Nolabel backend_ctx

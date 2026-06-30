@@ -530,7 +530,7 @@ let value_of_bson_element element =
   in
   loop decoders
 
-let traverse_as ctx (edge_query : Ent_ocaml.edge_query) ~decode =
+let stored_to_one_edge (edge_query : Ent_ocaml.edge_query) =
   let open Ent_ocaml in
   let source_entity = edge_query.source.entity in
   match find_edge source_entity edge_query.edge with
@@ -546,39 +546,116 @@ let traverse_as ctx (edge_query : Ent_ocaml.edge_query) ~decode =
       Error (`Bad_query "stored-FK traversal currently supports to-one edges")
   | Some edge -> (
       match edge.storage_key with
+      | Some storage_key -> Ok storage_key
       | None ->
           Error
             (`Bad_query
-              ("edge " ^ edge.name ^ " does not have a stored foreign-key field"))
-      | Some storage_key -> (
-          let source_query = { edge_query.source with select = [] } in
-          match find ctx source_query with
+              ("edge " ^ edge.name ^ " does not have a stored foreign-key field")))
+
+let foreign_key_value storage_key doc =
+  match Bson.get_element storage_key doc with
+  | exception Not_found -> Ok None
+  | element -> (
+      match value_of_bson_element element with
+      | Error _ as error -> error
+      | Ok Ent_ocaml.V_null -> Ok None
+      | Ok value -> Ok (Some value))
+
+let collect_foreign_keys storage_key docs =
+  let rec loop acc = function
+    | [] -> Ok (List.rev acc)
+    | doc :: rest -> (
+        match foreign_key_value storage_key doc with
+        | Error _ as error -> error
+        | Ok None -> loop acc rest
+        | Ok (Some value) ->
+            let acc = if List.mem value acc then acc else value :: acc in
+            loop acc rest)
+  in
+  loop [] docs
+
+let find_traversal_targets ctx edge_query ids =
+  match ids with
+  | [] -> Ok []
+  | ids ->
+      let target_query =
+        edge_query.Ent_ocaml.target_query
+        |> Ent_ocaml.Query.where (Ent_ocaml.In ("id", ids))
+      in
+      find ctx target_query
+
+let traverse_as ctx (edge_query : Ent_ocaml.edge_query) ~decode =
+  match stored_to_one_edge edge_query with
+  | Error _ as error -> error
+  | Ok storage_key -> (
+      let source_query = { edge_query.source with Ent_ocaml.select = [] } in
+      match find ctx source_query with
+      | Error _ as error -> error
+      | Ok source_docs -> (
+          match collect_foreign_keys storage_key source_docs with
           | Error _ as error -> error
-          | Ok source_docs ->
-              let rec collect acc = function
-                | [] -> Ok (List.rev acc)
-                | doc :: rest -> (
-                    match Bson.get_element storage_key doc with
-                    | exception Not_found -> collect acc rest
-                    | element -> (
-                        match value_of_bson_element element with
-                        | Error _ as error -> error
-                        | Ok V_null -> collect acc rest
-                        | Ok value ->
-                            let acc =
-                              if List.mem value acc then acc else value :: acc
-                            in
-                            collect acc rest))
-              in
-              match collect [] source_docs with
+          | Ok ids -> (
+              match find_traversal_targets ctx edge_query ids with
               | Error _ as error -> error
-              | Ok [] -> Ok []
-              | Ok ids ->
-                  let target_query =
-                    edge_query.target_query
-                    |> Query.where (In ("id", ids))
+              | Ok target_docs -> decode_documents ~decode target_docs)))
+
+let load_edge_as ctx (edge_query : Ent_ocaml.edge_query) ~decode_source
+    ~decode_target =
+  match stored_to_one_edge edge_query with
+  | Error _ as error -> error
+  | Ok storage_key -> (
+      let source_query = { edge_query.source with Ent_ocaml.select = [] } in
+      match find ctx source_query with
+      | Error _ as error -> error
+      | Ok source_docs -> (
+          match collect_foreign_keys storage_key source_docs with
+          | Error _ as error -> error
+          | Ok ids -> (
+              match
+                ( find_traversal_targets ctx edge_query ids,
+                  field_storage_key edge_query.target "id" )
+              with
+              | Error _ as error, _ | _, (Error _ as error) -> error
+              | Ok target_docs, Ok target_id_key ->
+                  let target_value doc =
+                    match Bson.get_element target_id_key doc with
+                    | exception Not_found ->
+                        Error (`Decode "target id field missing")
+                    | element -> value_of_bson_element element
                   in
-                  find_as ctx target_query ~decode))
+                  let rec target_map acc = function
+                    | [] -> Ok acc
+                    | doc :: rest -> (
+                        match target_value doc with
+                        | Error _ as error -> error
+                        | Ok id -> target_map ((id, doc) :: acc) rest)
+                  in
+                  let decode_target_option fk targets =
+                    match List.assoc_opt fk targets with
+                    | None -> Ok None
+                    | Some doc ->
+                        decode_document ~decode:decode_target doc
+                        |> Result.map Option.some
+                  in
+                  let rec pair_rows targets acc = function
+                    | [] -> Ok (List.rev acc)
+                    | source_doc :: rest -> (
+                        match
+                          ( decode_document ~decode:decode_source source_doc,
+                            foreign_key_value storage_key source_doc )
+                        with
+                        | Error _ as error, _ | _, (Error _ as error) -> error
+                        | Ok source, Ok None ->
+                            pair_rows targets ((source, None) :: acc) rest
+                        | Ok source, Ok (Some fk) -> (
+                            match decode_target_option fk targets with
+                            | Error _ as error -> error
+                            | Ok target ->
+                                pair_rows targets ((source, target) :: acc) rest))
+                  in
+                  match target_map [] target_docs with
+                  | Error _ as error -> error
+                  | Ok targets -> pair_rows targets [] source_docs)))
 
 let run_aggregate ctx (query : Ent_ocaml.query) pipeline =
   match

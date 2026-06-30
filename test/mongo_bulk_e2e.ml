@@ -285,6 +285,15 @@ let run_flow client =
   in
   assert_true "stored edge traversal returns user"
     (traversed_users = [ "user_1" ]);
+  let* loaded_users =
+    Ent_ocaml_mongo.load_edge_as ctx query_user_from_posts
+      ~decode_source:(fun doc ->
+        Ok (Bson.get_string (Bson.get_element "body" doc)))
+      ~decode_target:(fun doc ->
+        Ok (Bson.get_string (Bson.get_element "_id" doc)))
+  in
+  assert_true "stored edge eager load returns source and user"
+    (loaded_users = [ ("first", Some "user_1") ]);
   let* sum_value =
     Ent_ocaml_mongo.aggregate ctx (Ent_ocaml.Aggregate.sum "views" query_user_1)
   in

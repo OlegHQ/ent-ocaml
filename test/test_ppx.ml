@@ -73,6 +73,16 @@ module Memory_backend = struct
     | Ok value -> Ok [ value ]
     | Error message -> Error (`Decode message)
 
+  let load_edge_as () (edge_query : Ent_ocaml.edge_query) ~decode_source
+      ~decode_target =
+    match
+      ( decode_source
+          (Ent_ocaml.V_string edge_query.Ent_ocaml.source.entity.name),
+        decode_target (Ent_ocaml.V_string edge_query.target.name) )
+    with
+    | Ok source, Ok target -> Ok [ (source, Some target) ]
+    | Error message, _ | _, Error message -> Error (`Decode message)
+
   let insert_values () (mutation : Ent_ocaml.mutation) =
     Ok (Ent_ocaml.V_doc mutation.set)
 
@@ -223,7 +233,7 @@ let test_generated_traversal_api () =
     let open Post in
     query ()
     |> where (status_eq "draft")
-    |> query_user ~target:user_entity
+    |> with_user ~target:user_entity
   in
   Alcotest.(check string)
     "source entity" "Post" edge_query.Ent_ocaml.source.entity.name;
@@ -237,9 +247,15 @@ let test_generated_traversal_api () =
     | Ent_ocaml.V_string value -> Ok value
     | _ -> Error "expected string"
   in
-  match Store.traverse () ~decode edge_query with
+  (match Store.traverse () ~decode edge_query with
   | Ok [ "User" ] -> ()
   | Ok _ -> Alcotest.fail "unexpected traverse result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  match
+    Store.load_edge () ~decode_source:decode ~decode_target:decode edge_query
+  with
+  | Ok [ ("Post", Some "User") ] -> ()
+  | Ok _ -> Alcotest.fail "unexpected load_edge result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
 let test_generated_mutation_api () =

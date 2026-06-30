@@ -450,6 +450,13 @@ module type STORE_BACKEND = sig
     decode:(doc -> ('a, string) result) ->
     ('a list, error) result
 
+  val load_edge_as :
+    ctx ->
+    edge_query ->
+    decode_source:(doc -> ('source, string) result) ->
+    decode_target:(doc -> ('target, string) result) ->
+    (('source * 'target option) list, error) result
+
   val insert_values : ctx -> mutation -> (doc, error) result
 
   val insert_many_values :

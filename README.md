@@ -116,6 +116,19 @@ let load_authors ctx =
   |> Posts.traverse ctx ~decode:user_of_bson_doc_result
 ```
 
+The same edge value can eager-load source rows with their to-one target:
+
+```ocaml
+let drafts_with_authors ctx =
+  let open Post in
+  query ()
+  |> where (status_eq "draft")
+  |> with_user ~target:User.user_entity
+  |> Posts.load_edge ctx
+       ~decode_source:post_of_bson_doc_result
+       ~decode_target:user_of_bson_doc_result
+```
+
 Backends execute those
 typed values with `result`-returning functions such as
 `Ent_ocaml_mongo.insert_many_values`. Core mutation validation catches missing
