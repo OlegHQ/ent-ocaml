@@ -467,6 +467,34 @@ type privacy_decision = Allow | Deny of string | Skip
 type 'ctx query_rule = 'ctx -> query -> privacy_decision
 type 'ctx mutation_rule = 'ctx -> mutation -> privacy_decision
 
+module Privacy = struct
+  let evaluate rules ctx value =
+    let rec loop saw_rule = function
+      | [] ->
+          if saw_rule then Error (`Denied "privacy rule chain skipped")
+          else Ok ()
+      | rule :: rest -> (
+          match rule ctx value with
+          | Allow -> Ok ()
+          | Deny message -> Error (`Denied message)
+          | Skip -> loop true rest)
+    in
+    loop false rules
+
+  let evaluate_query ctx rules query = evaluate rules ctx query
+  let evaluate_mutation ctx rules mutation = evaluate rules ctx mutation
+
+  let evaluate_mutations ctx rules mutations =
+    let rec loop = function
+      | [] -> Ok ()
+      | mutation :: rest -> (
+          match evaluate_mutation ctx rules mutation with
+          | Ok () -> loop rest
+          | Error _ as error -> error)
+    in
+    loop mutations
+end
+
 module type BACKEND = sig
   type ctx
   type doc

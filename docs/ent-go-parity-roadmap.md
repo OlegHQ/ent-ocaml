@@ -66,8 +66,9 @@ The initial package scaffold already provides:
 - Core schema descriptors for fields, edges, indexes, predicates, ordering,
   queries, edge traversal descriptors, aggregate descriptors, mutations,
   mutation validation, field validators, errors, privacy decisions, backend
-  signatures, generic query combinators, result syntax, and a store backend
-  signature for generated entity-local executors.
+  signatures, generic query combinators, result syntax, privacy rule-chain
+  evaluation, and a store backend signature for generated entity-local
+  executors.
 - Mongo planning and CRUD execution for scalar filters, boolean predicates,
   field selection/projection, ordering, limit/offset, insert, bulk insert,
   update, upsert-one with `$setOnInsert`, delete, count, filtered and grouped
@@ -88,6 +89,8 @@ The initial package scaffold already provides:
   descriptors generate FK edge metadata, clean edge predicate aliases such as
   `Post.user (User.id_eq id)`, bulk `has_<edge>_with` helpers, and
   `query_<edge>` traversal helpers plus `with_<edge>` eager-load helpers.
+  Generated `Store.With_policy` modules evaluate query and mutation privacy
+  rule chains before delegating to the selected backend.
 - Poster pilot integration for `User`, `Session`, `Post`, `Media`,
   `PublishState`, and `PublishAttempt` DTO entities.
 
@@ -119,7 +122,7 @@ The initial package scaffold already provides:
 | Aggregation | count, filtered/grouped min/max/sum/avg, and named scans implemented | aggregation pipeline |
 | Hooks | Mutation middleware, global and entity-specific | Around generated mutators |
 | Interceptors | Query middleware and traversal interceptors | Around query execution and traversal construction |
-| Privacy | Query/mutation rule chains with allow/deny/skip | Evaluated before backend execution |
+| Privacy | Query/mutation rule-chain evaluation and generated policy-aware Stores implemented; schema/mixin registration pending | Evaluated before backend execution |
 | Mixins | Reusable fields, edges, indexes, hooks, policies | PPX composition step |
 | Field defaults | Generated `[@ent.default expr]` and `[@ent.update_default expr]`; error-returning default funcs pending | OCaml expressions evaluated in create/update APIs |
 | Field validators | Generated `[@ent.validate [fn1; fn2]]` wrappers for primitive/enum fields | Checked before backend mutation |
@@ -192,9 +195,10 @@ The initial package scaffold already provides:
    ordering, named aliases, and optional bidirectional backrefs remain.
 
 8. Hooks, privacy, and interceptors:
-   support runtime and schema hooks, query interceptors, traversal interceptors,
-   privacy rule chains, mixin-provided rules, and deterministic registration
-   order.
+   generated `Store.With_policy` modules evaluate query and mutation privacy
+   rule chains before backend execution. Runtime and schema hooks, query
+   interceptors, traversal interceptors, mixin-provided rules, and
+   deterministic registration order remain.
 
 9. Aggregation, ordering, and pagination:
    filtered and grouped count/min/max/sum/avg, named aggregate scans, and

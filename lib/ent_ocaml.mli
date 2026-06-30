@@ -234,6 +234,17 @@ type privacy_decision = Allow | Deny of string | Skip
 type 'ctx query_rule = 'ctx -> query -> privacy_decision
 type 'ctx mutation_rule = 'ctx -> mutation -> privacy_decision
 
+module Privacy : sig
+  val evaluate_query :
+    'ctx -> 'ctx query_rule list -> query -> (unit, error) result
+
+  val evaluate_mutation :
+    'ctx -> 'ctx mutation_rule list -> mutation -> (unit, error) result
+
+  val evaluate_mutations :
+    'ctx -> 'ctx mutation_rule list -> mutation list -> (unit, error) result
+end
+
 module type BACKEND = sig
   type ctx
   type doc

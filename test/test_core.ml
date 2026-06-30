@@ -240,6 +240,39 @@ let test_result_syntax () =
   in
   Alcotest.(check (result int string)) "result" (Ok 5) result
 
+let test_privacy_rule_chain () =
+  let query = Ent_ocaml.Query.make post_entity in
+  let mutation =
+    {
+      Ent_ocaml.entity = post_entity;
+      op = Create;
+      predicates = [];
+      set = Ent_ocaml.[ ("id", V_string "post_1") ];
+      clear = [];
+      add = [];
+      on_insert = [];
+    }
+  in
+  let open Ent_ocaml in
+  (match Privacy.evaluate_query () [] query with
+  | Ok () -> ()
+  | Error error -> Alcotest.fail (error_to_string error));
+  (match Privacy.evaluate_query () [ (fun () _ -> Skip) ] query with
+  | Error (`Denied "privacy rule chain skipped") -> ()
+  | Ok () -> Alcotest.fail "expected skipped query chain denial"
+  | Error error -> Alcotest.fail (error_to_string error));
+  (match
+     Privacy.evaluate_query ()
+       [ (fun () _ -> Skip); (fun () _ -> Allow); (fun () _ -> Deny "late") ]
+       query
+   with
+  | Ok () -> ()
+  | Error error -> Alcotest.fail (error_to_string error));
+  (match Privacy.evaluate_mutation () [ (fun () _ -> Deny "no writes") ] mutation with
+  | Error (`Denied "no writes") -> ()
+  | Ok () -> Alcotest.fail "expected mutation denial"
+  | Error error -> Alcotest.fail (error_to_string error))
+
 let test_mongo_eq_predicate () =
   match
     Ent_ocaml_mongo.predicate_to_bson
@@ -570,6 +603,7 @@ let () =
           Alcotest.test_case "query composite cursor pagination" `Quick
             test_query_composite_cursor_pagination;
           Alcotest.test_case "result syntax" `Quick test_result_syntax;
+          Alcotest.test_case "privacy rule chain" `Quick test_privacy_rule_chain;
         ] );
       ( "mongo",
         [

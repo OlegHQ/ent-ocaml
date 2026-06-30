@@ -84,6 +84,19 @@ let load_drafts ctx user_id =
   |> Posts.all ctx ~decode:post_of_bson_doc_result
 ```
 
+Privacy policies wrap generated stores without changing ordinary call sites:
+
+```ocaml
+module Private_posts =
+  Posts.With_policy (struct
+    let query_rules = [ require_user_can_read_posts ]
+    let mutation_rules = [ require_user_can_write_posts ]
+  end)
+
+let load_private ctx query =
+  Private_posts.all ctx ~decode:post_of_bson_doc_result query
+```
+
 Aggregates compose from queries too:
 
 ```ocaml

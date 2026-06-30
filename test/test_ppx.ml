@@ -550,6 +550,46 @@ let test_generated_store_api () =
   | Ok () -> ()
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
+let test_generated_policy_store_api () =
+  let module Store = Post.Store (Memory_backend) in
+  let module Deny_reads = struct
+    let query_rules = [ (fun () _ -> Ent_ocaml.Deny "no reads") ]
+    let mutation_rules = []
+  end in
+  let module Deny_writes = struct
+    let query_rules = []
+    let mutation_rules = [ (fun () _ -> Ent_ocaml.Deny "no writes") ]
+  end in
+  let module Read_store = Store.With_policy (Deny_reads) in
+  let module Write_store = Store.With_policy (Deny_writes) in
+  let decode = function
+    | Ent_ocaml.V_string value -> Ok value
+    | _ -> Error "expected string"
+  in
+  let query =
+    let open Post in
+    query () |> where (status_eq "draft")
+  in
+  (match Read_store.all () ~decode query with
+  | Error (`Denied "no reads") -> ()
+  | Ok _ -> Alcotest.fail "expected read denial"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  let mutation =
+    let open Post in
+    create ()
+    |> set (id "post_1")
+    |> set (user_id "user_1")
+    |> set (body "body")
+    |> set (media_ids [])
+    |> set (created_at_ms 1L)
+    |> set (updated_at_ms 1L)
+    |> set (published_at_ms None)
+  in
+  match Write_store.insert () mutation with
+  | Error (`Denied "no writes") -> ()
+  | Ok _ -> Alcotest.fail "expected write denial"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+
 let test_generated_nested_value_api () =
   let state_value = { kind = "confirmed"; external_id = Some "ext_1" } in
   let value = publish_state_to_ent_value state_value in
@@ -593,6 +633,8 @@ let () =
             test_generated_mutation_api;
           Alcotest.test_case "generated store api" `Quick
             test_generated_store_api;
+          Alcotest.test_case "generated policy store api" `Quick
+            test_generated_policy_store_api;
           Alcotest.test_case "generated nested value api" `Quick
             test_generated_nested_value_api;
         ] );
