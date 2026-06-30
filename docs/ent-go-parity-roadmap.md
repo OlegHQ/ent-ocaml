@@ -72,11 +72,12 @@ The initial package scaffold already provides:
   update, delete, count, stored-FK edge predicates, and basic value translation.
 - `[@@deriving ent]` generation for entity metadata, functional query helpers,
   typed field predicates, typed ordering helpers, create/update/delete mutation
-  values, create-bulk helpers, field selector constants, create-time and
-  update-time default values, typed validator wrappers, and matching `.mli`
-  signatures for generated helper modules. Type-level `[@@ent.edges ...]`
-  descriptors generate FK edge metadata plus clean edge predicate aliases such
-  as `Post.user (User.id_eq id)` alongside bulk `has_<edge>_with` helpers.
+  values, functional mutation pipeline helpers, record create helpers,
+  create-bulk helpers, field selector constants, create-time and update-time
+  default values, typed validator wrappers, and matching `.mli` signatures for
+  generated helper modules. Type-level `[@@ent.edges ...]` descriptors generate
+  FK edge metadata plus clean edge predicate aliases such as
+  `Post.user (User.id_eq id)` alongside bulk `has_<edge>_with` helpers.
 - Poster pilot integration for `User`, `Session`, `Post`, `Media`,
   `PublishState`, and `PublishAttempt` DTO entities.
 
@@ -145,10 +146,13 @@ The initial package scaffold already provides:
 4. Generated CRUD API:
    generate create, create-bulk, query, update-one, update-many, delete-one, and
    delete-many builders with result-returning APIs. Do not generate exception
-   shortcuts for Poster. Create-bulk is implemented as an OCaml list-based API;
-   required-field, unknown-field, duplicate-field, and immutable update
-   validation are implemented in the core mutation validator. User-defined field
-   validator chains are still pending. Generated create helpers apply
+   shortcuts for Poster. The preferred generated API is functional:
+   `create () |> set ...`, `query () |> where ... |> update_one_where |> set ...`,
+   record-based `create_record`, and record-list `create_many`. Explicit
+   `create_values`, `create_many_values`, `where_all`, and `set_all` helpers
+   remain available for bulk/mechanical composition. Required-field,
+   unknown-field, duplicate-field, and immutable update validation are
+   implemented in the core mutation validator. Generated create helpers apply
    `[@ent.default expr]` for omitted fields and generated update helpers apply
    `[@ent.update_default expr]` unless the field is explicitly set or cleared.
    Generated validator wrappers support `[@ent.validate [fn1; fn2]]` on

@@ -18,33 +18,36 @@ Queries can be built as pipelines:
 
 ```ocaml
 let query =
-  Post.query ()
-  |> Post.where (Post.user (User.id_eq user_id))
-  |> Post.where (Post.status_eq "draft")
-  |> Post.select [ Post.select_id; Post.select_body ]
-  |> Post.order_by [ Post.created_at_ms_order ~direction:Ent_ocaml.Desc () ]
-  |> Post.limit 20
+  let open Post in
+  query ()
+  |> where (user (User.id_eq user_id))
+  |> where (status_eq "draft")
+  |> select [ select_id; select_body ]
+  |> order_by [ created_at_ms_order ~direction:Ent_ocaml.Desc () ]
+  |> limit 20
 ```
 
 The same composed query value can feed mutations:
 
 ```ocaml
 let mutation =
-  Post.query ()
-  |> Post.where (Post.id_eq post_id)
-  |> Post.where (Post.user (User.id_eq user_id))
-  |> Post.update_one_where
-  |> Post.set (Post.body body)
+  let open Post in
+  query ()
+  |> where (id_eq post_id)
+  |> where (user (User.id_eq user_id))
+  |> update_one_where
+  |> set (body body)
 ```
 
 Create mutations can be built as pipelines or directly from records:
 
 ```ocaml
 let mutation =
-  Post.create ()
-  |> Post.set (Post.id post.id)
-  |> Post.set (Post.user_id post.user_id)
-  |> Post.set (Post.body post.body)
+  let open Post in
+  create ()
+  |> set (id post.id)
+  |> set (user_id post.user_id)
+  |> set (body post.body)
 
 let from_record = Post.create_record post_doc
 ```
@@ -55,9 +58,10 @@ Generated entity modules also expose a backend-agnostic `Store` functor:
 module Posts = Post.Store (Ent_ocaml_mongo)
 
 let load_drafts ctx user_id =
-  Post.query ()
-  |> Post.where (Post.user (User.id_eq user_id))
-  |> Post.where (Post.status_eq "draft")
+  let open Post in
+  query ()
+  |> where (user (User.id_eq user_id))
+  |> where (status_eq "draft")
   |> Posts.all ctx ~decode:post_of_bson_doc_result
 ```
 

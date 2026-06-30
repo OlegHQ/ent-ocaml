@@ -1169,8 +1169,7 @@ let gen_query_module td =
         ]
     in
     let body =
-      mutation_record ~op:"Create" ~predicates:(list ~loc [])
-        ~set:fields_expr ~clear:(list ~loc []) ~add:(list ~loc [])
+      app ~loc (evar ~loc "create_values") [ fields_expr ]
     in
     A.pstr_value ~loc Nonrecursive
       [

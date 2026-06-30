@@ -265,10 +265,12 @@ let test_generated_mutation_api () =
        update.set);
   Alcotest.(check int) "update clear" 1 (List.length update.clear);
   let update_from_query =
-    Post.query ()
-    |> Post.where (Post.id_eq "post_1")
-    |> Post.where (Post.user (Ent_ocaml.Eq ("id", Ent_ocaml.V_string "user_1")))
-    |> Post.update_one_where ~set:[ Post.body "from query" ]
+    let open Post in
+    query ()
+    |> where (id_eq "post_1")
+    |> where (user (Ent_ocaml.Eq ("id", Ent_ocaml.V_string "user_1")))
+    |> update_one_where
+    |> set (body "from query")
   in
   Alcotest.(check int)
     "update from query predicates" 2
@@ -286,9 +288,10 @@ let test_generated_mutation_api () =
        clear_updated.set);
   let delete = Post.delete_one ~where:[ Post.id_eq "post_1" ] () in
   let delete_from_query =
-    Post.query ()
-    |> Post.where (Post.id_eq "post_1")
-    |> Post.delete_one_where
+    let open Post in
+    query ()
+    |> where (id_eq "post_1")
+    |> delete_one_where
   in
   Alcotest.(check int)
     "delete from query predicates" 1
@@ -331,7 +334,11 @@ let test_generated_store_api () =
       Alcotest.(check bool) "inserted id" true (List.mem_assoc "id" fields)
   | Ok _ -> Alcotest.fail "unexpected insert result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
-  match Store.update_one () (Post.update_one_where query ~set:[ Post.body "x" ]) with
+  let mutation =
+    let open Post in
+    update_one_where query |> set (body "x")
+  in
+  match Store.update_one () mutation with
   | Ok () -> ()
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
