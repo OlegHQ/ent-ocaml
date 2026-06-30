@@ -467,7 +467,7 @@ let test_edge_query_alias () =
 
 let test_transaction_hooks () =
   let events = ref [] in
-  let transaction () f = f () in
+  let transaction ?options:_ () f = f () in
   let commit_hook =
     Ent_ocaml.Transaction.after_commit (fun () ->
         events := "commit" :: !events;
@@ -499,6 +499,21 @@ let test_transaction_hooks () =
   match Ent_ocaml.Transaction.run [ failing_hook ] transaction () (fun () -> Ok ()) with
   | Error (`Bad_query "commit hook failed") -> ()
   | Ok _ -> Alcotest.fail "expected commit hook error"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+
+let test_transaction_options () =
+  let seen = ref None in
+  let transaction ?options () f =
+    seen := options;
+    f ()
+  in
+  let options = Ent_ocaml.Transaction.options ~max_commit_time_ms:50 () in
+  match Ent_ocaml.Transaction.run ~options [] transaction () (fun () -> Ok ()) with
+  | Ok () ->
+      Alcotest.(check (option int))
+        "max commit time"
+        (Some 50)
+        (Option.bind !seen (fun options -> options.max_commit_time_ms))
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
 let test_dynamic_filter_api () =
@@ -1118,6 +1133,8 @@ let () =
             test_edge_interceptor_chain;
           Alcotest.test_case "edge query alias" `Quick test_edge_query_alias;
           Alcotest.test_case "transaction hooks" `Quick test_transaction_hooks;
+          Alcotest.test_case "transaction options" `Quick
+            test_transaction_options;
           Alcotest.test_case "dynamic filter api" `Quick test_dynamic_filter_api;
           Alcotest.test_case "entql api" `Quick test_entql_api;
           Alcotest.test_case "schema snapshot" `Quick test_schema_snapshot;

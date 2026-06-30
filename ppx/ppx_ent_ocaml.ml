@@ -3677,19 +3677,21 @@ let gen_query_module td =
       value_fun "with_transaction"
         (A.pexp_fun ~loc (Optional "hooks") (Some (list ~loc []))
            (pvar ~loc "hooks")
-           (A.pexp_fun ~loc Nolabel None (pvar ~loc "client")
-              (A.pexp_fun ~loc Nolabel None (pvar ~loc "f")
-                 (A.pexp_apply ~loc
-                    (ident ~loc [ "Ent_ocaml"; "Transaction"; "run" ])
-                    [
-                      (Nolabel, evar ~loc "hooks");
-                      (Nolabel, ident ~loc [ "Backend"; "transaction" ]);
-                      (Nolabel, evar ~loc "client");
-                      ( Nolabel,
-                        A.pexp_fun ~loc Nolabel None (pvar ~loc "tx_ctx")
-                          (A.pexp_apply ~loc (evar ~loc "f")
-                             [ (Nolabel, evar ~loc "tx_ctx") ]) );
-                    ]))))
+           (A.pexp_fun ~loc (Optional "options") None (pvar ~loc "options")
+              (A.pexp_fun ~loc Nolabel None (pvar ~loc "client")
+                 (A.pexp_fun ~loc Nolabel None (pvar ~loc "f")
+                    (A.pexp_apply ~loc
+                       (ident ~loc [ "Ent_ocaml"; "Transaction"; "run" ])
+                       [
+                         (Optional "options", evar ~loc "options");
+                         (Nolabel, evar ~loc "hooks");
+                         (Nolabel, ident ~loc [ "Backend"; "transaction" ]);
+                         (Nolabel, evar ~loc "client");
+                         ( Nolabel,
+                           A.pexp_fun ~loc Nolabel None (pvar ~loc "tx_ctx")
+                             (A.pexp_apply ~loc (evar ~loc "f")
+                                [ (Nolabel, evar ~loc "tx_ctx") ]) );
+                       ])))))
     in
     let policy_type =
       let backend_ctx =
@@ -4632,6 +4634,11 @@ let gen_sig_for_type td =
         (lid ~loc [ "Ent_ocaml"; "transaction_hook" ])
         [ backend_ctx ]
     in
+    let transaction_options_typ =
+      A.ptyp_constr ~loc
+        (lid ~loc [ "Ent_ocaml"; "transaction_options" ])
+        []
+    in
     let policy_type =
       let query_rule_typ =
         A.ptyp_constr ~loc
@@ -4805,11 +4812,12 @@ let gen_sig_for_type td =
              ~type_:(A.pmty_signature ~loc tx_items));
         value_sig "with_transaction"
           (arrow (Optional "hooks") (list_typ transaction_hook_typ)
-             (arrow Nolabel client_t
-                (arrow Nolabel
-                   (arrow Nolabel tx_t
-                      (result_typ (A.ptyp_var ~loc "a") error_typ))
-                   (result_typ (A.ptyp_var ~loc "a") error_typ))));
+             (arrow (Optional "options") transaction_options_typ
+                (arrow Nolabel client_t
+                   (arrow Nolabel
+                      (arrow Nolabel tx_t
+                         (result_typ (A.ptyp_var ~loc "a") error_typ))
+                      (result_typ (A.ptyp_var ~loc "a") error_typ)))));
       ]
       @ operation_items client_t
     in

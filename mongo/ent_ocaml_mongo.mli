@@ -118,4 +118,8 @@ val group :
   Ent_ocaml.group_aggregate ->
   (Ent_ocaml.group_result list, Ent_ocaml.error) result
 
-val transaction : ctx -> (ctx -> ('a, Ent_ocaml.error) result) -> ('a, Ent_ocaml.error) result
+val transaction :
+  ?options:Ent_ocaml.transaction_options ->
+  ctx ->
+  (ctx -> ('a, Ent_ocaml.error) result) ->
+  ('a, Ent_ocaml.error) result

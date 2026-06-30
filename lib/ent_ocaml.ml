@@ -1385,6 +1385,10 @@ type 'ctx transaction_hook = {
   after_rollback : 'ctx -> error -> (unit, error) result;
 }
 
+type transaction_options = {
+  max_commit_time_ms : int option;
+}
+
 module Privacy = struct
   let evaluate rules ctx value =
     let rec loop saw_rule = function
@@ -1464,6 +1468,8 @@ module Hook = struct
 end
 
 module Transaction = struct
+  let options ?max_commit_time_ms () = { max_commit_time_ms }
+
   let hook ?(after_commit = fun _ -> Ok ())
       ?(after_rollback = fun _ _ -> Ok ()) () =
     { after_commit; after_rollback }
@@ -1491,8 +1497,8 @@ module Transaction = struct
     in
     loop hooks
 
-  let run hooks transaction ctx f =
-    match transaction ctx f with
+  let run ?options hooks transaction ctx f =
+    match transaction ?options ctx f with
     | Ok value -> (
         match run_after_commit hooks ctx with
         | Ok () -> Ok value
@@ -1519,7 +1525,11 @@ module type BACKEND = sig
     ctx -> aggregate_scan -> ((string * value option) list, error) result
   val group : ctx -> group_aggregate -> (group_result list, error) result
   val count : ctx -> query -> (int, error) result
-  val transaction : ctx -> (tx -> ('a, error) result) -> ('a, error) result
+  val transaction :
+    ?options:transaction_options ->
+    ctx ->
+    (tx -> ('a, error) result) ->
+    ('a, error) result
 end
 
 module type STORE_BACKEND = sig
@@ -1568,5 +1578,9 @@ module type STORE_BACKEND = sig
     ctx -> aggregate_scan -> ((string * value option) list, error) result
   val group : ctx -> group_aggregate -> (group_result list, error) result
   val count : ctx -> query -> (int, error) result
-  val transaction : ctx -> (ctx -> ('a, error) result) -> ('a, error) result
+  val transaction :
+    ?options:transaction_options ->
+    ctx ->
+    (ctx -> ('a, error) result) ->
+    ('a, error) result
 end

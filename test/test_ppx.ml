@@ -237,7 +237,7 @@ module Memory_backend = struct
         };
       ]
 
-  let transaction ctx f = f ctx
+  let transaction ?options:_ ctx f = f ctx
 end
 
 let find_field name =
@@ -1131,6 +1131,10 @@ let test_generated_client_transaction_hooks () =
   (match Client.with_transaction ~hooks client (fun _tx -> Ok ()) with
   | Ok () ->
       Alcotest.(check (list string)) "client commit hook" [ "commit" ] !events
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  let options = Ent_ocaml.Transaction.options ~max_commit_time_ms:25 () in
+  (match Client.with_transaction ~options client (fun _tx -> Ok ()) with
+  | Ok () -> ()
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
   events := [];
   match

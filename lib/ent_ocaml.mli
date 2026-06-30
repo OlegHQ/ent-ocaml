@@ -388,6 +388,10 @@ type 'ctx transaction_hook = {
   after_rollback : 'ctx -> error -> (unit, error) result;
 }
 
+type transaction_options = {
+  max_commit_time_ms : int option;
+}
+
 module Privacy : sig
   val evaluate_query :
     'ctx -> 'ctx query_rule list -> query -> (unit, error) result
@@ -442,6 +446,8 @@ module Hook : sig
 end
 
 module Transaction : sig
+  val options : ?max_commit_time_ms:int -> unit -> transaction_options
+
   val hook :
     ?after_commit:('ctx -> (unit, error) result) ->
     ?after_rollback:('ctx -> error -> (unit, error) result) ->
@@ -456,8 +462,12 @@ module Transaction : sig
     'ctx transaction_hook list -> 'ctx -> error -> (unit, error) result
 
   val run :
+    ?options:transaction_options ->
     'ctx transaction_hook list ->
-    ('ctx -> ('tx -> ('a, error) result) -> ('a, error) result) ->
+    (?options:transaction_options ->
+    'ctx ->
+    ('tx -> ('a, error) result) ->
+    ('a, error) result) ->
     'ctx ->
     ('tx -> ('a, error) result) ->
     ('a, error) result
@@ -479,7 +489,11 @@ module type BACKEND = sig
     ctx -> aggregate_scan -> ((string * value option) list, error) result
   val group : ctx -> group_aggregate -> (group_result list, error) result
   val count : ctx -> query -> (int, error) result
-  val transaction : ctx -> (tx -> ('a, error) result) -> ('a, error) result
+  val transaction :
+    ?options:transaction_options ->
+    ctx ->
+    (tx -> ('a, error) result) ->
+    ('a, error) result
 end
 
 module type STORE_BACKEND = sig
@@ -528,5 +542,9 @@ module type STORE_BACKEND = sig
     ctx -> aggregate_scan -> ((string * value option) list, error) result
   val group : ctx -> group_aggregate -> (group_result list, error) result
   val count : ctx -> query -> (int, error) result
-  val transaction : ctx -> (ctx -> ('a, error) result) -> ('a, error) result
+  val transaction :
+    ?options:transaction_options ->
+    ctx ->
+    (ctx -> ('a, error) result) ->
+    ('a, error) result
 end

@@ -193,6 +193,17 @@ let save_post ctx mutation =
       Post_client.Tx.insert tx mutation)
 ```
 
+Transaction options compose through the same call. Mongo currently uses
+`max_commit_time_ms` as `maxTimeMS` on `commitTransaction`:
+
+```ocaml
+let save_with_commit_budget ctx mutation =
+  let client = Post_client.make ctx in
+  let options = Ent_ocaml.Transaction.options ~max_commit_time_ms:500 () in
+  Post_client.with_transaction ~options client (fun tx ->
+      Post_client.Tx.insert tx mutation)
+```
+
 For Mongo, `with_transaction` runs operations with one logical session and a
 stable transaction number, then commits on `Ok` or aborts on `Error` when the
 deployment supports Mongo transactions.

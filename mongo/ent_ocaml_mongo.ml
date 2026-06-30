@@ -5,6 +5,7 @@ type config = {
 type transaction_state = {
   session : Mongo_session.t;
   txn_number : int64;
+  options : Ent_ocaml.transaction_options option;
   mutable started : bool;
 }
 
@@ -1904,16 +1905,30 @@ let transaction_command ctx tx name =
   let session =
     Mongo_session.transaction_context tx.session ~txn_number:tx.txn_number
   in
+  let command =
+    match (name, tx.options) with
+    | "commitTransaction", Some { max_commit_time_ms = Some ms } ->
+        [
+          (name, Bson.create_int32 1l);
+          ("maxTimeMS", Bson.create_int64 (Int64.of_int ms));
+        ]
+    | _ -> [ (name, Bson.create_int32 1l) ]
+  in
   Mongo_eio.direct_run_command ~session ctx.client "admin"
-    [ (name, Bson.create_int32 1l) ]
+    command
 
-let transaction ctx f =
+let transaction ?options ctx f =
   match ctx.transaction with
   | Some _ -> f ctx
   | None ->
       let tx =
         let session = Mongo_session.create () in
-        { session; txn_number = Mongo_session.next_txn session; started = false }
+        {
+          session;
+          txn_number = Mongo_session.next_txn session;
+          options;
+          started = false;
+        }
       in
       let tx_ctx = { ctx with transaction = Some tx } in
       match f tx_ctx with

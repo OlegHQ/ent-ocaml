@@ -105,6 +105,9 @@ The initial package scaffold already provides:
   connected deployment supports Mongo transactions. Generated clients accept
   result-returning transaction hooks through `with_transaction ~hooks`, and core
   `Ent_ocaml.Transaction` helpers run after-commit and after-rollback hooks.
+  Generated clients accept typed transaction options through
+  `with_transaction ~options`; the Mongo backend maps `max_commit_time_ms` to
+  `commitTransaction.maxTimeMS`.
   Generated Store/Client `values` and `value` helpers decode selected Mongo
   projection fields and aliased order values to `Ent_ocaml.value` rows without
   requiring a full-record decoder.
@@ -193,13 +196,15 @@ The initial package scaffold already provides:
 | Sensitive/deprecated/comments | Generated schema metadata implemented with `[@ent.sensitive]`, `[@ent.deprecated "..."]`, and `[@ent.comment "..."]` | Snapshot/display metadata |
 | Indexes | Field, edge, compound, unique, and typed partial-filter index descriptors implemented | Mongo indexes with options and `partialFilterExpression` |
 | Annotations | Backend/codegen metadata, only when needed by concrete backend features | OCaml attributes and typed metadata records |
-| Transactions | Generated `with_transaction` and `Tx` clients plus session-backed Mongo transaction execution and transaction hooks implemented; richer options pending | Mongo sessions/transactions where deployment supports them |
+| Transactions | Generated `with_transaction` and `Tx` clients plus session-backed Mongo transaction execution, transaction hooks, and typed commit-time budget option implemented; richer read/write concern options pending | Mongo sessions/transactions where deployment supports them |
 | Schema/index checks | Mongo index ensure and drift verification implemented; collection validators pending | `createIndexes`, `listIndexes`, optional collection validators |
+| Schema migrations | Out of scope for Poster; do not build migration planners/generators for this roadmap | Use explicit deployment/admin operations outside ent-ocaml |
 | Global IDs | Optional globally unique ID configuration | App-generated IDs or ObjectId strategy |
 | Schema views | Read-only entity descriptors and generated query modules | Mongo views/aggregation-backed collections where useful |
 | Schema snapshot | PPX-generated per-entity schema snapshots and repository-wide manifests implemented | Checked-in `.ml` manifest or JSON snapshot |
 | Local custom code | Hand-written modules beside generated code | Ordinary OCaml modules |
 | Dynamic EntQL | Metadata-validated runtime field filters, result-returning boolean expression parser, and stored-FK edge ID paths implemented; richer cross-entity/path grammar pending | Runtime predicate AST parser/builder |
+| Extension/plugin systems | Out of scope for Poster; do not add extension registration/checklist work | Prefer ordinary OCaml modules and typed backend metadata only when needed |
 | SQL-only features | Backend-specific optional capabilities | Provide Mongo-specific analogs, keep SQL names out of core |
 | GraphQL/gRPC integrations | Out of core for first release | Future packages, not required for Poster |
 
@@ -245,8 +250,9 @@ The initial package scaffold already provides:
    `[@ent.validate [fn1; fn2]]` on primitive, enum, option, list, JSON, and
    nested custom record fields. Generated context-capturing `Client (Backend)`
    modules expose the same entity-local operations as `Store (Backend)` plus a
-   `with_transaction` boundary, `Tx` operation module, and result-returning
-   transaction hooks for after-commit and after-rollback side effects.
+   `with_transaction` boundary, `Tx` operation module, result-returning
+   transaction hooks for after-commit and after-rollback side effects, and typed
+   transaction options for backend-supported commit-time limits.
 
 5. Poster pilot:
    model `User`, `Session`, `Post`, `Media`, and `PublishAttempt`; replace the
@@ -311,8 +317,8 @@ The initial package scaffold already provides:
    operators, and stored-FK edge ID paths, generated JSON path predicates are
    implemented for JSON fields, and generated per-entity schema snapshots plus
    repository-wide snapshot manifests are implemented. Richer cross-entity/path
-   grammar, custom annotations when they directly support a backend feature, and typed
-   backend-specific escape hatches remain. Migrations and extension/plugin
+   grammar, custom annotations when they directly support a backend feature, and
+   typed backend-specific escape hatches remain. Migrations and extension/plugin
    systems are not on the Poster roadmap; add typed backend metadata only when a
    concrete backend feature requires it.
 
