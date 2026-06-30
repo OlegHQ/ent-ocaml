@@ -54,6 +54,13 @@ type publish_attempt = {
 [@@ent.entity "PublishAttempt"] [@@ent.collection "publish_attempts"]
 [@@deriving ent]
 
+type event = {
+  id : string;
+  metadata : Ent_ocaml.value [@ent.json] [@ent.optional];
+}
+[@@ent.entity "Event"] [@@ent.collection "events"]
+[@@deriving ent]
+
 module Memory_backend = struct
   type ctx = unit
   type doc = Ent_ocaml.value
@@ -739,6 +746,34 @@ let test_generated_dynamic_filter_api () =
   | Ok _ -> Alcotest.fail "unexpected generated dynamic filter result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
+let test_generated_json_predicate_api () =
+  let query =
+    let open Event in
+    query ()
+    |> where
+         (metadata_path_eq [ "flags"; "pinned" ] (Ent_ocaml.V_bool true))
+    |> where (metadata_path_not_nil [ "author"; "id" ])
+  in
+  Alcotest.(check int) "json predicates" 2 (List.length query.predicates);
+  let record =
+    {
+      id = "event_1";
+      metadata =
+        Ent_ocaml.(
+          V_doc
+            [
+              ("flags", V_doc [ ("pinned", V_bool true) ]);
+              ("author", V_doc [ ("id", V_string "user_1") ]);
+            ]);
+    }
+  in
+  let mutation = Event.create_record record in
+  Alcotest.(check bool)
+    "metadata field" true
+    (match List.assoc_opt "metadata" mutation.set with
+    | Some (Ent_ocaml.V_doc _) -> true
+    | _ -> false)
+
 let test_generated_nested_value_api () =
   let state_value = { kind = "confirmed"; external_id = Some "ext_1" } in
   let value = publish_state_to_ent_value state_value in
@@ -794,6 +829,8 @@ let () =
             test_generated_interceptor_store_api;
           Alcotest.test_case "generated dynamic filter api" `Quick
             test_generated_dynamic_filter_api;
+          Alcotest.test_case "generated json predicate api" `Quick
+            test_generated_json_predicate_api;
           Alcotest.test_case "generated nested value api" `Quick
             test_generated_nested_value_api;
         ] );

@@ -94,6 +94,16 @@ let post_entity =
             nillable = false;
             validators = [];
           };
+          {
+            name = "metadata";
+            storage_key = "metadata";
+            typ = Json;
+            required = false;
+            unique = false;
+            immutable = false;
+            nillable = false;
+            validators = [];
+          };
         ];
       edges =
         [
@@ -130,6 +140,7 @@ let create_user id username =
     }
 
 let create id user_id body views =
+  let pinned = id = "post_2" in
   Ent_ocaml.
     {
       entity = post_entity;
@@ -141,6 +152,7 @@ let create id user_id body views =
           ("user_id", V_string user_id);
           ("body", V_string body);
           ("views", V_int64 views);
+          ("metadata", V_doc [ ("flags", V_doc [ ("pinned", V_bool pinned) ]) ]);
         ];
       clear = [];
       add = [];
@@ -301,6 +313,17 @@ let run_flow client =
   in
   assert_true "dynamic filter returns user posts"
     (List.length dynamic_user_posts = 2);
+  let* pinned_posts =
+    Ent_ocaml_mongo.find ctx
+      (Ent_ocaml.Query.make post_entity
+         ~where:
+           Ent_ocaml.
+             [ Json_eq ("metadata", [ "flags"; "pinned" ], V_bool true) ])
+  in
+  assert_true "json path predicate returns pinned post"
+    (match pinned_posts with
+    | [ doc ] -> Bson.get_string (Bson.get_element "_id" doc) = "post_2"
+    | _ -> false);
   let* page = Ent_ocaml_mongo.find ctx query_after_post_1 in
   assert_true "seek pagination returns next row"
     (match page with

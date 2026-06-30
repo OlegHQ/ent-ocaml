@@ -73,6 +73,33 @@ let predicate_field ?entity field =
       | Error (`Bad_schema _) -> Ok field
       | Error _ as error -> error)
 
+let json_path_field ?entity field path =
+  let validate_path = function
+    | [] -> Error (`Bad_query "json predicate path must not be empty")
+    | segments ->
+        if
+          List.exists
+            (fun segment ->
+              segment = "" || String.contains segment '.'
+              || String.starts_with ~prefix:"$" segment)
+            segments
+        then Error (`Bad_query "json predicate path contains invalid segment")
+        else Ok (String.concat "." segments)
+  in
+  match (entity, validate_path path) with
+  | _, (Error _ as error) -> error
+  | None, Ok path -> Ok (field ^ "." ^ path)
+  | Some (entity : Ent_ocaml.entity), Ok path -> (
+      match
+        List.find_opt
+          (fun (candidate : Ent_ocaml.field) -> candidate.name = field)
+          entity.fields
+      with
+      | None -> Error (`Bad_query ("field not found: " ^ field))
+      | Some { typ = Ent_ocaml.Json; storage_key; _ } ->
+          Ok (storage_key ^ "." ^ path)
+      | Some _ -> Error (`Bad_query ("json predicate field is not json: " ^ field)))
+
 let edge_storage_key (entity : Ent_ocaml.entity) name =
   match find_edge entity name with
   | None -> Error (`Bad_query ("edge not found: " ^ name))
@@ -149,6 +176,53 @@ let rec predicate_to_bson ?entity predicate =
       | Error _ as error -> error)
   | Not_nil field -> (
       match predicate_field ?entity field with
+      | Ok field ->
+          Ok
+            (doc
+               [
+                 ( field,
+                   Bson.create_doc_element
+                     (doc [ ("$ne", Bson.create_null ()) ]) );
+               ])
+      | Error _ as error -> error)
+  | Json_eq (field, path, value) -> (
+      match (json_path_field ?entity field path, value_to_bson value) with
+      | Ok field, Ok bson -> Ok (doc [ (field, bson) ])
+      | Error _ as error, _ | _, (Error _ as error) -> error)
+  | Json_neq (field, path, value) -> (
+      match json_path_field ?entity field path with
+      | Ok field -> op_doc field "$ne" value
+      | Error _ as error -> error)
+  | Json_gt (field, path, value) -> (
+      match json_path_field ?entity field path with
+      | Ok field -> op_doc field "$gt" value
+      | Error _ as error -> error)
+  | Json_gte (field, path, value) -> (
+      match json_path_field ?entity field path with
+      | Ok field -> op_doc field "$gte" value
+      | Error _ as error -> error)
+  | Json_lt (field, path, value) -> (
+      match json_path_field ?entity field path with
+      | Ok field -> op_doc field "$lt" value
+      | Error _ as error -> error)
+  | Json_lte (field, path, value) -> (
+      match json_path_field ?entity field path with
+      | Ok field -> op_doc field "$lte" value
+      | Error _ as error -> error)
+  | Json_in (field, path, values) -> (
+      match json_path_field ?entity field path with
+      | Ok field -> op_doc field "$in" (V_list values)
+      | Error _ as error -> error)
+  | Json_not_in (field, path, values) -> (
+      match json_path_field ?entity field path with
+      | Ok field -> op_doc field "$nin" (V_list values)
+      | Error _ as error -> error)
+  | Json_is_nil (field, path) -> (
+      match json_path_field ?entity field path with
+      | Ok field -> Ok (doc [ (field, Bson.create_null ()) ])
+      | Error _ as error -> error)
+  | Json_not_nil (field, path) -> (
+      match json_path_field ?entity field path with
       | Ok field ->
           Ok
             (doc

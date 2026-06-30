@@ -149,6 +149,23 @@ let load_filtered ctx =
   Posts.all ctx ~decode:post_of_bson_doc_result query
 ```
 
+JSON fields can be marked with `[@ent.json]` and queried through generated
+path helpers:
+
+```ocaml
+type event = {
+  id : string;
+  metadata : Ent_ocaml.value [@ent.json] [@ent.optional];
+}
+[@@ent.entity "Event"] [@@ent.collection "events"]
+[@@deriving ent]
+
+let pinned =
+  let open Event in
+  query ()
+  |> where (metadata_path_eq [ "flags"; "pinned" ] (Ent_ocaml.V_bool true))
+```
+
 Generated schema snapshots provide stable metadata for drift/debug tooling:
 
 ```ocaml

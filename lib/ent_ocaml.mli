@@ -77,6 +77,16 @@ type predicate =
   | Has_suffix of string * string
   | Is_nil of string
   | Not_nil of string
+  | Json_eq of string * string list * value
+  | Json_neq of string * string list * value
+  | Json_gt of string * string list * value
+  | Json_gte of string * string list * value
+  | Json_lt of string * string list * value
+  | Json_lte of string * string list * value
+  | Json_in of string * string list * value list
+  | Json_not_in of string * string list * value list
+  | Json_is_nil of string * string list
+  | Json_not_nil of string * string list
   | And of predicate list
   | Or of predicate list
   | Not of predicate

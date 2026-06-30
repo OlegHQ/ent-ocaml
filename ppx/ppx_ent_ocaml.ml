@@ -80,6 +80,11 @@ let ent_enum_attr =
     Ast_pattern.(single_expr_payload (elist (estring __)))
     (fun values -> values)
 
+let ent_json_attr =
+  Attribute.declare "ent.json" Attribute.Context.label_declaration
+    Ast_pattern.(pstr nil)
+    ()
+
 let ent_default_attr =
   Attribute.declare "ent.default" Attribute.Context.label_declaration
     Ast_pattern.(single_expr_payload __)
@@ -357,6 +362,7 @@ let rec field_type_expr ~loc field =
   | Some values ->
       constr_arg ~loc [ "Ent_ocaml"; "Enum" ]
         (list ~loc (List.map (str ~loc) values))
+  | None when has_attr ent_json_attr field -> constr ~loc [ "Ent_ocaml"; "Json" ]
   | None -> (
       match field.pld_type.ptyp_desc with
       | Ptyp_constr ({ txt = Longident.Lident "string"; _ }, []) ->
@@ -401,6 +407,15 @@ let is_option field =
       true
   | _ -> false
 
+let is_json_field field =
+  has_attr ent_json_attr field
+  ||
+  match field.pld_type.ptyp_desc with
+  | Ptyp_constr ({ txt = path; _ }, []) ->
+      let name = String.concat "." (type_path_parts path) in
+      name = "Yojson.Safe.t" || name = "Yojson.t"
+  | _ -> false
+
 let is_comparable_field field =
   if is_option field then false
   else
@@ -428,6 +443,7 @@ let is_comparable_field field =
 let rec value_constructor field =
   match Attribute.get ent_enum_attr field with
   | Some _ -> Some [ "Ent_ocaml"; "V_string" ]
+  | None when has_attr ent_json_attr field -> None
   | None -> (
       match field.pld_type.ptyp_desc with
       | Ptyp_constr ({ txt = Longident.Lident "string"; _ }, []) ->
@@ -468,6 +484,7 @@ let rec value_constructor field =
 let rec value_expr ~loc field value =
   match Attribute.get ent_enum_attr field with
   | Some _ -> constr_arg ~loc [ "Ent_ocaml"; "V_string" ] value
+  | None when has_attr ent_json_attr field -> value
   | None -> (
       match field.pld_type.ptyp_desc with
       | Ptyp_constr ({ txt = Longident.Lident "string"; _ }, []) ->
@@ -754,6 +771,40 @@ let cursor_term_function ~loc field_name field =
              (A.pexp_fun ~loc Nolabel None (pvar ~loc "value") body));
     ]
 
+let json_value_predicate_function ~loc name constructor field_name =
+  A.pstr_value ~loc Nonrecursive
+    [
+      A.value_binding ~loc ~pat:(pvar ~loc name)
+        ~expr:
+          (A.pexp_fun ~loc Nolabel None (pvar ~loc "path")
+             (A.pexp_fun ~loc Nolabel None (pvar ~loc "value")
+                (constr_arg ~loc constructor
+                   (A.pexp_tuple ~loc
+                      [ str ~loc field_name; evar ~loc "path"; evar ~loc "value" ]))));
+    ]
+
+let json_list_predicate_function ~loc name constructor field_name =
+  A.pstr_value ~loc Nonrecursive
+    [
+      A.value_binding ~loc ~pat:(pvar ~loc name)
+        ~expr:
+          (A.pexp_fun ~loc Nolabel None (pvar ~loc "path")
+             (A.pexp_fun ~loc Nolabel None (pvar ~loc "values")
+                (constr_arg ~loc constructor
+                   (A.pexp_tuple ~loc
+                      [ str ~loc field_name; evar ~loc "path"; evar ~loc "values" ]))));
+    ]
+
+let json_nullary_predicate_function ~loc name constructor field_name =
+  A.pstr_value ~loc Nonrecursive
+    [
+      A.value_binding ~loc ~pat:(pvar ~loc name)
+        ~expr:
+          (A.pexp_fun ~loc Nolabel None (pvar ~loc "path")
+             (constr_arg ~loc constructor
+                (A.pexp_tuple ~loc [ str ~loc field_name; evar ~loc "path" ])));
+    ]
+
 let field_helper_items field =
   let loc = field.pld_loc in
   let field_name = field.pld_name.txt in
@@ -777,8 +828,34 @@ let field_helper_items field =
             ];
         ]
   in
+  let json_helpers =
+    if is_json_field field then
+      [
+        json_value_predicate_function ~loc (field_name ^ "_path_eq")
+          [ "Ent_ocaml"; "Json_eq" ] field_name;
+        json_value_predicate_function ~loc (field_name ^ "_path_neq")
+          [ "Ent_ocaml"; "Json_neq" ] field_name;
+        json_value_predicate_function ~loc (field_name ^ "_path_gt")
+          [ "Ent_ocaml"; "Json_gt" ] field_name;
+        json_value_predicate_function ~loc (field_name ^ "_path_gte")
+          [ "Ent_ocaml"; "Json_gte" ] field_name;
+        json_value_predicate_function ~loc (field_name ^ "_path_lt")
+          [ "Ent_ocaml"; "Json_lt" ] field_name;
+        json_value_predicate_function ~loc (field_name ^ "_path_lte")
+          [ "Ent_ocaml"; "Json_lte" ] field_name;
+        json_list_predicate_function ~loc (field_name ^ "_path_in")
+          [ "Ent_ocaml"; "Json_in" ] field_name;
+        json_list_predicate_function ~loc (field_name ^ "_path_not_in")
+          [ "Ent_ocaml"; "Json_not_in" ] field_name;
+        json_nullary_predicate_function ~loc (field_name ^ "_path_is_nil")
+          [ "Ent_ocaml"; "Json_is_nil" ] field_name;
+        json_nullary_predicate_function ~loc (field_name ^ "_path_not_nil")
+          [ "Ent_ocaml"; "Json_not_nil" ] field_name;
+      ]
+    else []
+  in
   match value_constructor field with
-  | None -> value_item @ [ selector; order ]
+  | None -> value_item @ [ selector; order ] @ json_helpers
   | Some value_path ->
       let base =
         [
@@ -835,6 +912,7 @@ let field_helper_items field =
         | _ -> []
       in
       value_item @ base @ comparison_helpers @ nil_helpers @ string_helpers
+      @ json_helpers
 
 let field_expr field =
   let loc = field.pld_loc in
@@ -2747,8 +2825,42 @@ let gen_sig_for_type td =
       | None -> []
       | Some _ -> [ val_sig field_name (arrow Nolabel field_typ field_value_typ) ]
     in
+    let json_helpers =
+      if is_json_field field then
+        [
+          val_sig (field_name ^ "_path_eq")
+            (arrow Nolabel (list_typ string_typ)
+               (arrow Nolabel value_typ predicate_typ));
+          val_sig (field_name ^ "_path_neq")
+            (arrow Nolabel (list_typ string_typ)
+               (arrow Nolabel value_typ predicate_typ));
+          val_sig (field_name ^ "_path_gt")
+            (arrow Nolabel (list_typ string_typ)
+               (arrow Nolabel value_typ predicate_typ));
+          val_sig (field_name ^ "_path_gte")
+            (arrow Nolabel (list_typ string_typ)
+               (arrow Nolabel value_typ predicate_typ));
+          val_sig (field_name ^ "_path_lt")
+            (arrow Nolabel (list_typ string_typ)
+               (arrow Nolabel value_typ predicate_typ));
+          val_sig (field_name ^ "_path_lte")
+            (arrow Nolabel (list_typ string_typ)
+               (arrow Nolabel value_typ predicate_typ));
+          val_sig (field_name ^ "_path_in")
+            (arrow Nolabel (list_typ string_typ)
+               (arrow Nolabel (list_typ value_typ) predicate_typ));
+          val_sig (field_name ^ "_path_not_in")
+            (arrow Nolabel (list_typ string_typ)
+               (arrow Nolabel (list_typ value_typ) predicate_typ));
+          val_sig (field_name ^ "_path_is_nil")
+            (arrow Nolabel (list_typ string_typ) predicate_typ);
+          val_sig (field_name ^ "_path_not_nil")
+            (arrow Nolabel (list_typ string_typ) predicate_typ);
+        ]
+      else []
+    in
     match value_constructor field with
-    | None -> value_sig @ [ selector_sig; order_sig ]
+    | None -> value_sig @ [ selector_sig; order_sig ] @ json_helpers
     | Some value_path ->
         let base =
           [
@@ -2811,6 +2923,7 @@ let gen_sig_for_type td =
           | _ -> []
         in
         value_sig @ base @ comparison_helpers @ nil_helpers @ string_helpers
+        @ json_helpers
   in
   let store_sig =
     let backend_ctx = A.ptyp_constr ~loc (lid ~loc [ "Backend"; "ctx" ]) [] in

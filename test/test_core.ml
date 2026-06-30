@@ -51,6 +51,16 @@ let post_entity =
             nillable = true;
             validators = [];
           };
+          {
+            name = "metadata";
+            storage_key = "meta";
+            typ = Json;
+            required = false;
+            unique = false;
+            immutable = false;
+            nillable = false;
+            validators = [];
+          };
         ];
       edges =
         [
@@ -455,6 +465,35 @@ let test_mongo_storage_key_planning () =
     "id storage document" "post_1"
     (Bson.get_string (Bson.get_element "_id" doc))
 
+let test_mongo_json_path_planning () =
+  let filter =
+    match
+      Ent_ocaml_mongo.filter_to_bson
+        (query
+           ~predicates:
+             Ent_ocaml.
+               [ Json_eq ("metadata", [ "flags"; "pinned" ], V_bool true) ]
+           ())
+    with
+    | Ok filter -> filter
+    | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+  in
+  Alcotest.(check bool)
+    "json bool" true
+    (Bson.get_boolean (Bson.get_element "meta.flags.pinned" filter));
+  match
+    Ent_ocaml_mongo.filter_to_bson
+      (query
+         ~predicates:
+           Ent_ocaml.[ Json_eq ("body", [ "flags" ], V_bool true) ]
+         ())
+  with
+  | Ok _ -> Alcotest.fail "expected non-json field error"
+  | Error (`Bad_query message) ->
+      Alcotest.(check string)
+        "message" "json predicate field is not json: body" message
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+
 let test_mongo_has_edge_planning () =
   let filter =
     match
@@ -737,6 +776,8 @@ let () =
           Alcotest.test_case "filter planning" `Quick test_mongo_filter_planning;
           Alcotest.test_case "storage key planning" `Quick
             test_mongo_storage_key_planning;
+          Alcotest.test_case "json path planning" `Quick
+            test_mongo_json_path_planning;
           Alcotest.test_case "has edge planning" `Quick
             test_mongo_has_edge_planning;
           Alcotest.test_case "has edge with id planning" `Quick
