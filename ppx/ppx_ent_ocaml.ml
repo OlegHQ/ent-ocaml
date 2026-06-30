@@ -1109,8 +1109,7 @@ let gen_query_module td =
         ];
     ]
   in
-  let mutation_record ?(on_insert = list ~loc []) ~op ~predicates ~set ~clear
-      ~add =
+  let mutation_record ~op ~predicates ~set ~clear ~add ~on_insert =
     A.pexp_record ~loc
       [
         (lid ~loc [ "Ent_ocaml"; "entity" ], evar ~loc (type_name ^ "_entity"));
@@ -1127,7 +1126,7 @@ let gen_query_module td =
     let body =
       mutation_record ~op:"Create" ~predicates:(list ~loc [])
         ~set:(evar ~loc "fields") ~clear:(list ~loc [])
-        ~add:(list ~loc [])
+        ~add:(list ~loc []) ~on_insert:(list ~loc [])
     in
     let body =
       A.pexp_let ~loc Nonrecursive
@@ -1148,7 +1147,7 @@ let gen_query_module td =
     let body =
       mutation_record ~op:"Create" ~predicates:(list ~loc [])
         ~set:(evar ~loc "fields") ~clear:(list ~loc [])
-        ~add:(list ~loc [])
+        ~add:(list ~loc []) ~on_insert:(list ~loc [])
     in
     A.pstr_value ~loc Nonrecursive
       [
@@ -1247,7 +1246,7 @@ let gen_query_module td =
       mutation_record ~op ~predicates:(evar ~loc "where")
         ~set:(evar ~loc "set")
         ~clear:(evar ~loc "clear")
-        ~add:(evar ~loc "add")
+        ~add:(evar ~loc "add") ~on_insert:(list ~loc [])
     in
     A.pstr_value ~loc Nonrecursive
       [
@@ -1273,7 +1272,7 @@ let gen_query_module td =
              (lid ~loc [ "Ent_ocaml"; "predicates" ]))
         ~set:(evar ~loc "set")
         ~clear:(evar ~loc "clear")
-        ~add:(evar ~loc "add")
+        ~add:(evar ~loc "add") ~on_insert:(list ~loc [])
     in
     A.pstr_value ~loc Nonrecursive
       [
@@ -1296,6 +1295,7 @@ let gen_query_module td =
           (A.pexp_field ~loc (evar ~loc "query")
              (lid ~loc [ "Ent_ocaml"; "predicates" ]))
         ~set:(list ~loc []) ~clear:(list ~loc []) ~add:(list ~loc [])
+        ~on_insert:(list ~loc [])
     in
     A.pstr_value ~loc Nonrecursive
       [
@@ -1314,7 +1314,7 @@ let gen_query_module td =
                   (mutation_record ~op:"Upsert_one"
                      ~predicates:(evar ~loc "where")
                      ~set:(list ~loc []) ~clear:(list ~loc [])
-                     ~add:(list ~loc []))));
+                     ~add:(list ~loc []) ~on_insert:(list ~loc []))));
       ]
   in
   let delete_fn name op =
@@ -1327,7 +1327,7 @@ let gen_query_module td =
                (A.pexp_fun ~loc Nolabel None (unit_pat ~loc)
                   (mutation_record ~op ~predicates:(evar ~loc "where")
                      ~set:(list ~loc []) ~clear:(list ~loc [])
-                     ~add:(list ~loc []))));
+                     ~add:(list ~loc []) ~on_insert:(list ~loc []))));
       ]
   in
   let delete_query_fn name op =
@@ -1341,7 +1341,7 @@ let gen_query_module td =
                     (A.pexp_field ~loc (evar ~loc "query")
                        (lid ~loc [ "Ent_ocaml"; "predicates" ]))
                   ~set:(list ~loc []) ~clear:(list ~loc [])
-                  ~add:(list ~loc [])));
+                  ~add:(list ~loc []) ~on_insert:(list ~loc [])));
       ]
   in
   let store_module =
