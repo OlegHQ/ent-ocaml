@@ -3588,6 +3588,66 @@ let gen_query_module td =
       schema_module "Schema_edge_interceptors" "With_edge_interceptors"
         [ ("edge_interceptors", list ~loc schema_edge_interceptors) ]
     in
+    let append_list left right =
+      A.pexp_apply ~loc (ident ~loc [ "List"; "append" ])
+        [ (Nolabel, left); (Nolabel, right) ]
+    in
+    let schema_plus_module name functor_name param_name param_type bindings =
+      A.pstr_module ~loc
+        (A.module_binding ~loc ~name:{ loc; txt = Some name }
+           ~expr:
+             (A.pmod_functor ~loc
+                (Named ({ loc; txt = Some param_name }, param_type))
+                (A.pmod_apply ~loc
+                   (A.pmod_ident ~loc (lid ~loc [ functor_name ]))
+                   (A.pmod_structure ~loc
+                      (List.map
+                         (fun (name, schema_expr, param_expr) ->
+                           A.pstr_value ~loc Nonrecursive
+                             [
+                               A.value_binding ~loc ~pat:(pvar ~loc name)
+                                 ~expr:(append_list schema_expr param_expr);
+                             ])
+                         bindings)))))
+    in
+    let with_schema_policy_module =
+      schema_plus_module "With_schema_policy" "With_policy" "Policy"
+        policy_type
+        [
+          ( "query_rules",
+            list ~loc schema_query_rules,
+            ident ~loc [ "Policy"; "query_rules" ] );
+          ( "mutation_rules",
+            list ~loc schema_mutation_rules,
+            ident ~loc [ "Policy"; "mutation_rules" ] );
+        ]
+    in
+    let with_schema_hooks_module =
+      schema_plus_module "With_schema_hooks" "With_hooks" "Hooks" hooks_type
+        [
+          ( "mutation_hooks",
+            list ~loc schema_mutation_hooks,
+            ident ~loc [ "Hooks"; "mutation_hooks" ] );
+        ]
+    in
+    let with_schema_interceptors_module =
+      schema_plus_module "With_schema_interceptors" "With_interceptors"
+        "Interceptors" interceptors_type
+        [
+          ( "query_interceptors",
+            list ~loc schema_query_interceptors,
+            ident ~loc [ "Interceptors"; "query_interceptors" ] );
+        ]
+    in
+    let with_schema_edge_interceptors_module =
+      schema_plus_module "With_schema_edge_interceptors"
+        "With_edge_interceptors" "Edge_interceptors" edge_interceptors_type
+        [
+          ( "edge_interceptors",
+            list ~loc schema_edge_interceptors,
+            ident ~loc [ "Edge_interceptors"; "edge_interceptors" ] );
+        ]
+    in
     let structure =
       base_structure
       @ [
@@ -3595,6 +3655,10 @@ let gen_query_module td =
           with_hooks_module;
           with_interceptors_module;
           with_edge_interceptors_module;
+          with_schema_policy_module;
+          with_schema_hooks_module;
+          with_schema_interceptors_module;
+          with_schema_edge_interceptors_module;
           schema_policy_module;
           schema_hooks_module;
           schema_interceptors_module;
@@ -3931,6 +3995,66 @@ let gen_query_module td =
       schema_module "Schema_edge_interceptors" "With_edge_interceptors"
         [ ("edge_interceptors", list ~loc schema_edge_interceptors) ]
     in
+    let append_list left right =
+      A.pexp_apply ~loc (ident ~loc [ "List"; "append" ])
+        [ (Nolabel, left); (Nolabel, right) ]
+    in
+    let schema_plus_module name functor_name param_name param_type bindings =
+      A.pstr_module ~loc
+        (A.module_binding ~loc ~name:{ loc; txt = Some name }
+           ~expr:
+             (A.pmod_functor ~loc
+                (Named ({ loc; txt = Some param_name }, param_type))
+                (A.pmod_apply ~loc
+                   (A.pmod_ident ~loc (lid ~loc [ functor_name ]))
+                   (A.pmod_structure ~loc
+                      (List.map
+                         (fun (name, schema_expr, param_expr) ->
+                           A.pstr_value ~loc Nonrecursive
+                             [
+                               A.value_binding ~loc ~pat:(pvar ~loc name)
+                                 ~expr:(append_list schema_expr param_expr);
+                             ])
+                         bindings)))))
+    in
+    let with_schema_policy_module =
+      schema_plus_module "With_schema_policy" "With_policy" "Policy"
+        policy_type
+        [
+          ( "query_rules",
+            list ~loc schema_query_rules,
+            ident ~loc [ "Policy"; "query_rules" ] );
+          ( "mutation_rules",
+            list ~loc schema_mutation_rules,
+            ident ~loc [ "Policy"; "mutation_rules" ] );
+        ]
+    in
+    let with_schema_hooks_module =
+      schema_plus_module "With_schema_hooks" "With_hooks" "Hooks" hooks_type
+        [
+          ( "mutation_hooks",
+            list ~loc schema_mutation_hooks,
+            ident ~loc [ "Hooks"; "mutation_hooks" ] );
+        ]
+    in
+    let with_schema_interceptors_module =
+      schema_plus_module "With_schema_interceptors" "With_interceptors"
+        "Interceptors" interceptors_type
+        [
+          ( "query_interceptors",
+            list ~loc schema_query_interceptors,
+            ident ~loc [ "Interceptors"; "query_interceptors" ] );
+        ]
+    in
+    let with_schema_edge_interceptors_module =
+      schema_plus_module "With_schema_edge_interceptors"
+        "With_edge_interceptors" "Edge_interceptors" edge_interceptors_type
+        [
+          ( "edge_interceptors",
+            list ~loc schema_edge_interceptors,
+            ident ~loc [ "Edge_interceptors"; "edge_interceptors" ] );
+        ]
+    in
     let structure =
       [
         A.pstr_module ~loc
@@ -3958,6 +4082,10 @@ let gen_query_module td =
         with_hooks_module;
         with_interceptors_module;
         with_edge_interceptors_module;
+        with_schema_policy_module;
+        with_schema_hooks_module;
+        with_schema_interceptors_module;
+        with_schema_edge_interceptors_module;
         schema_policy_module;
         schema_hooks_module;
         schema_interceptors_module;
@@ -4650,6 +4778,38 @@ let gen_sig_for_type td =
                          edge_interceptors_type ))
                     (A.pmty_signature ~loc base_store_items)));
           A.psig_module ~loc
+            (A.module_declaration ~loc
+               ~name:{ loc; txt = Some "With_schema_policy" }
+               ~type_:
+                 (A.pmty_functor ~loc
+                    (Named ({ loc; txt = Some "Policy" }, policy_type))
+                    (A.pmty_signature ~loc base_store_items)));
+          A.psig_module ~loc
+            (A.module_declaration ~loc
+               ~name:{ loc; txt = Some "With_schema_hooks" }
+               ~type_:
+                 (A.pmty_functor ~loc
+                    (Named ({ loc; txt = Some "Hooks" }, hooks_type))
+                    (A.pmty_signature ~loc base_store_items)));
+          A.psig_module ~loc
+            (A.module_declaration ~loc
+               ~name:{ loc; txt = Some "With_schema_interceptors" }
+               ~type_:
+                 (A.pmty_functor ~loc
+                    (Named
+                       ( { loc; txt = Some "Interceptors" },
+                         interceptors_type ))
+                    (A.pmty_signature ~loc base_store_items)));
+          A.psig_module ~loc
+            (A.module_declaration ~loc
+               ~name:{ loc; txt = Some "With_schema_edge_interceptors" }
+               ~type_:
+                 (A.pmty_functor ~loc
+                    (Named
+                       ( { loc; txt = Some "Edge_interceptors" },
+                         edge_interceptors_type ))
+                    (A.pmty_signature ~loc base_store_items)));
+          A.psig_module ~loc
             (A.module_declaration ~loc ~name:{ loc; txt = Some "Schema_policy" }
                ~type_:(A.pmty_signature ~loc base_store_items));
           A.psig_module ~loc
@@ -4915,6 +5075,38 @@ let gen_sig_for_type td =
           A.psig_module ~loc
             (A.module_declaration ~loc
                ~name:{ loc; txt = Some "With_edge_interceptors" }
+               ~type_:
+                 (A.pmty_functor ~loc
+                    (Named
+                       ( { loc; txt = Some "Edge_interceptors" },
+                         edge_interceptors_type ))
+                    (A.pmty_signature ~loc client_base_items)));
+          A.psig_module ~loc
+            (A.module_declaration ~loc
+               ~name:{ loc; txt = Some "With_schema_policy" }
+               ~type_:
+                 (A.pmty_functor ~loc
+                    (Named ({ loc; txt = Some "Policy" }, policy_type))
+                    (A.pmty_signature ~loc client_base_items)));
+          A.psig_module ~loc
+            (A.module_declaration ~loc
+               ~name:{ loc; txt = Some "With_schema_hooks" }
+               ~type_:
+                 (A.pmty_functor ~loc
+                    (Named ({ loc; txt = Some "Hooks" }, hooks_type))
+                    (A.pmty_signature ~loc client_base_items)));
+          A.psig_module ~loc
+            (A.module_declaration ~loc
+               ~name:{ loc; txt = Some "With_schema_interceptors" }
+               ~type_:
+                 (A.pmty_functor ~loc
+                    (Named
+                       ( { loc; txt = Some "Interceptors" },
+                         interceptors_type ))
+                    (A.pmty_signature ~loc client_base_items)));
+          A.psig_module ~loc
+            (A.module_declaration ~loc
+               ~name:{ loc; txt = Some "With_schema_edge_interceptors" }
                ~type_:
                  (A.pmty_functor ~loc
                     (Named

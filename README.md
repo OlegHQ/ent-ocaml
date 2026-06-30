@@ -413,6 +413,22 @@ let save_audited ctx mutation =
   Post_client.Schema_hooks.insert client mutation
 ```
 
+When schema middleware should always run and a caller needs extra scoped
+middleware, use the generated `With_schema_*` functors. EntoCaml composes the
+schema list before the caller-provided list, so order is explicit and stable:
+
+```ocaml
+module Audited_posts =
+  Posts.With_schema_hooks (struct
+    let mutation_hooks = [ stamp_current_request ]
+  end)
+
+module Scoped_post_client =
+  Post_client.With_schema_interceptors (struct
+    let query_interceptors = [ scope_to_current_user ]
+  end)
+```
+
 Runtime dynamic filters validate against entity metadata and then become normal
 typed predicates:
 

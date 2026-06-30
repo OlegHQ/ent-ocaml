@@ -12,6 +12,74 @@ type tag = {
 [@@ent.entity "Tag"] [@@ent.collection "tags"]
 [@@deriving ent]
 
+let schema_order_events = ref []
+
+let record_schema_order_event event =
+  schema_order_events := !schema_order_events @ [ event ]
+
+type ordered = {
+  id : string [@ent.key "_id"];
+  user_id : string;
+  body : string;
+  status : string;
+}
+[@@ent.entity "Ordered"] [@@ent.collection "ordered"]
+[@@ent.edges
+  [
+    {
+      name = "user";
+      target = "User";
+      target_entity = user_entity;
+      storage_key = "user_id";
+      cardinality = "one";
+    };
+  ]]
+[@@ent.query_rules
+  [
+    (fun _ctx _query ->
+      record_schema_order_event "schema query";
+      Ent_ocaml.Skip);
+  ]]
+[@@ent.mutation_rules
+  [
+    (fun _ctx _mutation ->
+      record_schema_order_event "schema mutation";
+      Ent_ocaml.Skip);
+  ]]
+[@@ent.mutation_hooks
+  [
+    {
+      Ent_ocaml.wrap_mutation =
+        (fun next ctx mutation ->
+          record_schema_order_event "schema hook";
+          next ctx
+            (Ent_ocaml.Mutation.set ("body", Ent_ocaml.V_string "schema")
+               mutation));
+    };
+  ]]
+[@@ent.query_interceptors
+  [
+    {
+      Ent_ocaml.wrap_query =
+        (fun next ctx query ->
+          record_schema_order_event "schema interceptor";
+          next ctx
+            (query
+             |> Ent_ocaml.Query.where
+                  (Ent_ocaml.Eq ("status", Ent_ocaml.V_string "schema"))));
+    };
+  ]]
+[@@ent.edge_interceptors
+  [
+    {
+      Ent_ocaml.wrap_edge =
+        (fun next ctx edge_query ->
+          record_schema_order_event "schema edge";
+          next ctx edge_query);
+    };
+  ]]
+[@@deriving ent]
+
 type post = {
   id : string [@ent.key "_id"] [@ent.unique] [@ent.immutable];
   user_id : string [@ent.index "posts_by_user"];
@@ -1578,6 +1646,200 @@ let test_generated_interceptor_store_api () =
   | Ok _ -> Alcotest.fail "unexpected schema edge-intercepted load result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
+let test_generated_schema_composed_store_api () =
+  let module Store = Ordered.Store (Memory_backend) in
+  let module Ordered_policy = Store.With_schema_policy (struct
+    let query_rules =
+      [
+        (fun _ctx _query ->
+          record_schema_order_event "caller query";
+          Ent_ocaml.Deny "caller no reads");
+      ]
+
+    let mutation_rules =
+      [
+        (fun _ctx _mutation ->
+          record_schema_order_event "caller mutation";
+          Ent_ocaml.Deny "caller no writes");
+      ]
+  end) in
+  let module Ordered_hooks = Store.With_schema_hooks (struct
+    let mutation_hooks =
+      [
+        {
+          Ent_ocaml.wrap_mutation =
+            (fun next ctx mutation ->
+              record_schema_order_event "caller hook";
+              next ctx
+                (Ent_ocaml.Mutation.set
+                   ("status", Ent_ocaml.V_string "caller")
+                   mutation));
+        };
+      ]
+  end) in
+  let module Ordered_interceptors = Store.With_schema_interceptors (struct
+    let query_interceptors =
+      [
+        {
+          Ent_ocaml.wrap_query =
+            (fun next ctx query ->
+              record_schema_order_event "caller interceptor";
+              next ctx
+                (query
+                 |> Ent_ocaml.Query.where
+                      (Ent_ocaml.Eq
+                         ("body", Ent_ocaml.V_string "caller"))));
+        };
+      ]
+  end) in
+  let module Ordered_edge_interceptors =
+    Store.With_schema_edge_interceptors (struct
+      let edge_interceptors =
+        [
+          {
+            Ent_ocaml.wrap_edge =
+              (fun next ctx edge_query ->
+                record_schema_order_event "caller edge";
+                next ctx edge_query);
+          };
+        ]
+    end)
+  in
+  let decode = function
+    | Ent_ocaml.V_string value -> Ok value
+    | _ -> Error "expected string"
+  in
+  let query = Ordered.query () in
+  let mutation =
+    let open Ordered in
+    create ()
+    |> set (id "ordered_1")
+    |> set (user_id "user_1")
+    |> set (body "body")
+    |> set (status "draft")
+  in
+  schema_order_events := [];
+  (match Ordered_policy.all () ~decode query with
+  | Error (`Denied "caller no reads") -> ()
+  | Ok _ -> Alcotest.fail "expected composed read denial"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  Alcotest.(check (list string))
+    "composed query policy order"
+    [ "schema query"; "caller query" ] !schema_order_events;
+  schema_order_events := [];
+  (match Ordered_policy.insert () mutation with
+  | Error (`Denied "caller no writes") -> ()
+  | Ok _ -> Alcotest.fail "expected composed write denial"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  Alcotest.(check (list string))
+    "composed mutation policy order"
+    [ "schema mutation"; "caller mutation" ] !schema_order_events;
+  schema_order_events := [];
+  (match Ordered_hooks.insert () mutation with
+  | Ok (Ent_ocaml.V_doc fields) ->
+      Alcotest.(check (option string))
+        "schema hook body"
+        (Some "schema")
+        (match List.assoc_opt "body" fields with
+        | Some (Ent_ocaml.V_string value) -> Some value
+        | Some _ | None -> None);
+      Alcotest.(check (option string))
+        "caller hook status"
+        (Some "caller")
+        (match List.assoc_opt "status" fields with
+        | Some (Ent_ocaml.V_string value) -> Some value
+        | Some _ | None -> None)
+  | Ok _ -> Alcotest.fail "unexpected composed hook insert result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  Alcotest.(check (list string))
+    "composed hook order" [ "schema hook"; "caller hook" ]
+    !schema_order_events;
+  schema_order_events := [];
+  (match Ordered_interceptors.count () query with
+  | Ok 2 -> ()
+  | Ok count -> Alcotest.failf "expected two composed predicates, got %d" count
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  Alcotest.(check (list string))
+    "composed interceptor order"
+    [ "schema interceptor"; "caller interceptor" ] !schema_order_events;
+  schema_order_events := [];
+  let edge_query =
+    let open Ordered in
+    query () |> with_user ~target:user_entity
+  in
+  (match Ordered_edge_interceptors.traverse () ~decode edge_query with
+  | Ok [ "User" ] -> ()
+  | Ok _ -> Alcotest.fail "unexpected composed edge traverse result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  Alcotest.(check (list string))
+    "composed edge interceptor order" [ "schema edge"; "caller edge" ]
+    !schema_order_events
+
+let test_generated_schema_composed_client_api () =
+  let module Client = Ordered.Client (Memory_backend) in
+  let module Ordered_hooks = Client.With_schema_hooks (struct
+    let mutation_hooks =
+      [
+        {
+          Ent_ocaml.wrap_mutation =
+            (fun next ctx mutation ->
+              record_schema_order_event "client hook";
+              next ctx
+                (Ent_ocaml.Mutation.set
+                   ("status", Ent_ocaml.V_string "client")
+                   mutation));
+        };
+      ]
+  end) in
+  let module Ordered_interceptors = Client.With_schema_interceptors (struct
+    let query_interceptors =
+      [
+        {
+          Ent_ocaml.wrap_query =
+            (fun next ctx query ->
+              record_schema_order_event "client interceptor";
+              next ctx
+                (query
+                 |> Ent_ocaml.Query.where
+                      (Ent_ocaml.Eq
+                         ("body", Ent_ocaml.V_string "client"))));
+        };
+      ]
+  end) in
+  let client = Ordered_hooks.make () in
+  let intercepted_client = Ordered_interceptors.make () in
+  let mutation =
+    let open Ordered in
+    create ()
+    |> set (id "ordered_1")
+    |> set (user_id "user_1")
+    |> set (body "body")
+    |> set (status "draft")
+  in
+  schema_order_events := [];
+  (match Ordered_hooks.insert client mutation with
+  | Ok (Ent_ocaml.V_doc fields) ->
+      Alcotest.(check (option string))
+        "client composed hook status"
+        (Some "client")
+        (match List.assoc_opt "status" fields with
+        | Some (Ent_ocaml.V_string value) -> Some value
+        | Some _ | None -> None)
+  | Ok _ -> Alcotest.fail "unexpected client composed hook insert result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  Alcotest.(check (list string))
+    "client composed hook order" [ "schema hook"; "client hook" ]
+    !schema_order_events;
+  schema_order_events := [];
+  (match Ordered_interceptors.count intercepted_client (Ordered.query ()) with
+  | Ok 2 -> ()
+  | Ok count ->
+      Alcotest.failf "expected two client composed predicates, got %d" count
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  Alcotest.(check (list string))
+    "client composed interceptor order"
+    [ "schema interceptor"; "client interceptor" ] !schema_order_events
+
 let test_generated_dynamic_filter_api () =
   let open Ent_ocaml.Result_syntax in
   let result =
@@ -1825,6 +2087,10 @@ let () =
             test_generated_hook_store_api;
           Alcotest.test_case "generated interceptor store api" `Quick
             test_generated_interceptor_store_api;
+          Alcotest.test_case "generated schema composed store api" `Quick
+            test_generated_schema_composed_store_api;
+          Alcotest.test_case "generated schema composed client api" `Quick
+            test_generated_schema_composed_client_api;
           Alcotest.test_case "generated dynamic filter api" `Quick
             test_generated_dynamic_filter_api;
           Alcotest.test_case "generated entql api" `Quick
