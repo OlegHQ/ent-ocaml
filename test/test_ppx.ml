@@ -5,6 +5,13 @@ type user = {
 [@@ent.entity "User"] [@@ent.collection "users"]
 [@@deriving ent]
 
+type tag = {
+  id : string [@ent.key "_id"] [@ent.unique] [@ent.immutable];
+  name : string;
+}
+[@@ent.entity "Tag"] [@@ent.collection "tags"]
+[@@deriving ent]
+
 type post = {
   id : string [@ent.key "_id"] [@ent.unique] [@ent.immutable];
   user_id : string [@ent.index "posts_by_user"];
@@ -53,6 +60,15 @@ type post = {
       storage_key = "user_id";
       cardinality = "one";
       required = true;
+    };
+    {
+      name = "tags";
+      target = "Tag";
+      target_entity = tag_entity;
+      join_collection = "post_tags";
+      join_source_key = "post_id";
+      join_target_key = "tag_id";
+      cardinality = "many";
     };
   ]]
 [@@ent.query_rules [ (fun _ctx _query -> Ent_ocaml.Deny "schema no reads") ]]
@@ -251,7 +267,7 @@ let test_entity_metadata () =
   Alcotest.(check string) "collection" "posts" post_entity.collection;
   Alcotest.(check int) "field count" 8 (List.length post_entity.fields);
   Alcotest.(check int) "index count" 2 (List.length post_entity.indexes);
-  Alcotest.(check int) "edge count" 1 (List.length post_entity.edges);
+  Alcotest.(check int) "edge count" 2 (List.length post_entity.edges);
   let id = find_field "id" in
   Alcotest.(check string) "id storage key" "_id" id.storage_key;
   Alcotest.(check bool) "id unique" true id.unique;
@@ -281,9 +297,21 @@ let test_entity_metadata () =
   Alcotest.(check bool)
     "user edge" true
     (List.exists
-       (fun (edge : Ent_ocaml.edge) ->
+         (fun (edge : Ent_ocaml.edge) ->
          edge.name = "user" && edge.target = "User"
-         && edge.storage_key = Some "user_id" && edge.required)
+         && edge.storage_key = Some "user_id" && edge.join = None
+         && edge.required)
+       post_entity.edges);
+  Alcotest.(check bool)
+    "join tags edge" true
+    (List.exists
+       (fun (edge : Ent_ocaml.edge) ->
+         edge.name = "tags" && edge.target = "Tag" && edge.storage_key = None
+         &&
+         match edge.join with
+         | Some { collection = "post_tags"; source_key = "post_id"; target_key = "tag_id" } ->
+             true
+         | _ -> false)
        post_entity.edges);
   let published_at = find_field "published_at_ms" in
   Alcotest.(check bool) "option is not required" false published_at.required;
@@ -580,6 +608,14 @@ let test_generated_traversal_api () =
   Alcotest.(check int)
     "source predicates" 1
     (List.length edge_query.source.predicates);
+  let tags_edge_query =
+    let open Post in
+    query () |> with_tags ~as_:"labels" ~target:tag_entity
+  in
+  Alcotest.(check string) "join edge" "tags" tags_edge_query.edge;
+  Alcotest.(check (option string))
+    "join edge alias" (Some "labels") tags_edge_query.edge_alias;
+  Alcotest.(check string) "join target entity" "Tag" tags_edge_query.target.name;
   let target_predicate =
     let open Post in
     user ~target:user_entity (User.username_eq "alice")

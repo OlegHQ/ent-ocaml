@@ -42,6 +42,12 @@ type field = {
 type edge_cardinality = One | Many
 type edge_direction = To | From of { ref_name : string }
 
+type edge_join = {
+  collection : string;
+  source_key : string;
+  target_key : string;
+}
+
 type edge = {
   name : string;
   target : string;
@@ -49,6 +55,7 @@ type edge = {
   cardinality : edge_cardinality;
   required : bool;
   storage_key : string option;
+  join : edge_join option;
 }
 
 type predicate =
@@ -219,6 +226,14 @@ module Schema_snapshot = struct
     | One -> V_string "one"
     | Many -> V_string "many"
 
+  let edge_join (join : edge_join) =
+    V_doc
+      [
+        string "collection" join.collection;
+        string "source_key" join.source_key;
+        string "target_key" join.target_key;
+      ]
+
   let rec predicate = function
     | Eq (field, value) -> predicate_field_value "eq" field value
     | Neq (field, value) -> predicate_field_value "neq" field value
@@ -348,6 +363,7 @@ module Schema_snapshot = struct
         ("cardinality", edge_cardinality edge.cardinality);
         bool "required" edge.required;
         ("storage_key", option_string edge.storage_key);
+        ("join", (match edge.join with None -> V_null | Some join -> edge_join join));
       ]
 
   let index (index : index) =

@@ -42,6 +42,12 @@ type field = {
 type edge_cardinality = One | Many
 type edge_direction = To | From of { ref_name : string }
 
+type edge_join = {
+  collection : string;
+  source_key : string;
+  target_key : string;
+}
+
 type edge = {
   name : string;
   target : string;
@@ -49,6 +55,7 @@ type edge = {
   cardinality : edge_cardinality;
   required : bool;
   storage_key : string option;
+  join : edge_join option;
 }
 
 type predicate =

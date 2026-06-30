@@ -325,6 +325,9 @@ let parse_edge_spec expr =
       let required = ref (Some false) in
       let storage_key = ref None in
       let ref_name = ref None in
+      let join_collection = ref None in
+      let join_source_key = ref None in
+      let join_target_key = ref None in
       List.iter
         (fun (label, value) ->
           match label_name label.txt with
@@ -342,6 +345,15 @@ let parse_edge_spec expr =
                 Some (parse_string_expr ~what:"edge storage_key" value)
           | "ref_name" ->
               ref_name := Some (parse_string_expr ~what:"edge ref_name" value)
+          | "join_collection" ->
+              join_collection :=
+                Some (parse_string_expr ~what:"edge join_collection" value)
+          | "join_source_key" ->
+              join_source_key :=
+                Some (parse_string_expr ~what:"edge join_source_key" value)
+          | "join_target_key" ->
+              join_target_key :=
+                Some (parse_string_expr ~what:"edge join_target_key" value)
           | "target_entity" -> ()
           | field ->
               Location.raise_errorf ~loc:value.pexp_loc
@@ -368,6 +380,32 @@ let parse_edge_spec expr =
         | Some cardinality -> cardinality
         | None -> Location.raise_errorf ~loc "ent edge record requires cardinality"
       in
+      let join =
+        match (!join_collection, !join_source_key, !join_target_key) with
+        | None, None, None -> None
+        | Some collection, Some source_key, Some target_key ->
+            Some (collection, source_key, target_key)
+        | _ ->
+            Location.raise_errorf ~loc
+              "ent join edge requires join_collection, join_source_key, and join_target_key"
+      in
+      let join_expr =
+        match join with
+        | None -> option ~loc None
+        | Some (collection, source_key, target_key) ->
+            option ~loc
+              (Some
+                 (A.pexp_record ~loc
+                    [
+                      ( lid ~loc [ "Ent_ocaml"; "collection" ],
+                        str ~loc collection );
+                      ( lid ~loc [ "Ent_ocaml"; "source_key" ],
+                        str ~loc source_key );
+                      ( lid ~loc [ "Ent_ocaml"; "target_key" ],
+                        str ~loc target_key );
+                    ]
+                    None))
+      in
       A.pexp_record ~loc
         [
           (lid ~loc [ "Ent_ocaml"; "name" ], str ~loc name);
@@ -379,6 +417,7 @@ let parse_edge_spec expr =
           (lid ~loc [ "Ent_ocaml"; "required" ], bool ~loc required);
           ( lid ~loc [ "Ent_ocaml"; "storage_key" ],
             option ~loc (Option.map (str ~loc) !storage_key) );
+          (lid ~loc [ "Ent_ocaml"; "join" ], join_expr);
         ]
         None
   | _ ->

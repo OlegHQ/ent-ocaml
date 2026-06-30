@@ -41,6 +41,7 @@ let user_entity =
             cardinality = Many;
             required = false;
             storage_key = Some "user_id";
+            join = None;
           };
         ];
       indexes = [];
@@ -134,6 +135,7 @@ let post_entity =
             cardinality = One;
             required = true;
             storage_key = Some "user_id";
+            join = None;
           };
         ];
       indexes = [];

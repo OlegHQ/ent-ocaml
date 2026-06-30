@@ -50,6 +50,7 @@ let user_entity =
             cardinality = Many;
             required = false;
             storage_key = Some "user_id";
+            join = None;
           };
         ];
       indexes =
@@ -62,6 +63,44 @@ let user_entity =
             partial_filter = [];
           };
         ];
+    }
+
+let tag_entity =
+  Ent_ocaml.
+    {
+      name = "Tag";
+      collection = "tags";
+      fields =
+        [
+          {
+            name = "id";
+            storage_key = "_id";
+            typ = String;
+            required = true;
+            unique = true;
+            immutable = false;
+            nillable = false;
+            validators = [];
+            sensitive = false;
+            deprecated = None;
+            comment = None;
+          };
+          {
+            name = "name";
+            storage_key = "name";
+            typ = String;
+            required = true;
+            unique = true;
+            immutable = false;
+            nillable = false;
+            validators = [];
+            sensitive = false;
+            deprecated = None;
+            comment = None;
+          };
+        ];
+      edges = [];
+      indexes = [];
     }
 
 let post_entity =
@@ -146,6 +185,22 @@ let post_entity =
             cardinality = One;
             required = true;
             storage_key = Some "user_id";
+            join = None;
+          };
+          {
+            name = "tags";
+            target = "Tag";
+            direction = To;
+            cardinality = Many;
+            required = false;
+            storage_key = None;
+            join =
+              Some
+                {
+                  collection = "post_tags";
+                  source_key = "post_id";
+                  target_key = "tag_id";
+                };
           };
         ];
       indexes =
@@ -179,6 +234,18 @@ let create_user id username =
       on_insert = [];
     }
 
+let create_tag id name =
+  Ent_ocaml.
+    {
+      entity = tag_entity;
+      op = Create;
+      predicates = [];
+      set = [ ("id", V_string id); ("name", V_string name) ];
+      clear = [];
+      add = [];
+      on_insert = [];
+    }
+
 let create id user_id body views =
   let pinned = id = "post_2" in
   let priority = if id = "post_2b" then 30 else if id = "post_2" then 20 else 10 in
@@ -204,6 +271,18 @@ let create id user_id body views =
       add = [];
       on_insert = [];
     }
+
+let bson_doc fields =
+  List.fold_left
+    (fun acc (name, value) -> Bson.add_element name value acc)
+    Bson.empty fields
+
+let join_doc post_id tag_id =
+  bson_doc
+    [
+      ("post_id", Bson.create_string post_id);
+      ("tag_id", Bson.create_string tag_id);
+    ]
 
 let invalid_create_missing_body =
   Ent_ocaml.
@@ -308,6 +387,20 @@ let query_latest_filtered_post_from_user =
           offset = None;
         }
     query_user_2
+
+let query_tags_from_posts =
+  Ent_ocaml.Edge_query.make ~as_:"tags" ~edge:"tags" ~target:tag_entity
+    ~target_query:
+      Ent_ocaml.
+        {
+          entity = tag_entity;
+          predicates = [ Neq ("name", V_string "skip") ];
+          select = [];
+          orders = [ Order.field ~direction:Asc "id" ];
+          limit = Some 2;
+          offset = None;
+        }
+    query_all
 
 let assert_true label condition =
   if condition then Printf.printf "PASS %s\n%!" label
@@ -524,15 +617,26 @@ let run_flow client =
   let open Ent_ocaml.Result_syntax in
   let ctx = Ent_ocaml_mongo.create ~client { database = db } in
   let* () =
-    Ent_ocaml_mongo.ensure_collection_validators ctx [ user_entity; post_entity ]
+    Ent_ocaml_mongo.ensure_collection_validators ctx
+      [ user_entity; tag_entity; post_entity ]
   in
   let* () = check_collection_validator_drift ctx in
-  let* () = Ent_ocaml_mongo.ensure_indexes ctx [ user_entity; post_entity ] in
+  let* () =
+    Ent_ocaml_mongo.ensure_indexes ctx [ user_entity; tag_entity; post_entity ]
+  in
   let* () = check_index_drift ctx in
   let* () = check_partial_index client in
   let* _users =
     Ent_ocaml_mongo.insert_many_values ctx
       [ create_user "user_1" "alice"; create_user "user_2" "bob" ]
+  in
+  let* _tags =
+    Ent_ocaml_mongo.insert_many_values ctx
+      [
+        create_tag "tag_ocaml" "ocaml";
+        create_tag "tag_mongo" "mongo";
+        create_tag "tag_skip" "skip";
+      ]
   in
   let* docs =
     Ent_ocaml_mongo.insert_many_values ctx
@@ -541,6 +645,20 @@ let run_flow client =
         create "post_2" "user_2" "second" 20L;
         create "post_2b" "user_2" "second-b" 20L;
       ]
+  in
+  let* _ =
+    match
+      Mongo_eio.direct_insert_many client ~db ~collection:"post_tags"
+        ~options:Mongo_crud.default_insert
+        [
+          join_doc "post_1" "tag_ocaml";
+          join_doc "post_2" "tag_mongo";
+          join_doc "post_2" "tag_skip";
+          join_doc "post_2b" "tag_ocaml";
+        ]
+    with
+    | Ok result -> Ok result
+    | Error error -> Error (`Backend (Mongo_error.to_string error))
   in
   assert_true "bulk insert returns docs" (List.length docs = 3);
   let* found = Ent_ocaml_mongo.find ctx query_all in
@@ -800,6 +918,26 @@ let run_flow client =
   in
   assert_true "stored to-many eager load applies target query"
     (loaded_filtered_posts = [ ("bob", Some "post_2b") ]);
+  let* traversed_tags =
+    Ent_ocaml_mongo.traverse_as ctx query_tags_from_posts ~decode:(fun doc ->
+        Ok (Bson.get_string (Bson.get_element "name" doc)))
+  in
+  assert_true "join to-many traversal returns tags"
+    (traversed_tags = [ "mongo"; "ocaml" ]);
+  let* loaded_tags =
+    Ent_ocaml_mongo.load_edge_as ctx query_tags_from_posts
+      ~decode_source:(fun doc ->
+        Ok (Bson.get_string (Bson.get_element "_id" doc)))
+      ~decode_target:(fun doc ->
+        Ok (Bson.get_string (Bson.get_element "name" doc)))
+  in
+  assert_true "join to-many eager load returns source and tags"
+    (loaded_tags
+    = [
+        ("post_1", Some "ocaml");
+        ("post_2", Some "mongo");
+        ("post_2b", Some "ocaml");
+      ]);
   let editor_edge =
     Ent_ocaml.Edge_query.make ~as_:"editor" ~edge:"user" ~target:user_entity
       query_user_1

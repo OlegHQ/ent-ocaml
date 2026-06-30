@@ -590,7 +590,47 @@ let users_with_posts ctx =
   |> with_posts ~as_:"posts" ~target:Post.post_entity
   |> Users.load_edge ctx
        ~decode_source:user_of_bson_doc_result
-       ~decode_target:post_of_bson_doc_result
+	       ~decode_target:post_of_bson_doc_result
+```
+
+Mongo join-backed to-many edges use the same query and eager-load API. Declare
+the join collection and key fields on the edge metadata:
+
+```ocaml
+type tag = {
+  id : string [@ent.key "_id"];
+  name : string;
+}
+[@@ent.entity "Tag"] [@@ent.collection "tags"]
+[@@deriving ent]
+
+type post = {
+  id : string [@ent.key "_id"];
+  body : string;
+  status : string;
+}
+[@@ent.edges
+  [
+    {
+      name = "tags";
+      target = "Tag";
+      target_entity = tag_entity;
+      join_collection = "post_tags";
+      join_source_key = "post_id";
+      join_target_key = "tag_id";
+      cardinality = "many";
+    };
+  ]]
+[@@deriving ent]
+
+let draft_tags ctx =
+  let open Post in
+  query ()
+  |> where (status_eq "draft")
+  |> with_tags ~target:Tag.tag_entity
+  |> Posts.load_edge ctx
+       ~decode_source:post_of_bson_doc_result
+       ~decode_target:tag_of_bson_doc_result
 ```
 
 The optional `~as_` label is preserved on the edge query so higher-level loaders

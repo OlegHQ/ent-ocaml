@@ -1646,6 +1646,7 @@ let value ctx query =
 type stored_edge =
   | Stored_to_one of { source_fk_key : string }
   | Stored_to_many of { source_id_key : string; target_fk_key : string }
+  | Join_to_many of { source_id_key : string; join : Ent_ocaml.edge_join }
 
 let stored_edge (edge_query : Ent_ocaml.edge_query) =
   let open Ent_ocaml in
@@ -1658,18 +1659,30 @@ let stored_edge (edge_query : Ent_ocaml.edge_query) =
           (Printf.sprintf "edge %s targets %s, not %s" edge.name edge.target
              edge_query.target.name))
   | Some { direction = From _; _ } ->
-      Error (`Bad_query "stored-FK traversal currently supports to-edges")
+      Error (`Bad_query "edge traversal currently supports to-edges")
   | Some edge -> (
-      match (edge.cardinality, edge.storage_key) with
-      | One, Some storage_key -> Ok (Stored_to_one { source_fk_key = storage_key })
-      | Many, Some storage_key -> (
+      match (edge.cardinality, edge.storage_key, edge.join) with
+      | One, Some storage_key, None ->
+          Ok (Stored_to_one { source_fk_key = storage_key })
+      | Many, Some storage_key, None -> (
           match field_storage_key source_entity "id" with
           | Ok source_id_key ->
               Ok
                 (Stored_to_many
                    { source_id_key; target_fk_key = storage_key })
           | Error _ as error -> error)
-      | _, None ->
+      | Many, None, Some join -> (
+          match field_storage_key source_entity "id" with
+          | Ok source_id_key -> Ok (Join_to_many { source_id_key; join })
+          | Error _ as error -> error)
+      | One, _, Some _ ->
+          Error (`Bad_query ("edge " ^ edge.name ^ " has join metadata but is not to-many"))
+      | Many, Some _, Some _ ->
+          Error
+            (`Bad_query
+              ("edge " ^ edge.name
+             ^ " must use either storage_key or join metadata, not both"))
+      | _, None, None ->
           Error
             (`Bad_query
               ("edge " ^ edge.name ^ " does not have a stored foreign-key field")))
@@ -1699,6 +1712,28 @@ let collect_document_values storage_key docs =
 let foreign_key_value = document_value
 let collect_foreign_keys = collect_document_values
 
+let find_collection_docs ctx ~collection filter =
+  let options = Mongo_crud.default_find collection filter in
+  let session = transaction_session ctx in
+  match
+    Mongo_eio.direct_find ?session ctx.client ~db:ctx.config.database ~collection
+      options
+  with
+  | Ok docs -> Ok docs
+  | Error error ->
+      Error
+        (`Backend
+          (Printf.sprintf "find_join %s: %s" collection
+             (Mongo_error.to_string error)))
+
+let find_join_docs ctx (join : Ent_ocaml.edge_join) source_ids =
+  match source_ids with
+  | [] -> Ok []
+  | source_ids -> (
+      match op_doc join.source_key "$in" (Ent_ocaml.V_list source_ids) with
+      | Error _ as error -> error
+      | Ok filter -> find_collection_docs ctx ~collection:join.collection filter)
+
 let find_traversal_targets ctx edge_query ids =
   match ids with
   | [] -> Ok []
@@ -1718,6 +1753,24 @@ let find_to_many_targets ctx edge_query target_fk_key source_ids =
         |> Ent_ocaml.Query.where (Ent_ocaml.In (target_fk_key, source_ids))
       in
       find ctx target_query
+
+let join_source_target_ids join join_docs =
+  let rec loop acc = function
+    | [] -> Ok (List.rev acc)
+    | doc :: rest -> (
+        match
+          ( document_value join.Ent_ocaml.source_key doc,
+            document_value join.target_key doc )
+        with
+        | Error _ as error, _ | _, (Error _ as error) -> error
+        | Ok (Some source_id), Ok (Some target_id) ->
+            loop ((source_id, target_id) :: acc) rest
+        | Ok None, _ | _, Ok None -> loop acc rest)
+  in
+  loop [] join_docs
+
+let collect_join_target_ids join_docs join =
+  collect_document_values join.Ent_ocaml.target_key join_docs
 
 let traverse_as ctx (edge_query : Ent_ocaml.edge_query) ~decode =
   match stored_edge edge_query with
@@ -1744,6 +1797,23 @@ let traverse_as ctx (edge_query : Ent_ocaml.edge_query) ~decode =
               match find_to_many_targets ctx edge_query target_fk_key source_ids with
               | Error _ as error -> error
               | Ok target_docs -> decode_documents ~decode target_docs)))
+  | Ok (Join_to_many { source_id_key; join }) -> (
+      let source_query = { edge_query.source with Ent_ocaml.select = [] } in
+      match find ctx source_query with
+      | Error _ as error -> error
+      | Ok source_docs -> (
+          match collect_document_values source_id_key source_docs with
+          | Error _ as error -> error
+          | Ok source_ids -> (
+              match find_join_docs ctx join source_ids with
+              | Error _ as error -> error
+              | Ok join_docs -> (
+                  match collect_join_target_ids join_docs join with
+                  | Error _ as error -> error
+                  | Ok target_ids -> (
+                      match find_traversal_targets ctx edge_query target_ids with
+                      | Error _ as error -> error
+                      | Ok target_docs -> decode_documents ~decode target_docs)))))
 
 let load_edge_as ctx (edge_query : Ent_ocaml.edge_query) ~decode_source
     ~decode_target =
@@ -1859,6 +1929,92 @@ let load_edge_as ctx (edge_query : Ent_ocaml.edge_query) ~decode_source
                                 | Ok acc -> pair_rows acc rest)))
                   in
                   pair_rows [] source_docs)))
+  | Ok (Join_to_many { source_id_key; join }) -> (
+      let source_query = { edge_query.source with Ent_ocaml.select = [] } in
+      match find ctx source_query with
+      | Error _ as error -> error
+      | Ok source_docs -> (
+          match collect_document_values source_id_key source_docs with
+          | Error _ as error -> error
+          | Ok source_ids -> (
+              match find_join_docs ctx join source_ids with
+              | Error _ as error -> error
+              | Ok join_docs -> (
+                  match
+                    ( join_source_target_ids join join_docs,
+                      collect_join_target_ids join_docs join,
+                      field_storage_key edge_query.target "id" )
+                  with
+                  | Error _ as error, _, _
+                  | _, (Error _ as error), _
+                  | _, _, (Error _ as error) ->
+                      error
+                  | Ok pairs, Ok target_ids, Ok target_id_key -> (
+                      match find_traversal_targets ctx edge_query target_ids with
+                      | Error _ as error -> error
+                      | Ok target_docs ->
+                          let target_id doc =
+                            match Bson.get_element target_id_key doc with
+                            | exception Not_found ->
+                                Error (`Decode "target id field missing")
+                            | element -> value_of_bson_element element
+                          in
+                          let target_matches source_id =
+                            let rec loop acc = function
+                              | [] -> Ok (List.rev acc)
+                              | target_doc :: rest -> (
+                                  match target_id target_doc with
+                                  | Error _ as error -> error
+                                  | Ok target_id
+                                    when List.exists
+                                           (fun (source, target) ->
+                                             source = source_id
+                                             && target = target_id)
+                                           pairs ->
+                                      loop (target_doc :: acc) rest
+                                  | Ok _ -> loop acc rest)
+                            in
+                            loop [] target_docs
+                          in
+                          let append_targets source acc = function
+                            | [] -> Ok ((source, None) :: acc)
+                            | targets ->
+                                let rec loop acc = function
+                                  | [] -> Ok acc
+                                  | target_doc :: rest -> (
+                                      match
+                                        decode_document ~decode:decode_target
+                                          target_doc
+                                      with
+                                      | Error _ as error -> error
+                                      | Ok target ->
+                                          loop ((source, Some target) :: acc)
+                                            rest)
+                                in
+                                loop acc targets
+                          in
+                          let rec pair_rows acc = function
+                            | [] -> Ok (List.rev acc)
+                            | source_doc :: rest -> (
+                                match
+                                  ( decode_document ~decode:decode_source
+                                      source_doc,
+                                    document_value source_id_key source_doc )
+                                with
+                                | Error _ as error, _ | _, (Error _ as error)
+                                  ->
+                                    error
+                                | Ok source, Ok None ->
+                                    pair_rows ((source, None) :: acc) rest
+                                | Ok source, Ok (Some source_id) -> (
+                                    match target_matches source_id with
+                                    | Error _ as error -> error
+                                    | Ok targets -> (
+                                        match append_targets source acc targets with
+                                        | Error _ as error -> error
+                                        | Ok acc -> pair_rows acc rest)))
+                          in
+                          pair_rows [] source_docs)))))
 
 let run_aggregate ctx (query : Ent_ocaml.query) pipeline =
   let session = transaction_session ctx in

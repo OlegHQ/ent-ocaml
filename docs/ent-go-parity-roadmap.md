@@ -185,8 +185,8 @@ The initial package scaffold already provides:
 | JSON predicates | Generated nested path predicates and ordering implemented for `[@ent.json]` fields | Dotted paths and aggregation expressions |
 | Edge predicates | `has_edge`, `has_edge_with`, and target-aware generated edge aliases implemented for stored-FK to-one edges; join-backed predicates pending | FK fields, join collections, or `$lookup` depending edge |
 | Boolean predicates | `and_`, `or_`, `not_` combinators | `$and`, `$or`, `$nor` |
-| Graph traversals | Stored-FK to-one and to-many `query_<edge>` traversal implemented, including target predicates, ordering, limits, and offsets; full graph chains pending | Additional queries or aggregation `$lookup` |
-| Eager loading | Stored-FK to-one and to-many `with_<edge>` loading, target predicates/order/limit/offset, alias metadata, named loaded-edge records, and same-shape grouped named loads implemented; nested and heterogeneous multi-edge loading pending | Batch secondary queries; named loaders |
+| Graph traversals | Stored-FK to-one/to-many and Mongo join-backed to-many `query_<edge>` traversal implemented, including target predicates, ordering, limits, and offsets; full graph chains pending | Additional queries or aggregation `$lookup` |
+| Eager loading | Stored-FK to-one/to-many and Mongo join-backed to-many `with_<edge>` loading, target predicates/order/limit/offset, alias metadata, named loaded-edge records, and same-shape grouped named loads implemented; nested and heterogeneous multi-edge loading pending | Batch secondary queries; named loaders |
 | Named edges | Generated `with_<edge> ~as_` alias metadata, single-edge named load results, and ordered same-shape multi-edge groups implemented; heterogeneous result maps pending | Map from edge name/alias to loaded rows |
 | Bidirectional edge refs | Optional generated in-memory backrefs | Set after eager load, avoid cycles by default |
 | Pagination | Limit/offset plus single-field and composite seek cursors implemented | `limit`, `skip`, sort, stable cursor keys |
@@ -270,18 +270,18 @@ The initial package scaffold already provides:
    join collections. The stored-FK subset is implemented for `Has_edge`,
    `Has_edge_with` target-ID equality/membership predicates, and target-aware
    generated edge aliases that filter to-one edges by related fields through
-   Mongo `$lookup`. Stored-FK to-one and to-many `query_<edge>` traversal is
-   implemented through generated Store executors;
-   full traversal chains, M2M join collections, nested traversal filters, and
-   cross-collection predicate planning remain.
+   Mongo `$lookup`. Stored-FK to-one/to-many and Mongo join-backed to-many
+   `query_<edge>` traversal are implemented through generated Store executors;
+   full traversal chains, join-backed predicates/order terms, nested traversal
+   filters, and cross-collection predicate planning remain.
 
 7. Eager loading and named edges:
-   stored-FK to-one and to-many `with_<edge>` eager loading is implemented
-   through generated Store executors, and generated `with_<edge> ~as_`
-   preserves named-edge alias metadata. Generated `load_edge_named` returns
-   loaded-edge records carrying the edge alias/name for each row, and generated
-   `load_edges_named` returns ordered named groups for multiple edge queries
-   with the same decoder shape.
+   stored-FK to-one/to-many and Mongo join-backed to-many `with_<edge>` eager
+   loading are implemented through generated Store executors, and generated
+   `with_<edge> ~as_` preserves named-edge alias metadata. Generated
+   `load_edge_named` returns loaded-edge records carrying the edge alias/name
+   for each row, and generated `load_edges_named` returns ordered named groups
+   for multiple edge queries with the same decoder shape.
    Nested eager loading, heterogeneous multiple edge loads, per-edge limits,
    ordering, heterogeneous result maps, and optional bidirectional backrefs
    remain.
