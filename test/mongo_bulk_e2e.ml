@@ -7,6 +7,44 @@ let port = env "POSTER_MONGO_PORT" "27017" |> int_of_string
 let db =
   Printf.sprintf "ent_ocaml_bulk_e2e_%d_%d" (Unix.getpid ()) (Random.bits ())
 
+let org_entity =
+  Ent_ocaml.
+    {
+      name = "Org";
+      collection = "orgs";
+      fields =
+        [
+          {
+            name = "id";
+            storage_key = "_id";
+            typ = String;
+            required = true;
+            unique = true;
+            immutable = false;
+            nillable = false;
+            validators = [];
+            sensitive = false;
+            deprecated = None;
+            comment = None;
+          };
+          {
+            name = "slug";
+            storage_key = "slug";
+            typ = String;
+            required = true;
+            unique = true;
+            immutable = false;
+            nillable = false;
+            validators = [];
+            sensitive = false;
+            deprecated = None;
+            comment = None;
+          };
+        ];
+      edges = [];
+      indexes = [];
+    }
+
 let user_entity =
   Ent_ocaml.
     {
@@ -40,9 +78,31 @@ let user_entity =
             deprecated = None;
             comment = None;
           };
+          {
+            name = "org_id";
+            storage_key = "org_id";
+            typ = String;
+            required = false;
+            unique = false;
+            immutable = false;
+            nillable = false;
+            validators = [];
+            sensitive = false;
+            deprecated = None;
+            comment = None;
+          };
         ];
       edges =
         [
+          {
+            name = "org";
+            target = "Org";
+            direction = To;
+            cardinality = One;
+            required = false;
+            storage_key = Some "org_id";
+            join = None;
+          };
           {
             name = "posts";
             target = "Post";
@@ -222,13 +282,31 @@ let post_entity =
         ];
     }
 
+let create_org id slug =
+  Ent_ocaml.
+    {
+      entity = org_entity;
+      op = Create;
+      predicates = [];
+      set = [ ("id", V_string id); ("slug", V_string slug) ];
+      clear = [];
+      add = [];
+      on_insert = [];
+    }
+
 let create_user id username =
+  let org_id = if id = "user_1" then "org_1" else "org_2" in
   Ent_ocaml.
     {
       entity = user_entity;
       op = Create;
       predicates = [];
-      set = [ ("id", V_string id); ("username", V_string username) ];
+      set =
+        [
+          ("id", V_string id);
+          ("username", V_string username);
+          ("org_id", V_string org_id);
+        ];
       clear = [];
       add = [];
       on_insert = [];
@@ -577,7 +655,9 @@ let check_transaction_rollback ctx =
 
 let check_index_drift ctx =
   let open Ent_ocaml.Result_syntax in
-  let* checks = Ent_ocaml_mongo.check_indexes ctx [ user_entity; post_entity ] in
+  let* checks =
+    Ent_ocaml_mongo.check_indexes ctx [ org_entity; user_entity; post_entity ]
+  in
   assert_true "index drift check passes"
     (List.for_all Ent_ocaml_mongo.index_check_ok checks);
   let drift_entity =
@@ -615,7 +695,8 @@ let check_index_drift ctx =
 let check_collection_validator_drift ctx =
   let open Ent_ocaml.Result_syntax in
   let* checks =
-    Ent_ocaml_mongo.check_collection_validators ctx [ user_entity; post_entity ]
+    Ent_ocaml_mongo.check_collection_validators ctx
+      [ org_entity; user_entity; post_entity ]
   in
   assert_true "collection validator check passes"
     (List.for_all Ent_ocaml_mongo.collection_validator_check_ok checks);
@@ -662,14 +743,19 @@ let run_flow client =
   let ctx = Ent_ocaml_mongo.create ~client { database = db } in
   let* () =
     Ent_ocaml_mongo.ensure_collection_validators ctx
-      [ user_entity; tag_entity; post_entity ]
+      [ org_entity; user_entity; tag_entity; post_entity ]
   in
   let* () = check_collection_validator_drift ctx in
   let* () =
-    Ent_ocaml_mongo.ensure_indexes ctx [ user_entity; tag_entity; post_entity ]
+    Ent_ocaml_mongo.ensure_indexes ctx
+      [ org_entity; user_entity; tag_entity; post_entity ]
   in
   let* () = check_index_drift ctx in
   let* () = check_partial_index client in
+  let* _orgs =
+    Ent_ocaml_mongo.insert_many_values ctx
+      [ create_org "org_1" "engineering"; create_org "org_2" "marketing" ]
+  in
   let* _users =
     Ent_ocaml_mongo.insert_many_values ctx
       [ create_user "user_1" "alice"; create_user "user_2" "bob" ]
@@ -981,6 +1067,19 @@ let run_flow client =
   in
   assert_true "entql target edge path returns alice posts"
     (match entql_alice_posts with
+    | [ doc ] -> Bson.get_string (Bson.get_element "_id" doc) = "post_1"
+    | _ -> false);
+  let* entql_engineering_posts =
+    match
+      Ent_ocaml.Query.make post_entity
+      |> Ent_ocaml.Entql.where ~targets:[ user_entity; org_entity ]
+           {|user.org.id == "org_1"|}
+    with
+    | Ok query -> Ent_ocaml_mongo.find ctx query
+    | Error _ as error -> error
+  in
+  assert_true "entql nested edge id path returns engineering posts"
+    (match entql_engineering_posts with
     | [ doc ] -> Bson.get_string (Bson.get_element "_id" doc) = "post_1"
     | _ -> false);
   let* alice_posts =

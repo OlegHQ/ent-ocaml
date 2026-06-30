@@ -1,3 +1,41 @@
+let org_entity =
+  Ent_ocaml.
+    {
+      name = "Org";
+      collection = "orgs";
+      fields =
+        [
+          {
+            name = "id";
+            storage_key = "_id";
+            typ = String;
+            required = true;
+            unique = true;
+            immutable = true;
+            nillable = false;
+            validators = [];
+            sensitive = false;
+            deprecated = None;
+            comment = None;
+          };
+          {
+            name = "slug";
+            storage_key = "slug";
+            typ = String;
+            required = true;
+            unique = true;
+            immutable = false;
+            nillable = false;
+            validators = [];
+            sensitive = false;
+            deprecated = None;
+            comment = None;
+          };
+        ];
+      edges = [];
+      indexes = [];
+    }
+
 let user_entity =
   Ent_ocaml.
     {
@@ -31,9 +69,31 @@ let user_entity =
             deprecated = None;
             comment = None;
           };
+          {
+            name = "org_id";
+            storage_key = "org_id";
+            typ = String;
+            required = false;
+            unique = false;
+            immutable = false;
+            nillable = false;
+            validators = [];
+            sensitive = false;
+            deprecated = None;
+            comment = None;
+          };
         ];
       edges =
         [
+          {
+            name = "org";
+            target = "Org";
+            direction = To;
+            cardinality = One;
+            required = false;
+            storage_key = Some "org_id";
+            join = None;
+          };
           {
             name = "posts";
             target = "Post";
@@ -650,6 +710,42 @@ let test_entql_api () =
         }) ->
       ()
   | Ok _ -> Alcotest.fail "unexpected entql edge target-field predicate"
+  | Error error -> Alcotest.fail (error_to_string error));
+  (match
+     Entql.predicate ~targets:[ user_entity; org_entity ] post_entity
+       {|user.org.id == "org_1"|}
+   with
+  | Ok
+      (Has_edge_with_target
+        {
+          edge = "user";
+          target = { name = "User"; _ };
+          predicates = [ Has_edge_with ("org", [ Eq ("id", V_string "org_1") ]) ];
+        }) ->
+      ()
+  | Ok _ -> Alcotest.fail "unexpected entql nested edge id predicate"
+  | Error error -> Alcotest.fail (error_to_string error));
+  (match
+     Entql.predicate ~targets:[ user_entity; org_entity ] post_entity
+       {|user.org.slug == "engineering"|}
+   with
+  | Ok
+      (Has_edge_with_target
+        {
+          edge = "user";
+          target = { name = "User"; _ };
+          predicates =
+            [
+              Has_edge_with_target
+                {
+                  edge = "org";
+                  target = { name = "Org"; _ };
+                  predicates = [ Eq ("slug", V_string "engineering") ];
+                };
+            ];
+        }) ->
+      ()
+  | Ok _ -> Alcotest.fail "unexpected entql nested edge target predicate"
   | Error error -> Alcotest.fail (error_to_string error));
   (match Entql.predicate post_entity {|user.username == "alice"|} with
   | Error

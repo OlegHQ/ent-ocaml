@@ -1076,6 +1076,16 @@ module Entql = struct
         Some (edge_name, field_name)
     | _ -> None
 
+  let split_relation_path name =
+    match String.split_on_char '.' name with
+    | _ :: _ :: _ as segments
+      when List.for_all
+             (fun segment ->
+               segment <> "" && not (String.starts_with ~prefix:"$" segment))
+             segments ->
+        Some segments
+    | _ -> None
+
   let split_json_path (entity : entity) name =
     match String.split_on_char '.' name with
     | root :: (_ :: _ as path)
@@ -1195,6 +1205,45 @@ module Entql = struct
       let+ predicate = target_unary_predicate target field op in
       Has_edge_with_target { edge = edge_name; target; predicates = [ predicate ] }
 
+  let rec relation_path_type ~targets entity = function
+    | [ edge_name; "id" ] -> edge_id_type entity edge_name
+    | [ edge_name; field_name ] ->
+        let open Result_syntax in
+        let* edge = edge entity edge_name in
+        let* target = target_entity targets edge in
+        let+ field = field target field_name in
+        field.typ
+    | edge_name :: (_ :: _ as rest) ->
+        let open Result_syntax in
+        let* edge = edge entity edge_name in
+        let* target = target_entity targets edge in
+        relation_path_type ~targets target rest
+    | _ -> bad "edge path must include an edge and field"
+
+  let rec relation_path_predicate ~targets entity path op value =
+    let open Result_syntax in
+    match path with
+    | [ edge_name; field_name ] ->
+        edge_field_predicate ~targets entity edge_name field_name op value
+    | edge_name :: (_ :: _ as rest) ->
+        let* edge = edge entity edge_name in
+        let* target = target_entity targets edge in
+        let+ predicate = relation_path_predicate ~targets target rest op value in
+        Has_edge_with_target { edge = edge_name; target; predicates = [ predicate ] }
+    | _ -> bad "edge path must include an edge and field"
+
+  let rec relation_path_unary_predicate ~targets entity path op =
+    let open Result_syntax in
+    match path with
+    | [ edge_name; field_name ] ->
+        edge_field_unary_predicate ~targets entity edge_name field_name op
+    | edge_name :: (_ :: _ as rest) ->
+        let* edge = edge entity edge_name in
+        let* target = target_entity targets edge in
+        let+ predicate = relation_path_unary_predicate ~targets target rest op in
+        Has_edge_with_target { edge = edge_name; target; predicates = [ predicate ] }
+    | _ -> bad "edge path must include an edge and field"
+
   let binary_predicate ~targets entity expression operator op =
     match find_outside operator expression with
     | None -> None
@@ -1219,25 +1268,17 @@ module Entql = struct
               in
               json_path_predicate json_field path op value
           | Ok None -> (
-              match split_edge_path field_name with
-              | Some (edge_name, edge_field) ->
+              match split_relation_path field_name with
+              | Some path ->
                   let open Result_syntax in
-                  let* typ =
-                    if edge_field = "id" then edge_id_type entity edge_name
-                    else
-                      let* edge = edge entity edge_name in
-                      let* target = target_entity targets edge in
-                      let+ field = field target edge_field in
-                      field.typ
-                  in
+                  let* typ = relation_path_type ~targets entity path in
                   let* value =
                     match op with
                     | Dynamic_filter.In_list | Dynamic_filter.Not_in_list ->
                         list_value_of_literal typ literal
                     | _ -> value_of_literal typ literal
                   in
-                  edge_field_predicate ~targets entity edge_name edge_field op
-                    value
+                  relation_path_predicate ~targets entity path op value
               | None ->
                   let open Result_syntax in
                   let* filter =
@@ -1271,10 +1312,8 @@ module Entql = struct
         | Ok (Some (json_field, path)) ->
             json_path_unary_predicate json_field path op
         | Ok None -> (
-            match split_edge_path field_name with
-            | Some (edge_name, edge_field) ->
-                edge_field_unary_predicate ~targets entity edge_name edge_field
-                  op
+            match split_relation_path field_name with
+            | Some path -> relation_path_unary_predicate ~targets entity path op
             | None ->
                 let open Result_syntax in
                 let* filter =

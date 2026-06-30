@@ -313,8 +313,22 @@ let rec prefix_target_predicate (target : Ent_ocaml.entity) ~prefix = function
   | Not predicate ->
       prefix_target_predicate target ~prefix predicate
       |> Result.map (fun predicate -> Ent_ocaml.Not predicate)
-  | Has_edge _ | Has_edge_with _ | Has_edge_with_target _ | Backend _ ->
-      Error (`Bad_query "nested edge predicates are not supported in edge filters")
+  | Has_edge edge ->
+      edge_storage_key target edge
+      |> Result.map (fun storage_key -> Ent_ocaml.Not_nil (prefix ^ "." ^ storage_key))
+  | Has_edge_with (edge, predicates) -> (
+      match edge_storage_key target edge with
+      | Error _ as error -> error
+      | Ok storage_key ->
+          remap_id_predicates (prefix ^ "." ^ storage_key) predicates
+          |> Result.map (function
+               | [] -> Ent_ocaml.Not_nil (prefix ^ "." ^ storage_key)
+               | [ predicate ] -> predicate
+               | predicates -> Ent_ocaml.And predicates))
+  | Has_edge_with_target _ | Backend _ ->
+      Error
+        (`Bad_query
+          "nested target edge predicates currently require a stored foreign-key id filter")
 
 and prefix_target_predicates target ~prefix predicates =
   let rec loop acc = function
