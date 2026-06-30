@@ -198,11 +198,35 @@ let find ctx (query : Ent_ocaml.query) =
       | Ok docs -> Ok docs
       | Error error -> Error (backend_error "find" query.entity error))
 
+let decode_document ~decode doc =
+  decode doc |> Result.map_error (fun message -> `Decode message)
+
+let decode_documents ~decode docs =
+  let rec loop acc = function
+    | [] -> Ok (List.rev acc)
+    | doc :: rest -> (
+        match decode_document ~decode doc with
+        | Ok value -> loop (value :: acc) rest
+        | Error _ as error -> error)
+  in
+  loop [] docs
+
 let find_one ctx query =
   let query = { query with Ent_ocaml.limit = Some 1 } in
   match find ctx query with
   | Ok [] -> Ok None
   | Ok (doc :: _) -> Ok (Some doc)
+  | Error _ as error -> error
+
+let find_as ctx query ~decode =
+  match find ctx query with
+  | Ok docs -> decode_documents ~decode docs
+  | Error _ as error -> error
+
+let find_one_as ctx query ~decode =
+  match find_one ctx query with
+  | Ok None -> Ok None
+  | Ok (Some doc) -> decode_document ~decode doc |> Result.map Option.some
   | Error _ as error -> error
 
 let count ctx (query : Ent_ocaml.query) =

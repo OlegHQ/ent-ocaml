@@ -101,6 +101,24 @@ let test_mongo_document_planning () =
     (Bson.get_list (Bson.get_element "media_ids" doc) |> List.length);
   ignore (Bson.get_null (Bson.get_element "published_at_ms" doc))
 
+let test_mongo_decode_documents () =
+  let doc value = Bson.add_element "name" (Bson.create_string value) Bson.empty in
+  let decode doc =
+    try Ok (Bson.get_string (Bson.get_element "name" doc)) with
+    | _ -> Error "missing name"
+  in
+  match Ent_ocaml_mongo.decode_documents ~decode [ doc "a"; doc "b" ] with
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+  | Ok values -> Alcotest.(check (list string)) "decoded" [ "a"; "b" ] values
+
+let test_mongo_decode_error () =
+  let decode _ = Error "bad document" in
+  match Ent_ocaml_mongo.decode_document ~decode Bson.empty with
+  | Ok _ -> Alcotest.fail "expected decode error"
+  | Error (`Decode message) ->
+      Alcotest.(check string) "decode message" "bad document" message
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+
 let () =
   Alcotest.run "ent-ocaml"
     [
@@ -113,6 +131,9 @@ let () =
           Alcotest.test_case "update planning" `Quick test_mongo_update_planning;
           Alcotest.test_case "document planning" `Quick
             test_mongo_document_planning;
+          Alcotest.test_case "decode documents" `Quick
+            test_mongo_decode_documents;
+          Alcotest.test_case "decode error" `Quick test_mongo_decode_error;
         ]
       );
     ]
