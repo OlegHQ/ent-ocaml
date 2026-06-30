@@ -287,6 +287,24 @@ let update ctx (mutation : Ent_ocaml.mutation) =
                    ~default:result.matched_count)
           | Error error -> Error (backend_error "update" entity error)))
 
+let update_one ctx (mutation : Ent_ocaml.mutation) =
+  let entity = mutation.Ent_ocaml.entity in
+  match mutation.op with
+  | Create | Update | Delete_one | Delete ->
+      Error (`Bad_query "update_one expects Update_one mutation op")
+  | Update_one -> (
+      match (selector mutation, update_to_bson mutation) with
+      | Error _ as error, _ | _, (Error _ as error) -> error
+      | Ok selector, Ok update_doc -> (
+          match
+            Mongo_eio.direct_update_one ctx.client ~db:ctx.config.database
+              ~collection:entity.collection ~upsert:false selector update_doc
+          with
+          | Ok result ->
+              if result.Mongo_crud.matched_count = 0 then Error `Not_found
+              else Ok ()
+          | Error error -> Error (backend_error "update_one" entity error)))
+
 let delete ctx (mutation : Ent_ocaml.mutation) =
   let entity = mutation.Ent_ocaml.entity in
   match mutation.op with

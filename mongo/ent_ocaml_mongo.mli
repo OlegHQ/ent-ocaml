@@ -39,5 +39,6 @@ val find_one_as :
 val count : ctx -> Ent_ocaml.query -> (int, Ent_ocaml.error) result
 val insert : ctx -> Ent_ocaml.entity -> Bson.t -> (Bson.t, Ent_ocaml.error) result
 val insert_values : ctx -> Ent_ocaml.mutation -> (Bson.t, Ent_ocaml.error) result
+val update_one : ctx -> Ent_ocaml.mutation -> (unit, Ent_ocaml.error) result
 val update : ctx -> Ent_ocaml.mutation -> (int, Ent_ocaml.error) result
 val delete : ctx -> Ent_ocaml.mutation -> (int, Ent_ocaml.error) result
