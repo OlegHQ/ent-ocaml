@@ -1631,6 +1631,23 @@ let gen_query_module td =
       A.pmty_signature ~loc
         [ value_sig "mutation_hooks" (list_typ mutation_hook_typ) ]
     in
+    let interceptors_type =
+      let backend_ctx =
+        A.ptyp_constr ~loc (lid ~loc [ "Backend"; "ctx" ]) []
+      in
+      let query_interceptor_typ =
+        A.ptyp_constr ~loc
+          (lid ~loc [ "Ent_ocaml"; "query_interceptor" ])
+          [ backend_ctx ]
+      in
+      let value_sig name type_ =
+        A.psig_value ~loc
+          (A.value_description ~loc ~name:{ loc; txt = name } ~type_ ~prim:[])
+      in
+      let list_typ typ = A.ptyp_constr ~loc (lid ~loc [ "list" ]) [ typ ] in
+      A.pmty_signature ~loc
+        [ value_sig "query_interceptors" (list_typ query_interceptor_typ) ]
+    in
     let with_policy_module =
       let structure =
         [
@@ -1942,6 +1959,205 @@ let gen_query_module td =
                 (Named ({ loc; txt = Some "Hooks" }, hooks_type))
                 (A.pmod_structure ~loc structure)))
     in
+    let with_interceptors_module =
+      let run_query query_expr body =
+        let next =
+          A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+            (A.pexp_fun ~loc Nolabel None query_pat body)
+        in
+        A.pexp_apply ~loc
+          (ident ~loc [ "Ent_ocaml"; "Interceptor"; "run_query" ])
+          [
+            (Nolabel, ident ~loc [ "Interceptors"; "query_interceptors" ]);
+            (Nolabel, next);
+            (Nolabel, evar ~loc "ctx");
+            (Nolabel, query_expr);
+          ]
+      in
+      let aggregate_with_query =
+        A.pexp_record ~loc
+          [ (lid ~loc [ "Ent_ocaml"; "query" ], evar ~loc "query") ]
+          (Some (evar ~loc "aggregate"))
+      in
+      let scan_with_query =
+        A.pexp_record ~loc
+          [ (lid ~loc [ "Ent_ocaml"; "query" ], evar ~loc "query") ]
+          (Some (evar ~loc "scan"))
+      in
+      let edge_query_with_source =
+        A.pexp_record ~loc
+          [ (lid ~loc [ "Ent_ocaml"; "source" ], evar ~loc "query") ]
+          (Some (evar ~loc "edge_query"))
+      in
+      let group_with_query =
+        let aggregate =
+          A.pexp_record ~loc
+            [ (lid ~loc [ "Ent_ocaml"; "query" ], evar ~loc "query") ]
+            (Some
+               (A.pexp_field ~loc (evar ~loc "group")
+                  (lid ~loc [ "Ent_ocaml"; "aggregate" ])))
+        in
+        A.pexp_record ~loc
+          [ (lid ~loc [ "Ent_ocaml"; "aggregate" ], aggregate) ]
+          (Some (evar ~loc "group"))
+      in
+      let structure =
+        [
+          value_fun "all"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc (Labelled "decode") None (pvar ~loc "decode")
+                  (A.pexp_fun ~loc Nolabel None query_pat
+                     (run_query (evar ~loc "query")
+                        (backend_apply "find_as"
+                           [
+                             (Nolabel, evar ~loc "ctx");
+                             (Nolabel, evar ~loc "query");
+                             (Labelled "decode", evar ~loc "decode");
+                           ])))));
+          value_fun "one"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc (Labelled "decode") None (pvar ~loc "decode")
+                  (A.pexp_fun ~loc Nolabel None query_pat
+                     (run_query (evar ~loc "query")
+                        (backend_apply "find_one_as"
+                           [
+                             (Nolabel, evar ~loc "ctx");
+                             (Nolabel, evar ~loc "query");
+                             (Labelled "decode", evar ~loc "decode");
+                           ])))));
+          value_fun "traverse"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc (Labelled "decode") None (pvar ~loc "decode")
+                  (A.pexp_fun ~loc Nolabel None edge_query_pat
+                     (run_query
+                        (A.pexp_field ~loc (evar ~loc "edge_query")
+                           (lid ~loc [ "Ent_ocaml"; "source" ]))
+                        (backend_apply "traverse_as"
+                           [
+                             (Nolabel, evar ~loc "ctx");
+                             (Nolabel, edge_query_with_source);
+                             (Labelled "decode", evar ~loc "decode");
+                           ])))));
+          value_fun "load_edge"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc (Labelled "decode_source") None
+                  (pvar ~loc "decode_source")
+                  (A.pexp_fun ~loc (Labelled "decode_target") None
+                     (pvar ~loc "decode_target")
+                     (A.pexp_fun ~loc Nolabel None edge_query_pat
+                        (run_query
+                           (A.pexp_field ~loc (evar ~loc "edge_query")
+                              (lid ~loc [ "Ent_ocaml"; "source" ]))
+                           (backend_apply "load_edge_as"
+                              [
+                                (Nolabel, evar ~loc "ctx");
+                                (Nolabel, edge_query_with_source);
+                                (Labelled "decode_source", evar ~loc "decode_source");
+                                (Labelled "decode_target", evar ~loc "decode_target");
+                              ]))))));
+          value_fun "count"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc Nolabel None query_pat
+                  (run_query (evar ~loc "query")
+                     (backend_apply "count"
+                        [
+                          (Nolabel, evar ~loc "ctx");
+                          (Nolabel, evar ~loc "query");
+                        ]))));
+          value_fun "aggregate"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc Nolabel None aggregate_pat
+                  (run_query
+                     (A.pexp_field ~loc (evar ~loc "aggregate")
+                        (lid ~loc [ "Ent_ocaml"; "query" ]))
+                     (backend_apply "aggregate"
+                        [
+                          (Nolabel, evar ~loc "ctx");
+                          (Nolabel, aggregate_with_query);
+                        ]))));
+          value_fun "aggregate_scan"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc Nolabel None aggregate_scan_pat
+                  (run_query
+                     (A.pexp_field ~loc (evar ~loc "scan")
+                        (lid ~loc [ "Ent_ocaml"; "query" ]))
+                     (backend_apply "aggregate_scan"
+                        [
+                          (Nolabel, evar ~loc "ctx");
+                          (Nolabel, scan_with_query);
+                        ]))));
+          value_fun "group"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc Nolabel None group_aggregate_pat
+                  (run_query
+                     (A.pexp_field ~loc
+                        (A.pexp_field ~loc (evar ~loc "group")
+                           (lid ~loc [ "Ent_ocaml"; "aggregate" ]))
+                        (lid ~loc [ "Ent_ocaml"; "query" ]))
+                     (backend_apply "group"
+                        [
+                          (Nolabel, evar ~loc "ctx");
+                          (Nolabel, group_with_query);
+                        ]))));
+          value_fun "insert"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc Nolabel None (pvar ~loc "mutation")
+                  (backend_apply "insert_values"
+                     [
+                       (Nolabel, evar ~loc "ctx");
+                       (Nolabel, evar ~loc "mutation");
+                     ])));
+          value_fun "insert_many"
+            (A.pexp_fun ~loc (Optional "ordered") None (pvar ~loc "ordered")
+               (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+                  (A.pexp_fun ~loc Nolabel None (pvar ~loc "mutations")
+                     (backend_apply "insert_many_values"
+                        [
+                          (Optional "ordered", evar ~loc "ordered");
+                          (Nolabel, evar ~loc "ctx");
+                          (Nolabel, evar ~loc "mutations");
+                        ]))));
+          value_fun "update_one"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc Nolabel None (pvar ~loc "mutation")
+                  (backend_apply "update_one"
+                     [
+                       (Nolabel, evar ~loc "ctx");
+                       (Nolabel, evar ~loc "mutation");
+                     ])));
+          value_fun "update"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc Nolabel None (pvar ~loc "mutation")
+                  (backend_apply "update"
+                     [
+                       (Nolabel, evar ~loc "ctx");
+                       (Nolabel, evar ~loc "mutation");
+                     ])));
+          value_fun "upsert_one"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc Nolabel None (pvar ~loc "mutation")
+                  (backend_apply "upsert_one"
+                     [
+                       (Nolabel, evar ~loc "ctx");
+                       (Nolabel, evar ~loc "mutation");
+                     ])));
+          value_fun "delete"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc Nolabel None (pvar ~loc "mutation")
+                  (backend_apply "delete"
+                     [
+                       (Nolabel, evar ~loc "ctx");
+                       (Nolabel, evar ~loc "mutation");
+                     ])));
+        ]
+      in
+      A.pstr_module ~loc
+        (A.module_binding ~loc ~name:{ loc; txt = Some "With_interceptors" }
+           ~expr:
+             (A.pmod_functor ~loc
+                (Named ({ loc; txt = Some "Interceptors" }, interceptors_type))
+                (A.pmod_structure ~loc structure)))
+    in
     let structure =
       [
         value_fun "all"
@@ -2072,6 +2288,7 @@ let gen_query_module td =
                   ])));
         with_policy_module;
         with_hooks_module;
+        with_interceptors_module;
       ]
     in
     A.pstr_module ~loc
@@ -2515,6 +2732,15 @@ let gen_sig_for_type td =
       A.pmty_signature ~loc
         [ value_sig "mutation_hooks" (list_typ mutation_hook_typ) ]
     in
+    let interceptors_type =
+      let query_interceptor_typ =
+        A.ptyp_constr ~loc
+          (lid ~loc [ "Ent_ocaml"; "query_interceptor" ])
+          [ backend_ctx ]
+      in
+      A.pmty_signature ~loc
+        [ value_sig "query_interceptors" (list_typ query_interceptor_typ) ]
+    in
     let store_items =
       base_store_items
       @ [
@@ -2529,6 +2755,15 @@ let gen_sig_for_type td =
                ~type_:
                  (A.pmty_functor ~loc
                     (Named ({ loc; txt = Some "Hooks" }, hooks_type))
+                    (A.pmty_signature ~loc base_store_items)));
+          A.psig_module ~loc
+            (A.module_declaration ~loc
+               ~name:{ loc; txt = Some "With_interceptors" }
+               ~type_:
+                 (A.pmty_functor ~loc
+                    (Named
+                       ( { loc; txt = Some "Interceptors" },
+                         interceptors_type ))
                     (A.pmty_signature ~loc base_store_items)));
         ]
     in

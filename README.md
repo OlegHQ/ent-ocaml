@@ -109,6 +109,18 @@ let save ctx mutation =
   Hooked_posts.insert ctx mutation
 ```
 
+Query interceptors wrap generated read paths:
+
+```ocaml
+module Scoped_posts =
+  Posts.With_interceptors (struct
+    let query_interceptors = [ scope_posts_to_current_user ]
+  end)
+
+let load_scoped ctx query =
+  Scoped_posts.all ctx ~decode:post_of_bson_doc_result query
+```
+
 Aggregates compose from queries too:
 
 ```ocaml

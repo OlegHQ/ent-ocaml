@@ -632,6 +632,44 @@ let test_generated_hook_store_api () =
   | Ok _ -> Alcotest.fail "unexpected bulk insert result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
+let test_generated_interceptor_store_api () =
+  let module Store = Post.Store (Memory_backend) in
+  let module Intercepted = Store.With_interceptors (struct
+    let query_interceptors =
+      [
+        {
+          Ent_ocaml.wrap_query =
+            (fun next ctx intercepted_query ->
+              let query =
+                let open Post in
+                intercepted_query |> where (status_eq "intercepted")
+              in
+              next ctx query);
+        };
+      ]
+  end) in
+  let decode = function
+    | Ent_ocaml.V_string value -> Ok value
+    | _ -> Error "expected string"
+  in
+  let query = Post.query () in
+  (match Intercepted.all () ~decode query with
+  | Ok [ "Post" ] -> ()
+  | Ok _ -> Alcotest.fail "unexpected all result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  (match Intercepted.count () query with
+  | Ok 1 -> ()
+  | Ok count -> Alcotest.failf "expected intercepted count, got %d" count
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  let aggregate =
+    let open Post in
+    query () |> avg select_updated_at_ms
+  in
+  match Intercepted.aggregate () aggregate with
+  | Ok (Some (Ent_ocaml.V_int64 42L)) -> ()
+  | Ok _ -> Alcotest.fail "unexpected aggregate result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+
 let test_generated_nested_value_api () =
   let state_value = { kind = "confirmed"; external_id = Some "ext_1" } in
   let value = publish_state_to_ent_value state_value in
@@ -679,6 +717,8 @@ let () =
             test_generated_policy_store_api;
           Alcotest.test_case "generated hook store api" `Quick
             test_generated_hook_store_api;
+          Alcotest.test_case "generated interceptor store api" `Quick
+            test_generated_interceptor_store_api;
           Alcotest.test_case "generated nested value api" `Quick
             test_generated_nested_value_api;
         ] );

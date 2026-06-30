@@ -466,7 +466,12 @@ let validate_mutation mutation =
 type privacy_decision = Allow | Deny of string | Skip
 type 'ctx query_rule = 'ctx -> query -> privacy_decision
 type 'ctx mutation_rule = 'ctx -> mutation -> privacy_decision
+type ('ctx, 'a) query_executor = 'ctx -> query -> ('a, error) result
 type ('ctx, 'a) mutation_executor = 'ctx -> mutation -> ('a, error) result
+
+type 'ctx query_interceptor = {
+  wrap_query : 'a. ('ctx, 'a) query_executor -> 'ctx -> query -> ('a, error) result;
+}
 
 type 'ctx mutation_hook = {
   wrap_mutation :
@@ -499,6 +504,19 @@ module Privacy = struct
           | Error _ as error -> error)
     in
     loop mutations
+end
+
+module Interceptor = struct
+  let run_query interceptors next =
+    let wrapped =
+      List.fold_right
+        (fun interceptor next ctx query -> interceptor.wrap_query next ctx query)
+        interceptors next
+    in
+    wrapped
+
+  let run_query_value interceptors ctx query =
+    run_query interceptors (fun _ query -> Ok query) ctx query
 end
 
 module Hook = struct

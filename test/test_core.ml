@@ -303,6 +303,26 @@ let test_mutation_hook_chain () =
   | Ok _ -> Alcotest.fail "expected rewritten mutation"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
+let test_query_interceptor_chain () =
+  let query = Ent_ocaml.Query.make post_entity in
+  let interceptor =
+    {
+      Ent_ocaml.wrap_query =
+        (fun next ctx query ->
+          let query =
+            Ent_ocaml.Query.where Ent_ocaml.(Eq ("status", V_string "draft")) query
+          in
+          next ctx query);
+    }
+  in
+  let executor () (query : Ent_ocaml.query) =
+    Ok (List.length query.Ent_ocaml.predicates)
+  in
+  match Ent_ocaml.Interceptor.run_query [ interceptor ] executor () query with
+  | Ok 1 -> ()
+  | Ok count -> Alcotest.failf "expected one predicate, got %d" count
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+
 let test_mongo_eq_predicate () =
   match
     Ent_ocaml_mongo.predicate_to_bson
@@ -635,6 +655,8 @@ let () =
           Alcotest.test_case "result syntax" `Quick test_result_syntax;
           Alcotest.test_case "privacy rule chain" `Quick test_privacy_rule_chain;
           Alcotest.test_case "mutation hook chain" `Quick test_mutation_hook_chain;
+          Alcotest.test_case "query interceptor chain" `Quick
+            test_query_interceptor_chain;
         ] );
       ( "mongo",
         [
