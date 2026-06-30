@@ -3356,17 +3356,21 @@ let gen_query_module td =
              (evar ~loc "client"));
         tx_module;
         value_fun "with_transaction"
-          (A.pexp_fun ~loc Nolabel None (pvar ~loc "client")
-             (A.pexp_fun ~loc Nolabel None (pvar ~loc "f")
-                (A.pexp_apply ~loc
-                   (ident ~loc [ "Backend"; "transaction" ])
-                   [
-                     (Nolabel, evar ~loc "client");
-                     ( Nolabel,
-                       A.pexp_fun ~loc Nolabel None (pvar ~loc "tx_ctx")
-                         (A.pexp_apply ~loc (evar ~loc "f")
-                            [ (Nolabel, evar ~loc "tx_ctx") ]) );
-                   ])));
+          (A.pexp_fun ~loc (Optional "hooks") (Some (list ~loc []))
+             (pvar ~loc "hooks")
+             (A.pexp_fun ~loc Nolabel None (pvar ~loc "client")
+                (A.pexp_fun ~loc Nolabel None (pvar ~loc "f")
+                   (A.pexp_apply ~loc
+                      (ident ~loc [ "Ent_ocaml"; "Transaction"; "run" ])
+                      [
+                        (Nolabel, evar ~loc "hooks");
+                        (Nolabel, ident ~loc [ "Backend"; "transaction" ]);
+                        (Nolabel, evar ~loc "client");
+                        ( Nolabel,
+                          A.pexp_fun ~loc Nolabel None (pvar ~loc "tx_ctx")
+                            (A.pexp_apply ~loc (evar ~loc "f")
+                               [ (Nolabel, evar ~loc "tx_ctx") ]) );
+                      ]))));
       ]
       @ client_values
     in
@@ -4029,6 +4033,11 @@ let gen_sig_for_type td =
       A.psig_value ~loc
         (A.value_description ~loc ~name:{ loc; txt = name } ~type_ ~prim:[])
     in
+    let transaction_hook_typ =
+      A.ptyp_constr ~loc
+        (lid ~loc [ "Ent_ocaml"; "transaction_hook" ])
+        [ backend_ctx ]
+    in
     let doc_result = result_typ backend_doc error_typ in
     let docs_result = result_typ (list_typ backend_doc) error_typ in
     let int_result = result_typ int_typ error_typ in
@@ -4137,11 +4146,12 @@ let gen_sig_for_type td =
           (A.module_declaration ~loc ~name:{ loc; txt = Some "Tx" }
              ~type_:(A.pmty_signature ~loc tx_items));
         value_sig "with_transaction"
-          (arrow Nolabel client_t
-             (arrow Nolabel
-                (arrow Nolabel tx_t
-                   (result_typ (A.ptyp_var ~loc "a") error_typ))
-                (result_typ (A.ptyp_var ~loc "a") error_typ)));
+          (arrow (Optional "hooks") (list_typ transaction_hook_typ)
+             (arrow Nolabel client_t
+                (arrow Nolabel
+                   (arrow Nolabel tx_t
+                      (result_typ (A.ptyp_var ~loc "a") error_typ))
+                   (result_typ (A.ptyp_var ~loc "a") error_typ))));
       ]
       @ operation_items client_t
     in

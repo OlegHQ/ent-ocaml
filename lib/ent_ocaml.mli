@@ -307,6 +307,11 @@ type 'ctx mutation_hook = {
     'a. ('ctx, 'a) mutation_executor -> 'ctx -> mutation -> ('a, error) result;
 }
 
+type 'ctx transaction_hook = {
+  after_commit : 'ctx -> (unit, error) result;
+  after_rollback : 'ctx -> error -> (unit, error) result;
+}
+
 module Privacy : sig
   val evaluate_query :
     'ctx -> 'ctx query_rule list -> query -> (unit, error) result
@@ -343,6 +348,28 @@ module Hook : sig
 
   val run_mutations :
     'ctx mutation_hook list -> 'ctx -> mutation list -> (mutation list, error) result
+end
+
+module Transaction : sig
+  val hook :
+    ?after_commit:('ctx -> (unit, error) result) ->
+    ?after_rollback:('ctx -> error -> (unit, error) result) ->
+    unit ->
+    'ctx transaction_hook
+
+  val after_commit : ('ctx -> (unit, error) result) -> 'ctx transaction_hook
+  val after_rollback : ('ctx -> error -> (unit, error) result) -> 'ctx transaction_hook
+  val run_after_commit : 'ctx transaction_hook list -> 'ctx -> (unit, error) result
+
+  val run_after_rollback :
+    'ctx transaction_hook list -> 'ctx -> error -> (unit, error) result
+
+  val run :
+    'ctx transaction_hook list ->
+    ('ctx -> ('tx -> ('a, error) result) -> ('a, error) result) ->
+    'ctx ->
+    ('tx -> ('a, error) result) ->
+    ('a, error) result
 end
 
 module type BACKEND = sig

@@ -96,7 +96,9 @@ The initial package scaffold already provides:
   through the backend transaction boundary. The Mongo backend runs transaction
   bodies with explicit logical sessions, stable transaction numbers,
   `startTransaction`, `autocommit:false`, and commit/abort commands when the
-  connected deployment supports Mongo transactions.
+  connected deployment supports Mongo transactions. Generated clients accept
+  result-returning transaction hooks through `with_transaction ~hooks`, and core
+  `Ent_ocaml.Transaction` helpers run after-commit and after-rollback hooks.
   Generated Store/Client `values` and `value` helpers decode selected Mongo
   projection fields and aliased order values to `Ent_ocaml.value` rows without
   requiring a full-record decoder.
@@ -167,7 +169,7 @@ The initial package scaffold already provides:
 | Sensitive/deprecated/comments | Generated schema metadata implemented with `[@ent.sensitive]`, `[@ent.deprecated "..."]`, and `[@ent.comment "..."]` | Snapshot/display metadata |
 | Indexes | Field, edge, compound, unique, and typed partial-filter index descriptors implemented | Mongo indexes with options and `partialFilterExpression` |
 | Annotations | Backend/codegen metadata, only when needed by concrete backend features | OCaml attributes and typed metadata records |
-| Transactions | Generated `with_transaction` and `Tx` clients plus session-backed Mongo transaction execution implemented; commit/rollback hooks pending | Mongo sessions/transactions where deployment supports them |
+| Transactions | Generated `with_transaction` and `Tx` clients plus session-backed Mongo transaction execution and transaction hooks implemented; richer options pending | Mongo sessions/transactions where deployment supports them |
 | Schema/index checks | Mongo index ensure and drift verification implemented; collection validators pending | `createIndexes`, `listIndexes`, optional collection validators |
 | Global IDs | Optional globally unique ID configuration | App-generated IDs or ObjectId strategy |
 | Schema views | Read-only entity descriptors and generated query modules | Mongo views/aggregation-backed collections where useful |
@@ -219,8 +221,8 @@ The initial package scaffold already provides:
    `[@ent.validate [fn1; fn2]]` on primitive, enum, option, list, JSON, and
    nested custom record fields. Generated context-capturing `Client (Backend)`
    modules expose the same entity-local operations as `Store (Backend)` plus a
-   `with_transaction` boundary and `Tx` operation module. Commit/rollback hooks
-   are still pending.
+   `with_transaction` boundary, `Tx` operation module, and result-returning
+   transaction hooks for after-commit and after-rollback side effects.
 
 5. Poster pilot:
    model `User`, `Session`, `Post`, `Media`, and `PublishAttempt`; replace the

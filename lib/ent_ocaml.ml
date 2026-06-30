@@ -1097,6 +1097,11 @@ type 'ctx mutation_hook = {
     'a. ('ctx, 'a) mutation_executor -> 'ctx -> mutation -> ('a, error) result;
 }
 
+type 'ctx transaction_hook = {
+  after_commit : 'ctx -> (unit, error) result;
+  after_rollback : 'ctx -> error -> (unit, error) result;
+}
+
 module Privacy = struct
   let evaluate rules ctx value =
     let rec loop saw_rule = function
@@ -1159,6 +1164,46 @@ module Hook = struct
           | Error _ as error -> error)
     in
     loop [] mutations
+end
+
+module Transaction = struct
+  let hook ?(after_commit = fun _ -> Ok ())
+      ?(after_rollback = fun _ _ -> Ok ()) () =
+    { after_commit; after_rollback }
+
+  let after_commit f = hook ~after_commit:f ()
+  let after_rollback f = hook ~after_rollback:f ()
+
+  let run_after_commit hooks ctx =
+    let rec loop = function
+      | [] -> Ok ()
+      | hook :: rest -> (
+          match hook.after_commit ctx with
+          | Ok () -> loop rest
+          | Error _ as error -> error)
+    in
+    loop hooks
+
+  let run_after_rollback hooks ctx error =
+    let rec loop = function
+      | [] -> Ok ()
+      | hook :: rest -> (
+          match hook.after_rollback ctx error with
+          | Ok () -> loop rest
+          | Error _ as error -> error)
+    in
+    loop hooks
+
+  let run hooks transaction ctx f =
+    match transaction ctx f with
+    | Ok value -> (
+        match run_after_commit hooks ctx with
+        | Ok () -> Ok value
+        | Error _ as error -> error)
+    | Error error -> (
+        match run_after_rollback hooks ctx error with
+        | Ok () -> Error error
+        | Error _ as hook_error -> hook_error)
 end
 
 module type BACKEND = sig

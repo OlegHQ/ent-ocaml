@@ -150,6 +150,24 @@ let save_post ctx mutation =
       Post_client.Tx.insert tx mutation)
 ```
 
+Transaction hooks are ordinary result-returning values. Use them when a caller
+needs auditable side effects after a successful commit or after rollback:
+
+```ocaml
+let save_post ctx mutation =
+  let client = Post_client.make ctx in
+  let hooks =
+    [
+      Ent_ocaml.Transaction.hook
+        ~after_commit:(fun _ctx -> audit_commit ())
+        ~after_rollback:(fun _ctx error -> audit_rollback error)
+        ();
+    ]
+  in
+  Post_client.with_transaction ~hooks client (fun tx ->
+      Post_client.Tx.insert tx mutation)
+```
+
 For Mongo, `with_transaction` runs operations with one logical session and a
 stable transaction number, then commits on `Ok` or aborts on `Error` when the
 deployment supports Mongo transactions.

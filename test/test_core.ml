@@ -366,6 +366,42 @@ let test_query_interceptor_chain () =
   | Ok count -> Alcotest.failf "expected one predicate, got %d" count
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
+let test_transaction_hooks () =
+  let events = ref [] in
+  let transaction () f = f () in
+  let commit_hook =
+    Ent_ocaml.Transaction.after_commit (fun () ->
+        events := "commit" :: !events;
+        Ok ())
+  in
+  (match Ent_ocaml.Transaction.run [ commit_hook ] transaction () (fun () -> Ok 1) with
+  | Ok 1 -> Alcotest.(check (list string)) "commit hook" [ "commit" ] !events
+  | Ok _ -> Alcotest.fail "unexpected transaction result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  events := [];
+  let rollback_hook =
+    Ent_ocaml.Transaction.after_rollback (fun () error ->
+        events := Ent_ocaml.error_to_string error :: "rollback" :: !events;
+        Ok ())
+  in
+  (match
+     Ent_ocaml.Transaction.run [ rollback_hook ] transaction () (fun () ->
+         Error (`Bad_query "rollback"))
+   with
+  | Error (`Bad_query "rollback") ->
+      Alcotest.(check (list string))
+        "rollback hook" [ "bad query: rollback"; "rollback" ] !events
+  | Ok _ -> Alcotest.fail "expected transaction error"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  let failing_hook =
+    Ent_ocaml.Transaction.after_commit (fun () ->
+        Error (`Bad_query "commit hook failed"))
+  in
+  match Ent_ocaml.Transaction.run [ failing_hook ] transaction () (fun () -> Ok ()) with
+  | Error (`Bad_query "commit hook failed") -> ()
+  | Ok _ -> Alcotest.fail "expected commit hook error"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+
 let test_dynamic_filter_api () =
   let open Ent_ocaml in
   let status =
@@ -923,6 +959,7 @@ let () =
           Alcotest.test_case "mutation hook chain" `Quick test_mutation_hook_chain;
           Alcotest.test_case "query interceptor chain" `Quick
             test_query_interceptor_chain;
+          Alcotest.test_case "transaction hooks" `Quick test_transaction_hooks;
           Alcotest.test_case "dynamic filter api" `Quick test_dynamic_filter_api;
           Alcotest.test_case "entql api" `Quick test_entql_api;
           Alcotest.test_case "schema snapshot" `Quick test_schema_snapshot;
