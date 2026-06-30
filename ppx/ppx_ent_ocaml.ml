@@ -1614,6 +1614,23 @@ let gen_query_module td =
           value_sig "mutation_rules" (list_typ mutation_rule_typ);
         ]
     in
+    let hooks_type =
+      let backend_ctx =
+        A.ptyp_constr ~loc (lid ~loc [ "Backend"; "ctx" ]) []
+      in
+      let mutation_hook_typ =
+        A.ptyp_constr ~loc
+          (lid ~loc [ "Ent_ocaml"; "mutation_hook" ])
+          [ backend_ctx ]
+      in
+      let value_sig name type_ =
+        A.psig_value ~loc
+          (A.value_description ~loc ~name:{ loc; txt = name } ~type_ ~prim:[])
+      in
+      let list_typ typ = A.ptyp_constr ~loc (lid ~loc [ "list" ]) [ typ ] in
+      A.pmty_signature ~loc
+        [ value_sig "mutation_hooks" (list_typ mutation_hook_typ) ]
+    in
     let with_policy_module =
       let structure =
         [
@@ -1778,6 +1795,153 @@ let gen_query_module td =
                 (Named ({ loc; txt = Some "Policy" }, policy_type))
                 (A.pmod_structure ~loc structure)))
     in
+    let with_hooks_module =
+      let hook_run backend_name =
+        A.pexp_apply ~loc
+          (ident ~loc [ "Ent_ocaml"; "Hook"; "run_mutation" ])
+          [
+            (Nolabel, ident ~loc [ "Hooks"; "mutation_hooks" ]);
+            (Nolabel, ident ~loc [ "Backend"; backend_name ]);
+            (Nolabel, evar ~loc "ctx");
+            (Nolabel, evar ~loc "mutation");
+          ]
+      in
+      let hook_many body =
+        A.pexp_match ~loc
+          (A.pexp_apply ~loc
+             (ident ~loc [ "Ent_ocaml"; "Hook"; "run_mutations" ])
+             [
+               (Nolabel, ident ~loc [ "Hooks"; "mutation_hooks" ]);
+               (Nolabel, evar ~loc "ctx");
+               (Nolabel, evar ~loc "mutations");
+             ])
+          [
+            error_case;
+            A.case
+              ~lhs:
+                (A.ppat_construct ~loc (lid ~loc [ "Ok" ])
+                   (Some (pvar ~loc "mutations")))
+              ~guard:None ~rhs:body;
+          ]
+      in
+      let structure =
+        [
+          value_fun "all"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc (Labelled "decode") None (pvar ~loc "decode")
+                  (A.pexp_fun ~loc Nolabel None query_pat
+                     (backend_apply "find_as"
+                        [
+                          (Nolabel, evar ~loc "ctx");
+                          (Nolabel, evar ~loc "query");
+                          (Labelled "decode", evar ~loc "decode");
+                        ]))));
+          value_fun "one"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc (Labelled "decode") None (pvar ~loc "decode")
+                  (A.pexp_fun ~loc Nolabel None query_pat
+                     (backend_apply "find_one_as"
+                        [
+                          (Nolabel, evar ~loc "ctx");
+                          (Nolabel, evar ~loc "query");
+                          (Labelled "decode", evar ~loc "decode");
+                        ]))));
+          value_fun "traverse"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc (Labelled "decode") None (pvar ~loc "decode")
+                  (A.pexp_fun ~loc Nolabel None edge_query_pat
+                     (backend_apply "traverse_as"
+                        [
+                          (Nolabel, evar ~loc "ctx");
+                          (Nolabel, evar ~loc "edge_query");
+                          (Labelled "decode", evar ~loc "decode");
+                        ]))));
+          value_fun "load_edge"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc (Labelled "decode_source") None
+                  (pvar ~loc "decode_source")
+                  (A.pexp_fun ~loc (Labelled "decode_target") None
+                     (pvar ~loc "decode_target")
+                     (A.pexp_fun ~loc Nolabel None edge_query_pat
+                        (backend_apply "load_edge_as"
+                           [
+                             (Nolabel, evar ~loc "ctx");
+                             (Nolabel, evar ~loc "edge_query");
+                             (Labelled "decode_source", evar ~loc "decode_source");
+                             (Labelled "decode_target", evar ~loc "decode_target");
+                           ])))));
+          value_fun "count"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc Nolabel None query_pat
+                  (backend_apply "count"
+                     [
+                       (Nolabel, evar ~loc "ctx");
+                       (Nolabel, evar ~loc "query");
+                     ])));
+          value_fun "aggregate"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc Nolabel None aggregate_pat
+                  (backend_apply "aggregate"
+                     [
+                       (Nolabel, evar ~loc "ctx");
+                       (Nolabel, evar ~loc "aggregate");
+                     ])));
+          value_fun "aggregate_scan"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc Nolabel None aggregate_scan_pat
+                  (backend_apply "aggregate_scan"
+                     [
+                       (Nolabel, evar ~loc "ctx");
+                       (Nolabel, evar ~loc "scan");
+                     ])));
+          value_fun "group"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc Nolabel None group_aggregate_pat
+                  (backend_apply "group"
+                     [
+                       (Nolabel, evar ~loc "ctx");
+                       (Nolabel, evar ~loc "group");
+                     ])));
+          value_fun "insert"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc Nolabel None (pvar ~loc "mutation")
+                  (hook_run "insert_values")));
+          value_fun "insert_many"
+            (A.pexp_fun ~loc (Optional "ordered") None (pvar ~loc "ordered")
+               (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+                  (A.pexp_fun ~loc Nolabel None (pvar ~loc "mutations")
+                     (hook_many
+                        (backend_apply "insert_many_values"
+                           [
+                             (Optional "ordered", evar ~loc "ordered");
+                             (Nolabel, evar ~loc "ctx");
+                             (Nolabel, evar ~loc "mutations");
+                           ])))));
+          value_fun "update_one"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc Nolabel None (pvar ~loc "mutation")
+                  (hook_run "update_one")));
+          value_fun "update"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc Nolabel None (pvar ~loc "mutation")
+                  (hook_run "update")));
+          value_fun "upsert_one"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc Nolabel None (pvar ~loc "mutation")
+                  (hook_run "upsert_one")));
+          value_fun "delete"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc Nolabel None (pvar ~loc "mutation")
+                  (hook_run "delete")));
+        ]
+      in
+      A.pstr_module ~loc
+        (A.module_binding ~loc ~name:{ loc; txt = Some "With_hooks" }
+           ~expr:
+             (A.pmod_functor ~loc
+                (Named ({ loc; txt = Some "Hooks" }, hooks_type))
+                (A.pmod_structure ~loc structure)))
+    in
     let structure =
       [
         value_fun "all"
@@ -1907,6 +2071,7 @@ let gen_query_module td =
                      (Nolabel, evar ~loc "mutation");
                   ])));
         with_policy_module;
+        with_hooks_module;
       ]
     in
     A.pstr_module ~loc
@@ -2341,6 +2506,15 @@ let gen_sig_for_type td =
           value_sig "mutation_rules" (list_typ mutation_rule_typ);
         ]
     in
+    let hooks_type =
+      let mutation_hook_typ =
+        A.ptyp_constr ~loc
+          (lid ~loc [ "Ent_ocaml"; "mutation_hook" ])
+          [ backend_ctx ]
+      in
+      A.pmty_signature ~loc
+        [ value_sig "mutation_hooks" (list_typ mutation_hook_typ) ]
+    in
     let store_items =
       base_store_items
       @ [
@@ -2349,6 +2523,12 @@ let gen_sig_for_type td =
                ~type_:
                  (A.pmty_functor ~loc
                     (Named ({ loc; txt = Some "Policy" }, policy_type))
+                    (A.pmty_signature ~loc base_store_items)));
+          A.psig_module ~loc
+            (A.module_declaration ~loc ~name:{ loc; txt = Some "With_hooks" }
+               ~type_:
+                 (A.pmty_functor ~loc
+                    (Named ({ loc; txt = Some "Hooks" }, hooks_type))
                     (A.pmty_signature ~loc base_store_items)));
         ]
     in

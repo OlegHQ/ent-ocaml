@@ -233,6 +233,12 @@ end
 type privacy_decision = Allow | Deny of string | Skip
 type 'ctx query_rule = 'ctx -> query -> privacy_decision
 type 'ctx mutation_rule = 'ctx -> mutation -> privacy_decision
+type ('ctx, 'a) mutation_executor = 'ctx -> mutation -> ('a, error) result
+
+type 'ctx mutation_hook = {
+  wrap_mutation :
+    'a. ('ctx, 'a) mutation_executor -> 'ctx -> mutation -> ('a, error) result;
+}
 
 module Privacy : sig
   val evaluate_query :
@@ -243,6 +249,21 @@ module Privacy : sig
 
   val evaluate_mutations :
     'ctx -> 'ctx mutation_rule list -> mutation list -> (unit, error) result
+end
+
+module Hook : sig
+  val run_mutation :
+    'ctx mutation_hook list ->
+    ('ctx, 'a) mutation_executor ->
+    'ctx ->
+    mutation ->
+    ('a, error) result
+
+  val run_mutation_value :
+    'ctx mutation_hook list -> 'ctx -> mutation -> (mutation, error) result
+
+  val run_mutations :
+    'ctx mutation_hook list -> 'ctx -> mutation list -> (mutation list, error) result
 end
 
 module type BACKEND = sig

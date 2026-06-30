@@ -97,6 +97,18 @@ let load_private ctx query =
   Private_posts.all ctx ~decode:post_of_bson_doc_result query
 ```
 
+Mutation hooks wrap generated stores in the same module-first style:
+
+```ocaml
+module Hooked_posts =
+  Posts.With_hooks (struct
+    let mutation_hooks = [ audit_post_mutations; apply_write_defaults ]
+  end)
+
+let save ctx mutation =
+  Hooked_posts.insert ctx mutation
+```
+
 Aggregates compose from queries too:
 
 ```ocaml

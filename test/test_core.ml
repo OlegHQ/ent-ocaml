@@ -273,6 +273,36 @@ let test_privacy_rule_chain () =
   | Ok () -> Alcotest.fail "expected mutation denial"
   | Error error -> Alcotest.fail (error_to_string error))
 
+let test_mutation_hook_chain () =
+  let mutation =
+    {
+      Ent_ocaml.entity = post_entity;
+      op = Update_one;
+      predicates = [];
+      set = [];
+      clear = [];
+      add = [];
+      on_insert = [];
+    }
+  in
+  let hook =
+    {
+      Ent_ocaml.wrap_mutation =
+        (fun next ctx mutation ->
+          let mutation =
+            Ent_ocaml.Mutation.set Ent_ocaml.("status", V_string "hooked") mutation
+          in
+          next ctx mutation);
+    }
+  in
+  let executor () mutation =
+    Ok (List.assoc_opt "status" mutation.Ent_ocaml.set)
+  in
+  match Ent_ocaml.Hook.run_mutation [ hook ] executor () mutation with
+  | Ok (Some (Ent_ocaml.V_string "hooked")) -> ()
+  | Ok _ -> Alcotest.fail "expected rewritten mutation"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+
 let test_mongo_eq_predicate () =
   match
     Ent_ocaml_mongo.predicate_to_bson
@@ -604,6 +634,7 @@ let () =
             test_query_composite_cursor_pagination;
           Alcotest.test_case "result syntax" `Quick test_result_syntax;
           Alcotest.test_case "privacy rule chain" `Quick test_privacy_rule_chain;
+          Alcotest.test_case "mutation hook chain" `Quick test_mutation_hook_chain;
         ] );
       ( "mongo",
         [

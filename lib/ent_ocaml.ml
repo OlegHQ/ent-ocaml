@@ -466,6 +466,12 @@ let validate_mutation mutation =
 type privacy_decision = Allow | Deny of string | Skip
 type 'ctx query_rule = 'ctx -> query -> privacy_decision
 type 'ctx mutation_rule = 'ctx -> mutation -> privacy_decision
+type ('ctx, 'a) mutation_executor = 'ctx -> mutation -> ('a, error) result
+
+type 'ctx mutation_hook = {
+  wrap_mutation :
+    'a. ('ctx, 'a) mutation_executor -> 'ctx -> mutation -> ('a, error) result;
+}
 
 module Privacy = struct
   let evaluate rules ctx value =
@@ -493,6 +499,29 @@ module Privacy = struct
           | Error _ as error -> error)
     in
     loop mutations
+end
+
+module Hook = struct
+  let run_mutation hooks next =
+    let wrapped =
+      List.fold_right
+        (fun hook next ctx mutation -> hook.wrap_mutation next ctx mutation)
+        hooks next
+    in
+    wrapped
+
+  let run_mutation_value hooks ctx mutation =
+    run_mutation hooks (fun _ mutation -> Ok mutation) ctx mutation
+
+  let run_mutations hooks ctx mutations =
+    let rec loop acc = function
+      | [] -> Ok (List.rev acc)
+      | mutation :: rest -> (
+          match run_mutation_value hooks ctx mutation with
+          | Ok mutation -> loop (mutation :: acc) rest
+          | Error _ as error -> error)
+    in
+    loop [] mutations
 end
 
 module type BACKEND = sig

@@ -590,6 +590,48 @@ let test_generated_policy_store_api () =
   | Ok _ -> Alcotest.fail "expected write denial"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
+let test_generated_hook_store_api () =
+  let module Store = Post.Store (Memory_backend) in
+  let module Hooked = Store.With_hooks (struct
+    let mutation_hooks =
+      [
+        {
+          Ent_ocaml.wrap_mutation =
+            (fun next ctx mutation ->
+              let mutation =
+                let open Post in
+                mutation |> set (status "hooked")
+              in
+              next ctx mutation);
+        };
+      ]
+  end) in
+  let mutation =
+    let open Post in
+    create ()
+    |> set (id "post_1")
+    |> set (user_id "user_1")
+    |> set (body "body")
+    |> set (media_ids [])
+    |> set (created_at_ms 1L)
+    |> set (updated_at_ms 1L)
+    |> set (published_at_ms None)
+  in
+  (match Hooked.insert () mutation with
+  | Ok (Ent_ocaml.V_doc fields) -> (
+      match List.assoc_opt "status" fields with
+      | Some (Ent_ocaml.V_string "hooked") -> ()
+      | _ -> Alcotest.fail "expected hooked status")
+  | Ok _ -> Alcotest.fail "unexpected insert result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  match Hooked.insert_many () [ mutation ] with
+  | Ok [ Ent_ocaml.V_doc fields ] -> (
+      match List.assoc_opt "status" fields with
+      | Some (Ent_ocaml.V_string "hooked") -> ()
+      | _ -> Alcotest.fail "expected hooked bulk status")
+  | Ok _ -> Alcotest.fail "unexpected bulk insert result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+
 let test_generated_nested_value_api () =
   let state_value = { kind = "confirmed"; external_id = Some "ext_1" } in
   let value = publish_state_to_ent_value state_value in
@@ -635,6 +677,8 @@ let () =
             test_generated_store_api;
           Alcotest.test_case "generated policy store api" `Quick
             test_generated_policy_store_api;
+          Alcotest.test_case "generated hook store api" `Quick
+            test_generated_hook_store_api;
           Alcotest.test_case "generated nested value api" `Quick
             test_generated_nested_value_api;
         ] );
