@@ -76,6 +76,12 @@ module Memory_backend = struct
   let delete () _mutation = Ok 1
   let count () (query : Ent_ocaml.query) =
     Ok (List.length query.Ent_ocaml.predicates)
+
+  let aggregate () (aggregate : Ent_ocaml.aggregate) =
+    match aggregate.op with
+    | Ent_ocaml.Count -> Ok (Some (Ent_ocaml.V_int 2))
+    | Ent_ocaml.Min _ | Ent_ocaml.Max _ | Ent_ocaml.Sum _ | Ent_ocaml.Avg _ ->
+        Ok (Some (Ent_ocaml.V_int64 42L))
 end
 
 let find_field name =
@@ -160,7 +166,19 @@ let test_generated_query_api () =
     "first predicate" true
     (match List.hd query.predicates with
     | Ent_ocaml.Eq ("user_id", V_string "user_1") -> true
-    | _ -> false)
+    | _ -> false);
+  let aggregate =
+    let open Post in
+    query ()
+    |> where (status_eq "draft")
+    |> sum select_created_at_ms
+  in
+  Alcotest.(check bool)
+    "aggregate sum" true
+    (match aggregate.op with Ent_ocaml.Sum "created_at_ms" -> true | _ -> false);
+  Alcotest.(check int)
+    "aggregate predicates" 1
+    (List.length aggregate.query.predicates)
 
 let test_generated_mutation_api () =
   let open Post in
@@ -329,17 +347,28 @@ let test_generated_store_api () =
     | Ent_ocaml.V_string value -> Ok value
     | _ -> Error "expected string"
   in
-  let query =
+  let draft_query =
     Post.query ()
     |> Post.where (Post.user_id_eq "user_1")
     |> Post.where (Post.status_eq "draft")
   in
-  (match Store.all () ~decode query with
+  (match Store.all () ~decode draft_query with
   | Ok [ "Post" ] -> ()
   | Ok _ -> Alcotest.fail "unexpected all result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
-  (match Store.count () query with
+  (match Store.count () draft_query with
   | Ok count -> Alcotest.(check int) "count" 2 count
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  let aggregate =
+    let open Post in
+    query ()
+    |> where (status_eq "draft")
+    |> avg select_updated_at_ms
+  in
+  (match Store.aggregate () aggregate with
+  | Ok (Some (Ent_ocaml.V_int64 value)) ->
+      Alcotest.(check int64) "aggregate value" 42L value
+  | Ok _ -> Alcotest.fail "unexpected aggregate result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
   let mutation =
     let open Post in
@@ -359,7 +388,7 @@ let test_generated_store_api () =
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
   let mutation =
     let open Post in
-    update_one_where query |> set (body "x")
+    update_one_where draft_query |> set (body "x")
   in
   (match Store.update_one () mutation with
   | Ok () -> ()

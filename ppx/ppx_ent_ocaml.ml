@@ -1079,6 +1079,40 @@ let gen_query_module td =
                      (Some (evar ~loc "query")))));
       ]
   in
+  let aggregate_helpers =
+    A.pstr_value ~loc Nonrecursive
+      [
+        A.value_binding ~loc ~pat:(pvar ~loc "count")
+          ~expr:
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "query")
+               (app ~loc (ident ~loc [ "Ent_ocaml"; "Aggregate"; "count" ])
+                  [ evar ~loc "query" ]));
+        A.value_binding ~loc ~pat:(pvar ~loc "min")
+          ~expr:
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "field")
+               (A.pexp_fun ~loc Nolabel None (pvar ~loc "query")
+                  (app ~loc (ident ~loc [ "Ent_ocaml"; "Aggregate"; "min" ])
+                     [ evar ~loc "field"; evar ~loc "query" ])));
+        A.value_binding ~loc ~pat:(pvar ~loc "max")
+          ~expr:
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "field")
+               (A.pexp_fun ~loc Nolabel None (pvar ~loc "query")
+                  (app ~loc (ident ~loc [ "Ent_ocaml"; "Aggregate"; "max" ])
+                     [ evar ~loc "field"; evar ~loc "query" ])));
+        A.value_binding ~loc ~pat:(pvar ~loc "sum")
+          ~expr:
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "field")
+               (A.pexp_fun ~loc Nolabel None (pvar ~loc "query")
+                  (app ~loc (ident ~loc [ "Ent_ocaml"; "Aggregate"; "sum" ])
+                     [ evar ~loc "field"; evar ~loc "query" ])));
+        A.value_binding ~loc ~pat:(pvar ~loc "avg")
+          ~expr:
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "field")
+               (A.pexp_fun ~loc Nolabel None (pvar ~loc "query")
+                  (app ~loc (ident ~loc [ "Ent_ocaml"; "Aggregate"; "avg" ])
+                     [ evar ~loc "field"; evar ~loc "query" ])));
+      ]
+  in
   let edge_helper_items edge_name =
     [
       A.pstr_value ~loc Nonrecursive
@@ -1387,6 +1421,14 @@ let gen_query_module td =
                      (Nolabel, evar ~loc "ctx");
                      (Nolabel, evar ~loc "query");
                    ])));
+        value_fun "aggregate"
+          (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+             (A.pexp_fun ~loc Nolabel None (pvar ~loc "aggregate")
+                (backend_apply "aggregate"
+                   [
+                     (Nolabel, evar ~loc "ctx");
+                     (Nolabel, evar ~loc "aggregate");
+                   ])));
         value_fun "insert"
           (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
              (A.pexp_fun ~loc Nolabel None (pvar ~loc "mutation")
@@ -1447,7 +1489,8 @@ let gen_query_module td =
               (A.pmod_structure ~loc structure)))
   in
   let structure =
-    query :: boolean_predicates :: query_pipe_helpers :: create :: create_values
+    query :: boolean_predicates :: query_pipe_helpers :: aggregate_helpers
+    :: create :: create_values
     :: create_record :: create_many :: create_many_values :: mutation_pipe_helpers
     :: update_fn "update_one" "Update_one"
     :: update_fn "update" "Update"
@@ -1490,6 +1533,9 @@ let gen_sig_for_type td =
   in
   let order_typ = A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "order" ]) [] in
   let query_typ = A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "query" ]) [] in
+  let aggregate_typ =
+    A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "aggregate" ]) []
+  in
   let mutation_typ =
     A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "mutation" ]) []
   in
@@ -1572,6 +1618,15 @@ let gen_sig_for_type td =
         (arrow Nolabel orders_typ (arrow Nolabel query_typ query_typ));
       val_sig "limit" (arrow Nolabel int_typ (arrow Nolabel query_typ query_typ));
       val_sig "offset" (arrow Nolabel int_typ (arrow Nolabel query_typ query_typ));
+    ]
+  in
+  let aggregate_sig =
+    [
+      val_sig "count" (arrow Nolabel query_typ aggregate_typ);
+      val_sig "min" (arrow Nolabel string_typ (arrow Nolabel query_typ aggregate_typ));
+      val_sig "max" (arrow Nolabel string_typ (arrow Nolabel query_typ aggregate_typ));
+      val_sig "sum" (arrow Nolabel string_typ (arrow Nolabel query_typ aggregate_typ));
+      val_sig "avg" (arrow Nolabel string_typ (arrow Nolabel query_typ aggregate_typ));
     ]
   in
   let edge_sig_items edge_name =
@@ -1696,6 +1751,11 @@ let gen_sig_for_type td =
     let docs_result = result_typ (list_typ backend_doc) error_typ in
     let int_result = result_typ int_typ error_typ in
     let unit_result = result_typ unit_typ error_typ in
+    let value_option_result =
+      result_typ
+        (A.ptyp_constr ~loc (lid ~loc [ "option" ]) [ value_typ ])
+        error_typ
+    in
     let store_items =
       [
         value_sig "all"
@@ -1712,6 +1772,9 @@ let gen_sig_for_type td =
                          [ A.ptyp_var ~loc "a" ])
                       error_typ))));
         value_sig "count" (arrow Nolabel backend_ctx (arrow Nolabel query_typ int_result));
+        value_sig "aggregate"
+          (arrow Nolabel backend_ctx
+             (arrow Nolabel aggregate_typ value_option_result));
         value_sig "insert"
           (arrow Nolabel backend_ctx (arrow Nolabel mutation_typ doc_result));
         value_sig "insert_many"
@@ -1740,7 +1803,7 @@ let gen_sig_for_type td =
   in
   let module_items =
     [ query_sig ]
-    @ boolean_sig @ query_pipe_sig
+    @ boolean_sig @ query_pipe_sig @ aggregate_sig
     @ [
         create_sig;
         create_values_sig;

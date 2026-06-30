@@ -79,6 +79,17 @@ let load_drafts ctx user_id =
   |> Posts.all ctx ~decode:post_of_bson_doc_result
 ```
 
+Aggregates compose from queries too:
+
+```ocaml
+let total_views =
+  let open Post in
+  query ()
+  |> where (user (User.id_eq user_id))
+  |> sum select_views
+  |> Posts.aggregate ctx
+```
+
 Backends execute those
 typed values with `result`-returning functions such as
 `Ent_ocaml_mongo.insert_many_values`. Core mutation validation catches missing

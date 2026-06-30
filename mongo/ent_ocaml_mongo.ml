@@ -240,6 +240,42 @@ let find_options (query : Ent_ocaml.query) =
            limit = query.limit;
          }
 
+let aggregate_expr op storage_key =
+  let field_path = Bson.create_string ("$" ^ storage_key) in
+  match op with
+  | Ent_ocaml.Count -> Bson.create_doc_element (doc [ ("$sum", Bson.create_int32 1l) ])
+  | Min _ -> Bson.create_doc_element (doc [ ("$min", field_path) ])
+  | Max _ -> Bson.create_doc_element (doc [ ("$max", field_path) ])
+  | Sum _ -> Bson.create_doc_element (doc [ ("$sum", field_path) ])
+  | Avg _ -> Bson.create_doc_element (doc [ ("$avg", field_path) ])
+
+let aggregate_field = function
+  | Ent_ocaml.Count -> None
+  | Min field | Max field | Sum field | Avg field -> Some field
+
+let aggregate_pipeline_to_bson (aggregate : Ent_ocaml.aggregate) =
+  let query = aggregate.query in
+  let field_key =
+    match aggregate_field aggregate.op with
+    | None -> Ok ""
+    | Some field -> field_storage_key query.entity field
+  in
+  match (filter_to_bson query, field_key) with
+  | Error _ as error, _ | _, (Error _ as error) -> error
+  | Ok filter, Ok storage_key ->
+      let match_stage =
+        if filter = Bson.empty then []
+        else [ doc [ ("$match", Bson.create_doc_element filter) ] ]
+      in
+      let group =
+        doc
+          [
+            ("_id", Bson.create_null ());
+            ("value", aggregate_expr aggregate.op storage_key);
+          ]
+      in
+      Ok (match_stage @ [ doc [ ("$group", Bson.create_doc_element group) ] ])
+
 let index_storage_fields (entity : Ent_ocaml.entity) (index : Ent_ocaml.index) =
   let rec loop acc = function
     | [] -> Ok (List.rev acc)
@@ -391,6 +427,61 @@ let count ctx (query : Ent_ocaml.query) =
       with
       | Ok count -> Ok count
       | Error error -> Error (backend_error "count" query.entity error))
+
+let value_of_bson_element element =
+  let decoders =
+    [
+      (fun () ->
+        try Some (Ent_ocaml.V_string (Bson.get_string element)) with _ -> None);
+      (fun () ->
+        try Some (Ent_ocaml.V_int32 (Bson.get_int32 element)) with _ -> None);
+      (fun () ->
+        try Some (Ent_ocaml.V_int64 (Bson.get_int64 element)) with _ -> None);
+      (fun () ->
+        try Some (Ent_ocaml.V_float (Bson.get_double element)) with _ -> None);
+      (fun () ->
+        try Some (Ent_ocaml.V_bool (Bson.get_boolean element)) with _ -> None);
+    ]
+  in
+  let is_null =
+    try
+      ignore (Bson.get_null element);
+      true
+    with
+    | _ -> false
+  in
+  let rec loop = function
+    | [] ->
+        if is_null then Ok Ent_ocaml.V_null
+        else Error (`Decode "unsupported aggregate BSON value")
+    | decode :: rest -> (
+        match decode () with
+        | Some value -> Ok value
+        | None -> loop rest)
+  in
+  loop decoders
+
+let aggregate ctx (aggregate : Ent_ocaml.aggregate) =
+  let query = aggregate.Ent_ocaml.query in
+  match aggregate_pipeline_to_bson aggregate with
+  | Error _ as error -> error
+  | Ok pipeline -> (
+      match
+        Mongo_eio.direct_run_command ctx.client ctx.config.database
+          [
+            ("aggregate", Bson.create_string query.entity.collection);
+            ("pipeline", Bson.create_doc_element_list pipeline);
+            ("cursor", Bson.create_doc_element Bson.empty);
+          ]
+      with
+      | Error error -> Error (backend_error "aggregate" query.entity error)
+      | Ok response -> (
+          match Mongo_command.cursor_batch response.Mongo_command.body with
+          | [] -> Ok None
+          | doc :: _ -> (
+              match Bson.get_element "value" doc with
+              | value -> value_of_bson_element value |> Result.map Option.some
+              | exception Not_found -> Error (`Decode "aggregate value missing"))))
 
 let insert ctx entity doc =
   match

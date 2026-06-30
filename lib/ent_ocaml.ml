@@ -100,6 +100,13 @@ type query = {
   offset : int option;
 }
 
+type aggregate_op = Count | Min of string | Max of string | Sum of string | Avg of string
+
+type aggregate = {
+  query : query;
+  op : aggregate_op;
+}
+
 module Query = struct
   let make ?(where = []) ?(select = []) ?(order = []) ?limit ?offset entity =
     { entity; predicates = where; select; orders = order; limit; offset }
@@ -114,6 +121,14 @@ module Query = struct
   let order_by orders query = { query with orders }
   let limit limit query = { query with limit = Some limit }
   let offset offset query = { query with offset = Some offset }
+end
+
+module Aggregate = struct
+  let count query = { query; op = Count }
+  let min field query = { query; op = Min field }
+  let max field query = { query; op = Max field }
+  let sum field query = { query; op = Sum field }
+  let avg field query = { query; op = Avg field }
 end
 
 type mutation_op = Create | Update_one | Update | Delete_one | Delete | Upsert_one
@@ -356,6 +371,7 @@ module type BACKEND = sig
   val update : ctx -> mutation -> (int, error) result
   val upsert_one : ctx -> mutation -> (unit, error) result
   val delete : ctx -> mutation -> (int, error) result
+  val aggregate : ctx -> aggregate -> (value option, error) result
   val count : ctx -> query -> (int, error) result
   val transaction : ctx -> (tx -> ('a, error) result) -> ('a, error) result
 end
@@ -385,5 +401,6 @@ module type STORE_BACKEND = sig
   val update : ctx -> mutation -> (int, error) result
   val upsert_one : ctx -> mutation -> (unit, error) result
   val delete : ctx -> mutation -> (int, error) result
+  val aggregate : ctx -> aggregate -> (value option, error) result
   val count : ctx -> query -> (int, error) result
 end

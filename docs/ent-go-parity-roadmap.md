@@ -64,22 +64,24 @@ feel like a small typed OCaml library:
 The initial package scaffold already provides:
 
 - Core schema descriptors for fields, edges, indexes, predicates, ordering,
-  queries, mutations, mutation validation, field validators, errors, privacy
-  decisions, backend signatures, generic query combinators, result syntax, and
-  a store backend signature for generated entity-local executors.
+  queries, aggregate descriptors, mutations, mutation validation, field
+  validators, errors, privacy decisions, backend signatures, generic query
+  combinators, result syntax, and a store backend signature for generated
+  entity-local executors.
 - Mongo planning and CRUD execution for scalar filters, boolean predicates,
   field selection/projection, ordering, limit/offset, insert, bulk insert,
-  update, upsert-one with `$setOnInsert`, delete, count, stored-FK edge
-  predicates, and basic value translation.
+  update, upsert-one with `$setOnInsert`, delete, count, filtered
+  min/max/sum/avg aggregates, stored-FK edge predicates, and basic value
+  translation.
 - `[@@deriving ent]` generation for entity metadata, functional query helpers,
   typed field predicates, typed ordering helpers, create/update/delete mutation
   values, functional upsert mutation helpers with insert-only field setters,
-  functional mutation pipeline helpers, record create helpers, create-bulk
-  helpers, field selector constants, create-time and update-time default values,
-  typed validator wrappers, and matching `.mli` signatures for generated helper
-  modules. Type-level `[@@ent.edges ...]` descriptors generate FK edge metadata
-  plus clean edge predicate aliases such as `Post.user (User.id_eq id)`
-  alongside bulk `has_<edge>_with` helpers.
+  functional mutation pipeline helpers, aggregate constructors, record create
+  helpers, create-bulk helpers, field selector constants, create-time and
+  update-time default values, typed validator wrappers, and matching `.mli`
+  signatures for generated helper modules. Type-level `[@@ent.edges ...]`
+  descriptors generate FK edge metadata plus clean edge predicate aliases such
+  as `Post.user (User.id_eq id)` alongside bulk `has_<edge>_with` helpers.
 - Poster pilot integration for `User`, `Session`, `Post`, `Media`,
   `PublishState`, and `PublishAttempt` DTO entities.
 
@@ -108,7 +110,7 @@ The initial package scaffold already provides:
 | Bidirectional edge refs | Optional generated in-memory backrefs | Set after eager load, avoid cycles by default |
 | Pagination | Limit, offset, cursor pagination | `limit`, `skip`, sort, stable cursor keys |
 | Ordering | Field and edge-count/edge-field ordering | sort, aggregation for edge terms |
-| Aggregation | count, min, max, sum, avg, group by, scan | aggregation pipeline |
+| Aggregation | count, filtered min/max/sum/avg implemented; group by and scan pending | aggregation pipeline |
 | Hooks | Mutation middleware, global and entity-specific | Around generated mutators |
 | Interceptors | Query middleware and traversal interceptors | Around query execution and traversal construction |
 | Privacy | Query/mutation rule chains with allow/deny/skip | Evaluated before backend execution |
@@ -184,8 +186,9 @@ The initial package scaffold already provides:
    order.
 
 9. Aggregation, ordering, and pagination:
-   implement count/min/max/sum/avg, group-by, edge counts, edge-field ordering,
-   cursor pagination, selected order values, and custom backend terms.
+   filtered count/min/max/sum/avg is implemented. Group-by, aggregate scan,
+   edge counts, edge-field ordering, cursor pagination, selected order values,
+   and custom backend terms are still pending.
 
 10. Mongo migrations and indexes:
    generate index manifests, `ensure_indexes`, drift checks, collection

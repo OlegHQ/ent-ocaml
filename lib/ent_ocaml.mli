@@ -100,6 +100,13 @@ type query = {
   offset : int option;
 }
 
+type aggregate_op = Count | Min of string | Max of string | Sum of string | Avg of string
+
+type aggregate = {
+  query : query;
+  op : aggregate_op;
+}
+
 module Query : sig
   val make :
     ?where:predicate list ->
@@ -116,6 +123,14 @@ module Query : sig
   val order_by : order list -> query -> query
   val limit : int -> query -> query
   val offset : int -> query -> query
+end
+
+module Aggregate : sig
+  val count : query -> aggregate
+  val min : string -> query -> aggregate
+  val max : string -> query -> aggregate
+  val sum : string -> query -> aggregate
+  val avg : string -> query -> aggregate
 end
 
 type mutation_op = Create | Update_one | Update | Delete_one | Delete | Upsert_one
@@ -172,6 +187,7 @@ module type BACKEND = sig
   val update : ctx -> mutation -> (int, error) result
   val upsert_one : ctx -> mutation -> (unit, error) result
   val delete : ctx -> mutation -> (int, error) result
+  val aggregate : ctx -> aggregate -> (value option, error) result
   val count : ctx -> query -> (int, error) result
   val transaction : ctx -> (tx -> ('a, error) result) -> ('a, error) result
 end
@@ -201,5 +217,6 @@ module type STORE_BACKEND = sig
   val update : ctx -> mutation -> (int, error) result
   val upsert_one : ctx -> mutation -> (unit, error) result
   val delete : ctx -> mutation -> (int, error) result
+  val aggregate : ctx -> aggregate -> (value option, error) result
   val count : ctx -> query -> (int, error) result
 end

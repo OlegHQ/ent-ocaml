@@ -269,6 +269,26 @@ let test_mongo_projection_missing_field () =
       Alcotest.(check string) "message" "field not found: missing" message
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
+let test_mongo_aggregate_planning () =
+  let pipeline =
+    match
+      Ent_ocaml_mongo.aggregate_pipeline_to_bson
+        (Ent_ocaml.Aggregate.max "id"
+           (query
+              ~predicates:Ent_ocaml.[ Eq ("user_id", V_string "user_1") ]
+              ()))
+    with
+    | Ok pipeline -> pipeline
+    | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+  in
+  Alcotest.(check int) "pipeline stages" 2 (List.length pipeline);
+  let group_stage = List.nth pipeline 1 in
+  let group = Bson.get_doc_element (Bson.get_element "$group" group_stage) in
+  let value = Bson.get_doc_element (Bson.get_element "value" group) in
+  Alcotest.(check string)
+    "max storage key" "$_id"
+    (Bson.get_string (Bson.get_element "$max" value))
+
 let test_mongo_update_planning () =
   let update =
     match
@@ -431,6 +451,8 @@ let () =
             test_mongo_projection_planning;
           Alcotest.test_case "projection missing field" `Quick
             test_mongo_projection_missing_field;
+          Alcotest.test_case "aggregate planning" `Quick
+            test_mongo_aggregate_planning;
           Alcotest.test_case "update planning" `Quick test_mongo_update_planning;
           Alcotest.test_case "upsert planning" `Quick test_mongo_upsert_planning;
           Alcotest.test_case "document planning" `Quick

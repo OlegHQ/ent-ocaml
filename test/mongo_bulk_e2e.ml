@@ -44,6 +44,16 @@ let post_entity =
             nillable = false;
             validators = [];
           };
+          {
+            name = "views";
+            storage_key = "views";
+            typ = Int64;
+            required = false;
+            unique = false;
+            immutable = false;
+            nillable = false;
+            validators = [];
+          };
         ];
       edges =
         [
@@ -73,7 +83,7 @@ let post_entity =
         ];
     }
 
-let create id user_id body =
+let create id user_id body views =
   Ent_ocaml.
     {
       entity = post_entity;
@@ -84,6 +94,7 @@ let create id user_id body =
           ("id", V_string id);
           ("user_id", V_string user_id);
           ("body", V_string body);
+          ("views", V_int64 views);
         ];
       clear = [];
       add = [];
@@ -116,6 +127,7 @@ let upsert id user_id body =
         [
           ("id", V_string id);
           ("user_id", V_string user_id);
+          ("views", V_int64 0L);
         ];
     }
 
@@ -145,85 +157,88 @@ let assert_true label condition =
   if condition then Printf.printf "PASS %s\n%!" label
   else failwith ("FAIL " ^ label)
 
+let assert_int64_value label expected = function
+  | Some (Ent_ocaml.V_int64 value) ->
+      assert_true label (value = expected)
+  | Some (Ent_ocaml.V_int32 value) ->
+      assert_true label (Int64.of_int32 value = expected)
+  | Some (Ent_ocaml.V_int value) ->
+      assert_true label (Int64.of_int value = expected)
+  | _ -> failwith ("FAIL " ^ label)
+
+let assert_float_value label expected = function
+  | Some (Ent_ocaml.V_float value) ->
+      assert_true label (Float.abs (value -. expected) < 0.000_001)
+  | Some (Ent_ocaml.V_int64 value) ->
+      assert_true label (Int64.to_float value = expected)
+  | Some (Ent_ocaml.V_int32 value) ->
+      assert_true label (Int32.to_float value = expected)
+  | Some (Ent_ocaml.V_int value) ->
+      assert_true label (Float.of_int value = expected)
+  | _ -> failwith ("FAIL " ^ label)
+
 let cleanup client =
   Mongo_eio.direct_run_command client db [ ("dropDatabase", Bson.create_int32 1l) ]
   |> Result.map (fun _ -> ())
 
 let run_flow client =
+  let open Ent_ocaml.Result_syntax in
   let ctx = Ent_ocaml_mongo.create ~client { database = db } in
-  match Ent_ocaml_mongo.ensure_indexes ctx [ post_entity ] with
-  | Error error -> Error error
-  | Ok () -> (
-      match
-        Ent_ocaml_mongo.insert_many_values ctx
-          [ create "post_1" "user_1" "first"; create "post_2" "user_2" "second" ]
-      with
+  let* () = Ent_ocaml_mongo.ensure_indexes ctx [ post_entity ] in
+  let* docs =
+    Ent_ocaml_mongo.insert_many_values ctx
+      [
+        create "post_1" "user_1" "first" 10L;
+        create "post_2" "user_2" "second" 20L;
+      ]
+  in
+  assert_true "bulk insert returns docs" (List.length docs = 2);
+  let* found = Ent_ocaml_mongo.find ctx query_all in
+  assert_true "bulk insert persisted rows" (List.length found = 2);
+  let* user_posts = Ent_ocaml_mongo.find ctx query_user_1 in
+  assert_true "edge predicate returns user posts" (List.length user_posts = 1);
+  let* sum_value =
+    Ent_ocaml_mongo.aggregate ctx (Ent_ocaml.Aggregate.sum "views" query_user_1)
+  in
+  assert_int64_value "aggregate sum returns user views" 10L sum_value;
+  let* avg_value =
+    Ent_ocaml_mongo.aggregate ctx (Ent_ocaml.Aggregate.avg "views" query_all)
+  in
+  assert_float_value "aggregate avg returns all views" 15.0 avg_value;
+  let* () =
+    Ent_ocaml_mongo.upsert_one ctx (upsert "post_3" "user_1" "third")
+  in
+  let* found_after_insert = Ent_ocaml_mongo.find ctx query_all in
+  assert_true "upsert inserts missing row" (List.length found_after_insert = 3);
+  let* () =
+    Ent_ocaml_mongo.upsert_one ctx
+      (upsert "post_3" "user_1" "third updated")
+  in
+  let* user_posts_after_upsert = Ent_ocaml_mongo.find ctx query_user_1 in
+  assert_true "upsert updates existing row"
+    (List.exists
+       (fun doc ->
+         Bson.get_string (Bson.get_element "body" doc) = "third updated")
+       user_posts_after_upsert);
+  match
+    Ent_ocaml_mongo.insert_many_values ctx
+      [
+        create "post_2" "user_2" "duplicate" 20L;
+        create "post_4" "user_1" "fourth" 40L;
+      ]
+  with
+  | Error (`Constraint _) -> (
+      assert_true "bulk duplicate maps to constraint" true;
+      match Ent_ocaml_mongo.insert_many_values ctx [ invalid_create_missing_body ] with
+      | Error (`Bad_query message) ->
+          assert_true "bulk create validates required fields"
+            (message = "missing required field: body");
+          Ok ()
       | Error error -> Error error
-      | Ok docs -> (
-          assert_true "bulk insert returns docs" (List.length docs = 2);
-          match Ent_ocaml_mongo.find ctx query_all with
-          | Error error -> Error error
-          | Ok found -> (
-              assert_true "bulk insert persisted rows" (List.length found = 2);
-              match Ent_ocaml_mongo.find ctx query_user_1 with
-              | Error error -> Error error
-              | Ok user_posts -> (
-                  assert_true "edge predicate returns user posts"
-                    (List.length user_posts = 1);
-                  match Ent_ocaml_mongo.upsert_one ctx
-                          (upsert "post_3" "user_1" "third") with
-                  | Error error -> Error error
-                  | Ok () -> (
-                      match Ent_ocaml_mongo.find ctx query_all with
-                      | Error error -> Error error
-                      | Ok found_after_insert -> (
-                          assert_true "upsert inserts missing row"
-                            (List.length found_after_insert = 3);
-                          match Ent_ocaml_mongo.upsert_one ctx
-                                  (upsert "post_3" "user_1" "third updated") with
-                          | Error error -> Error error
-                          | Ok () -> (
-                              match Ent_ocaml_mongo.find ctx query_user_1 with
-                              | Error error -> Error error
-                              | Ok user_posts_after_upsert -> (
-                                  assert_true "upsert updates existing row"
-                                    (List.exists
-                                       (fun doc ->
-                                         Bson.get_string
-                                           (Bson.get_element "body" doc)
-                                         = "third updated")
-                                       user_posts_after_upsert);
-                                  match
-                                    Ent_ocaml_mongo.insert_many_values ctx
-                                      [
-                                        create "post_2" "user_2" "duplicate";
-                                        create "post_4" "user_1" "fourth";
-                                      ]
-                                  with
-                                  | Error (`Constraint _) -> (
-                                      assert_true
-                                        "bulk duplicate maps to constraint"
-                                        true;
-                                      match
-                                        Ent_ocaml_mongo.insert_many_values ctx
-                                          [ invalid_create_missing_body ]
-                                      with
-                                      | Error (`Bad_query message) ->
-                                          assert_true
-                                            "bulk create validates required fields"
-                                            (message
-                                            = "missing required field: body");
-                                          Ok ()
-                                      | Error error -> Error error
-                                      | Ok _ ->
-                                          Error
-                                            (`Bad_query
-                                              "invalid bulk create unexpectedly succeeded"))
-                                  | Error error -> Error error
-                                  | Ok _ ->
-                                      Error
-                                        (`Constraint
-                                          "duplicate bulk insert succeeded")))))))))
+      | Ok _ ->
+          Error (`Bad_query "invalid bulk create unexpectedly succeeded"))
+  | Error error -> Error error
+  | Ok _ -> Error (`Constraint "duplicate bulk insert succeeded")
 
 let () =
   Random.self_init ();
