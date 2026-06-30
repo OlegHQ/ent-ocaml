@@ -162,6 +162,19 @@ let snake_to_pascal name =
          else first ^ String.sub part 1 (String.length part - 1))
   |> String.concat ""
 
+let pascal_to_snake name =
+  let buffer = Buffer.create (String.length name + 4) in
+  String.iteri
+    (fun index c ->
+      if
+        index > 0
+        && Char.uppercase_ascii c = c
+        && Char.lowercase_ascii c <> c
+      then Buffer.add_char buffer '_';
+      Buffer.add_char buffer (Char.lowercase_ascii c))
+    name;
+  Buffer.contents buffer
+
 let pluralize name =
   if String.ends_with ~suffix:"s" name then name else name ^ "s"
 
@@ -401,10 +414,28 @@ let parse_edge_name expr =
       Location.raise_errorf ~loc:expr.pexp_loc
         "ent edge must be a record"
 
+let parse_edge_target expr =
+  match expr.pexp_desc with
+  | Pexp_record (fields, None) -> (
+      match
+        List.find_map
+          (fun (label, value) ->
+            match label_name label.txt with
+            | "target" -> Some (parse_string_expr ~what:"edge target" value)
+            | _ -> None)
+          fields
+      with
+      | Some target -> target
+      | None -> Location.raise_errorf ~loc:expr.pexp_loc "ent edge record requires target")
+  | _ ->
+      Location.raise_errorf ~loc:expr.pexp_loc
+        "ent edge must be a record"
+
 let edge_specs td =
   Attribute.get ent_edges_attr td |> Option.value ~default:[]
 
 let edge_names td = edge_specs td |> List.map parse_edge_name
+let edge_targets td = edge_specs td |> List.map parse_edge_target
 
 let type_path_name path =
   match List.rev (type_path_parts path) with
@@ -1577,6 +1608,12 @@ let gen_query_module td =
   let loc = loc_of_type_decl td in
   let fields = ensure_record td in
   let edges = edge_names td in
+  let entql_targets =
+    edge_targets td
+    |> List.sort_uniq String.compare
+    |> List.map (fun target -> evar ~loc (pascal_to_snake target ^ "_entity"))
+    |> list ~loc
+  in
   let type_name = td.ptype_name.txt in
   let module_name = snake_to_pascal type_name in
   let schema_query_rules =
@@ -1668,8 +1705,13 @@ let gen_query_module td =
         A.value_binding ~loc ~pat:(pvar ~loc "entql_predicate")
           ~expr:
             (A.pexp_fun ~loc Nolabel None (pvar ~loc "expression")
-               (app ~loc (ident ~loc [ "Ent_ocaml"; "Entql"; "predicate" ])
-                  [ evar ~loc (type_name ^ "_entity"); evar ~loc "expression" ]));
+               (A.pexp_apply ~loc
+                  (ident ~loc [ "Ent_ocaml"; "Entql"; "predicate" ])
+                  [
+                    (Labelled "targets", entql_targets);
+                    (Nolabel, evar ~loc (type_name ^ "_entity"));
+                    (Nolabel, evar ~loc "expression");
+                  ]));
       ]
   in
   let query_pipe_helpers =
@@ -1723,8 +1765,13 @@ let gen_query_module td =
           ~expr:
             (A.pexp_fun ~loc Nolabel None (pvar ~loc "expression")
                (A.pexp_fun ~loc Nolabel None query_pat
-                  (app ~loc (ident ~loc [ "Ent_ocaml"; "Entql"; "where" ])
-                     [ evar ~loc "expression"; evar ~loc "query" ])));
+                  (A.pexp_apply ~loc
+                     (ident ~loc [ "Ent_ocaml"; "Entql"; "where" ])
+                     [
+                       (Labelled "targets", entql_targets);
+                       (Nolabel, evar ~loc "expression");
+                       (Nolabel, evar ~loc "query");
+                     ])));
         A.value_binding ~loc ~pat:(pvar ~loc "select")
           ~expr:
             (A.pexp_fun ~loc Nolabel None (pvar ~loc "fields")

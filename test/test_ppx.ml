@@ -1592,18 +1592,35 @@ let test_generated_entql_edge_path_api () =
   let open Ent_ocaml.Result_syntax in
   let result =
     let open Post in
-    query () |> where_entql {|user.id == "user_1"|}
+    let* by_id = query () |> where_entql {|user.id == "user_1"|} in
+    let* by_target_field =
+      query () |> where_entql {|user.username == "alice"|}
+    in
+    Ok (by_id, by_target_field)
   in
   match result with
   | Ok
-      {
-        Ent_ocaml.predicates =
-          [
-            Ent_ocaml.Has_edge_with
-              ("user", [ Ent_ocaml.Eq ("id", Ent_ocaml.V_string "user_1") ]);
-          ];
-        _;
-      } ->
+      ( {
+          Ent_ocaml.predicates =
+            [
+              Ent_ocaml.Has_edge_with
+                ("user", [ Ent_ocaml.Eq ("id", Ent_ocaml.V_string "user_1") ]);
+            ];
+          _;
+        },
+        {
+          Ent_ocaml.predicates =
+            [
+              Ent_ocaml.Has_edge_with_target
+                {
+                  edge = "user";
+                  target = { name = "User"; _ };
+                  predicates =
+                    [ Ent_ocaml.Eq ("username", Ent_ocaml.V_string "alice") ];
+                };
+            ];
+          _;
+        } ) ->
       ()
   | Ok _ -> Alcotest.fail "unexpected generated entql edge path result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)

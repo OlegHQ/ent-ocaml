@@ -390,7 +390,8 @@ let load_filtered ctx =
 For user-provided filter strings, use the generated EntQL helpers. They parse
 metadata-validated boolean expressions into the same typed predicates and
 compose through `result`. Stored foreign-key edge IDs can be referenced with an
-edge path such as `user.id`:
+edge path such as `user.id`; generated modules also register their edge target
+descriptors so related target fields can be referenced as `user.username`:
 
 ```ocaml
 let load_filtered ctx =
@@ -399,7 +400,7 @@ let load_filtered ctx =
   let* query =
     query ()
     |> where_entql
-         {|user.id == "user_1" && (status == "draft" || body contains "hello")|}
+         {|user.username == "alice" && (status == "draft" || body contains "hello")|}
   in
   Posts.all ctx ~decode:post_of_bson_doc_result query
 ```

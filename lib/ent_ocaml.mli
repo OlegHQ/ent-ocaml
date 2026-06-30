@@ -358,8 +358,8 @@ end
 module Entql : sig
   val parse : entity -> string -> (Dynamic_filter.t list, error) result
   val parse_filter : entity -> string -> (Dynamic_filter.t, error) result
-  val predicate : entity -> string -> (predicate, error) result
-  val where : string -> query -> (query, error) result
+  val predicate : ?targets:entity list -> entity -> string -> (predicate, error) result
+  val where : ?targets:entity list -> string -> query -> (query, error) result
 end
 
 type privacy_decision = Allow | Deny of string | Skip

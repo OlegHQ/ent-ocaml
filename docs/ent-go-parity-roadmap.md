@@ -144,7 +144,9 @@ The initial package scaffold already provides:
   metadata-validated filter strings with `&&`, `||`, parentheses, negation,
   equality, comparison, membership, string, and null operators into those same
   predicates. Stored foreign-key edge ID paths such as `user.id == "user_1"`
-  compile to `Has_edge_with` predicates.
+  compile to `Has_edge_with` predicates, and generated modules register edge
+  target descriptors so target-field paths such as
+  `user.username == "alice"` compile to target-aware edge predicates.
   Generated JSON path predicate helpers for `[@ent.json]` fields support nested
   equality, comparison, membership, and null checks, plus nested path ordering.
   Generated schema snapshots expose stable `Ent_ocaml.value` metadata documents
@@ -203,7 +205,7 @@ The initial package scaffold already provides:
 | Schema views | Read-only entity descriptors and generated query modules | Mongo views/aggregation-backed collections where useful |
 | Schema snapshot | PPX-generated per-entity schema snapshots and repository-wide manifests implemented | Checked-in `.ml` manifest or JSON snapshot |
 | Local custom code | Hand-written modules beside generated code | Ordinary OCaml modules |
-| Dynamic EntQL | Metadata-validated runtime field filters, result-returning boolean expression parser, and stored-FK edge ID paths implemented; richer cross-entity/path grammar pending | Runtime predicate AST parser/builder |
+| Dynamic EntQL | Metadata-validated runtime field filters, result-returning boolean expression parser, stored-FK edge ID paths, and generated edge target-field paths implemented; richer nested cross-entity/path grammar pending | Runtime predicate AST parser/builder |
 | Extension/plugin systems | Out of scope for Poster; do not add extension registration/checklist work | Prefer ordinary OCaml modules and typed backend metadata only when needed |
 | SQL-only features | Backend-specific optional capabilities | Provide Mongo-specific analogs, keep SQL names out of core |
 | GraphQL/gRPC integrations | Out of core for first release | Future packages, not required for Poster |
@@ -314,13 +316,14 @@ The initial package scaffold already provides:
    metadata-validated runtime dynamic filters are implemented for field
    predicates, an EntQL parser handles boolean expressions with `&&`, `||`,
    parentheses, negation, equality, comparison, membership, string, null
-   operators, and stored-FK edge ID paths, generated JSON path predicates are
-   implemented for JSON fields, and generated per-entity schema snapshots plus
-   repository-wide snapshot manifests are implemented. Richer cross-entity/path
-   grammar, custom annotations when they directly support a backend feature, and
-   typed backend-specific escape hatches remain. Migrations and extension/plugin
-   systems are not on the Poster roadmap; add typed backend metadata only when a
-   concrete backend feature requires it.
+   operators, stored-FK edge ID paths, and generated edge target-field paths,
+   generated JSON path predicates are implemented for JSON fields, and
+   generated per-entity schema snapshots plus repository-wide snapshot manifests
+   are implemented. Richer nested cross-entity/path grammar, custom annotations
+   when they directly support a backend feature, and typed backend-specific
+   escape hatches remain. Migrations and extension/plugin systems are not on the
+   Poster roadmap; add typed backend metadata only when a concrete backend
+   feature requires it.
 
 12. Poster cutover and e2e:
    run unit tests, PPX expansion tests, Mongo driver e2e, Poster HTTP e2e, and

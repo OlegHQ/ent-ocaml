@@ -975,6 +975,14 @@ module Entql = struct
     | Some edge -> Ok edge
     | None -> bad ("edge not found on " ^ entity.name ^ ": " ^ name)
 
+  let target_entity targets (edge : edge) =
+    match List.find_opt (fun (entity : entity) -> entity.name = edge.target) targets with
+    | Some target -> Ok target
+    | None ->
+        bad
+          ("edge target entity not registered for " ^ edge.name ^ ": "
+         ^ edge.target)
+
   let edge_id_type (entity : entity) edge_name =
     let open Result_syntax in
     let* edge = edge entity edge_name in
@@ -995,9 +1003,10 @@ module Entql = struct
               ("edge storage field not found on " ^ entity.name ^ ": "
              ^ storage_key))
 
-  let split_field_path name =
+  let split_edge_path name =
     match String.split_on_char '.' name with
-    | [ edge_name; "id" ] when edge_name <> "" -> Some edge_name
+    | [ edge_name; field_name ] when edge_name <> "" && field_name <> "" ->
+        Some (edge_name, field_name)
     | _ -> None
 
   let binary entity expression operator op =
@@ -1028,6 +1037,13 @@ module Entql = struct
   let predicate_of_filter entity filter =
     Dynamic_filter.predicate entity filter
 
+  let target_predicate target (field : field) op value =
+    Dynamic_filter.predicate target
+      (Dynamic_filter.make ~field:(field.name) ~value op)
+
+  let target_unary_predicate target (field : field) op =
+    Dynamic_filter.predicate target (Dynamic_filter.make ~field:(field.name) op)
+
   let edge_id_predicate edge_name op value =
     let field = "id" in
     match op with
@@ -1049,7 +1065,28 @@ module Entql = struct
     | Contains | Has_prefix | Has_suffix | Is_null | Not_null ->
         bad ("operator is not valid for edge path: " ^ edge_name ^ ".id")
 
-  let binary_predicate entity expression operator op =
+  let edge_field_predicate ~targets entity edge_name field_name op value =
+    let open Result_syntax in
+    let* edge = edge entity edge_name in
+    if field_name = "id" then edge_id_predicate edge_name op value
+    else
+      let* target = target_entity targets edge in
+      let* field = field target field_name in
+      let+ predicate = target_predicate target field op value in
+      Has_edge_with_target { edge = edge_name; target; predicates = [ predicate ] }
+
+  let edge_field_unary_predicate ~targets entity edge_name field_name op =
+    let open Result_syntax in
+    let* edge = edge entity edge_name in
+    if field_name = "id" then
+      bad ("operator is not valid for edge path: " ^ edge_name ^ ".id")
+    else
+      let* target = target_entity targets edge in
+      let* field = field target field_name in
+      let+ predicate = target_unary_predicate target field op in
+      Has_edge_with_target { edge = edge_name; target; predicates = [ predicate ] }
+
+  let binary_predicate ~targets entity expression operator op =
     match find_outside operator expression with
     | None -> None
     | Some index ->
@@ -1061,17 +1098,24 @@ module Entql = struct
                (String.length expression - index - String.length operator))
         in
         Some
-          (match split_field_path field_name with
-          | Some edge_name ->
+          (match split_edge_path field_name with
+          | Some (edge_name, edge_field) ->
               let open Result_syntax in
-              let* typ = edge_id_type entity edge_name in
+              let* typ =
+                if edge_field = "id" then edge_id_type entity edge_name
+                else
+                  let* edge = edge entity edge_name in
+                  let* target = target_entity targets edge in
+                  let+ field = field target edge_field in
+                  field.typ
+              in
               let* value =
                 match op with
                 | Dynamic_filter.In_list | Dynamic_filter.Not_in_list ->
                     list_value_of_literal typ literal
                 | _ -> value_of_literal typ literal
               in
-              edge_id_predicate edge_name op value
+              edge_field_predicate ~targets entity edge_name edge_field op value
           | None ->
               let open Result_syntax in
               let* filter =
@@ -1093,16 +1137,16 @@ module Entql = struct
         | Ok field -> Ok (Dynamic_filter.make ~field:field.name op))
     else None
 
-  let unary_predicate entity expression suffix op =
+  let unary_predicate ~targets entity expression suffix op =
     if ends_with expression suffix then
       let field_name =
         String.sub expression 0 (String.length expression - String.length suffix)
         |> trim
       in
       Some
-        (match split_field_path field_name with
-        | Some edge_name ->
-            bad ("operator is not valid for edge path: " ^ edge_name ^ ".id")
+        (match split_edge_path field_name with
+        | Some (edge_name, edge_field) ->
+            edge_field_unary_predicate ~targets entity edge_name edge_field op
         | None ->
             let open Result_syntax in
             let* filter =
@@ -1136,23 +1180,23 @@ module Entql = struct
     | Some result -> result
     | None -> bad ("could not parse expression: " ^ expression)
 
-  let parse_predicate_filter entity expression =
+  let parse_predicate_filter ?(targets = []) entity expression =
     let expression = trim expression in
     let candidates =
       [
-        binary_predicate entity expression " not in " Dynamic_filter.Not_in_list;
-        binary_predicate entity expression " in " Dynamic_filter.In_list;
-        binary_predicate entity expression " contains " Dynamic_filter.Contains;
-        binary_predicate entity expression " has_prefix " Dynamic_filter.Has_prefix;
-        binary_predicate entity expression " has_suffix " Dynamic_filter.Has_suffix;
-        binary_predicate entity expression ">=" Dynamic_filter.Greater_or_equal;
-        binary_predicate entity expression "<=" Dynamic_filter.Less_or_equal;
-        binary_predicate entity expression "==" Dynamic_filter.Equal;
-        binary_predicate entity expression "!=" Dynamic_filter.Not_equal;
-        binary_predicate entity expression ">" Dynamic_filter.Greater_than;
-        binary_predicate entity expression "<" Dynamic_filter.Less_than;
-        unary_predicate entity expression " is_null" Dynamic_filter.Is_null;
-        unary_predicate entity expression " not_null" Dynamic_filter.Not_null;
+        binary_predicate ~targets entity expression " not in " Dynamic_filter.Not_in_list;
+        binary_predicate ~targets entity expression " in " Dynamic_filter.In_list;
+        binary_predicate ~targets entity expression " contains " Dynamic_filter.Contains;
+        binary_predicate ~targets entity expression " has_prefix " Dynamic_filter.Has_prefix;
+        binary_predicate ~targets entity expression " has_suffix " Dynamic_filter.Has_suffix;
+        binary_predicate ~targets entity expression ">=" Dynamic_filter.Greater_or_equal;
+        binary_predicate ~targets entity expression "<=" Dynamic_filter.Less_or_equal;
+        binary_predicate ~targets entity expression "==" Dynamic_filter.Equal;
+        binary_predicate ~targets entity expression "!=" Dynamic_filter.Not_equal;
+        binary_predicate ~targets entity expression ">" Dynamic_filter.Greater_than;
+        binary_predicate ~targets entity expression "<" Dynamic_filter.Less_than;
+        unary_predicate ~targets entity expression " is_null" Dynamic_filter.Is_null;
+        unary_predicate ~targets entity expression " not_null" Dynamic_filter.Not_null;
       ]
     in
     match List.find_map Fun.id candidates with
@@ -1170,7 +1214,7 @@ module Entql = struct
     in
     loop [] parts
 
-  let rec predicate entity expression =
+  let rec predicate ?(targets = []) entity expression =
     let open Result_syntax in
     let expression = strip_outer_parens expression in
     let parts = split_top_level ~sep:"||" expression in
@@ -1180,7 +1224,7 @@ module Entql = struct
         let rec loop acc = function
           | [] -> Ok (Or (List.rev acc))
           | part :: rest -> (
-              match predicate entity part with
+              match predicate ~targets entity part with
               | Ok predicate -> loop (predicate :: acc) rest
               | Error _ as error -> error)
         in
@@ -1193,7 +1237,7 @@ module Entql = struct
             let rec loop acc = function
               | [] -> Ok (And (List.rev acc))
               | part :: rest -> (
-                  match predicate entity part with
+                  match predicate ~targets entity part with
                   | Ok predicate -> loop (predicate :: acc) rest
                   | Error _ as error -> error)
             in
@@ -1202,21 +1246,21 @@ module Entql = struct
             let expression = strip_outer_parens expression in
             if starts_with expression "!" then
               let+ predicate =
-                predicate entity
+                predicate ~targets entity
                   (String.sub expression 1 (String.length expression - 1))
               in
               Not predicate
             else if starts_with expression "not " then
               let+ predicate =
-                predicate entity
+                predicate ~targets entity
                   (String.sub expression 4 (String.length expression - 4))
               in
               Not predicate
-            else parse_predicate_filter entity expression)
+            else parse_predicate_filter ~targets entity expression)
 
-  let where expression (query : query) =
+  let where ?targets expression (query : query) =
     let open Result_syntax in
-    let+ predicate = predicate query.entity expression in
+    let+ predicate = predicate ?targets query.entity expression in
     Query.where predicate query
 end
 

@@ -618,6 +618,27 @@ let test_entql_api () =
       ()
   | Ok _ -> Alcotest.fail "unexpected entql edge id list predicate"
   | Error error -> Alcotest.fail (error_to_string error));
+  (match
+     Entql.predicate ~targets:[ user_entity ] post_entity
+       {|user.username == "alice"|}
+   with
+  | Ok
+      (Has_edge_with_target
+        {
+          edge = "user";
+          target = { name = "User"; _ };
+          predicates = [ Eq ("username", V_string "alice") ];
+        }) ->
+      ()
+  | Ok _ -> Alcotest.fail "unexpected entql edge target-field predicate"
+  | Error error -> Alcotest.fail (error_to_string error));
+  (match Entql.predicate post_entity {|user.username == "alice"|} with
+  | Error
+      (`Bad_query
+        "entql: edge target entity not registered for user: User") ->
+      ()
+  | Ok _ -> Alcotest.fail "expected entql target registry error"
+  | Error error -> Alcotest.fail (error_to_string error));
   (match Entql.predicate post_entity {|published_at_ms == "soon"|} with
   | Error (`Bad_query "entql: expected int64 value: \"soon\"") -> ()
   | Ok _ -> Alcotest.fail "expected entql type error"

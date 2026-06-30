@@ -659,6 +659,19 @@ let run_flow client =
   in
   assert_true "entql edge path returns user posts"
     (List.length entql_user_posts = 1);
+  let* entql_alice_posts =
+    match
+      Ent_ocaml.Query.make post_entity
+      |> Ent_ocaml.Entql.where ~targets:[ user_entity ]
+           {|user.username == "alice"|}
+    with
+    | Ok query -> Ent_ocaml_mongo.find ctx query
+    | Error _ as error -> error
+  in
+  assert_true "entql target edge path returns alice posts"
+    (match entql_alice_posts with
+    | [ doc ] -> Bson.get_string (Bson.get_element "_id" doc) = "post_1"
+    | _ -> false);
   let* alice_posts =
     Ent_ocaml_mongo.find ctx
       (Ent_ocaml.Query.make post_entity
