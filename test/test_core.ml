@@ -242,6 +242,37 @@ let test_mongo_filter_planning () =
   let clauses = Bson.get_list (Bson.get_element "$and" filter) in
   Alcotest.(check int) "and clauses" 2 (List.length clauses)
 
+let test_mongo_storage_key_planning () =
+  let filter =
+    match
+      Ent_ocaml_mongo.filter_to_bson
+        (query ~predicates:Ent_ocaml.[ Eq ("id", V_string "post_1") ] ())
+    with
+    | Ok filter -> filter
+    | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+  in
+  Alcotest.(check string)
+    "id storage filter" "post_1"
+    (Bson.get_string (Bson.get_element "_id" filter));
+  let sort =
+    Ent_ocaml_mongo.sort_to_bson ~entity:post_entity
+      Ent_ocaml.[ { field = "id"; direction = Asc } ]
+    |> Option.get
+  in
+  Alcotest.(check int32)
+    "id storage sort" 1l (Bson.get_int32 (Bson.get_element "_id" sort));
+  let doc =
+    match
+      Ent_ocaml_mongo.document_to_bson ~entity:post_entity
+        Ent_ocaml.[ ("id", V_string "post_1"); ("body", V_string "body") ]
+    with
+    | Ok doc -> doc
+    | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+  in
+  Alcotest.(check string)
+    "id storage document" "post_1"
+    (Bson.get_string (Bson.get_element "_id" doc))
+
 let test_mongo_has_edge_planning () =
   let filter =
     match
@@ -382,7 +413,7 @@ let test_mongo_upsert_planning () =
     "set body" "updated" (Bson.get_string (Bson.get_element "body" set));
   Alcotest.(check string)
     "insert id" "post_1"
-    (Bson.get_string (Bson.get_element "id" set_on_insert));
+    (Bson.get_string (Bson.get_element "_id" set_on_insert));
   Alcotest.(check string)
     "insert user" "user_1"
     (Bson.get_string (Bson.get_element "user_id" set_on_insert))
@@ -491,6 +522,8 @@ let () =
         [
           Alcotest.test_case "eq predicate bson" `Quick test_mongo_eq_predicate;
           Alcotest.test_case "filter planning" `Quick test_mongo_filter_planning;
+          Alcotest.test_case "storage key planning" `Quick
+            test_mongo_storage_key_planning;
           Alcotest.test_case "has edge planning" `Quick
             test_mongo_has_edge_planning;
           Alcotest.test_case "has edge with id planning" `Quick

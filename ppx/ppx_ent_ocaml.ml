@@ -826,6 +826,9 @@ let field_expr field =
 
 let index_expr ~loc ~collection field =
   let field_name = field.pld_name.txt in
+  let storage_key =
+    Option.value (Attribute.get ent_key_attr field) ~default:field_name
+  in
   let unique = has_attr ent_unique_attr field in
   let indexed = Attribute.get ent_index_attr field in
   let name =
@@ -835,6 +838,7 @@ let index_expr ~loc ~collection field =
     | None -> None
   in
   match (unique, indexed) with
+  | true, None when storage_key = "_id" -> None
   | false, None -> None
   | unique, _ ->
       Some

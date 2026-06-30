@@ -58,6 +58,21 @@ let doc fields =
 let find_edge (entity : Ent_ocaml.entity) name =
   List.find_opt (fun (edge : Ent_ocaml.edge) -> edge.name = name) entity.edges
 
+let field_storage_key ?(missing = "field not found: ") (entity : Ent_ocaml.entity)
+    name =
+  match List.find_opt (fun (field : Ent_ocaml.field) -> field.name = name) entity.fields with
+  | Some field -> Ok field.storage_key
+  | None -> Error (`Bad_schema (missing ^ name))
+
+let predicate_field ?entity field =
+  match entity with
+  | None -> Ok field
+  | Some entity -> (
+      match field_storage_key entity field with
+      | Ok key -> Ok key
+      | Error (`Bad_schema _) -> Ok field
+      | Error _ as error -> error)
+
 let edge_storage_key (entity : Ent_ocaml.entity) name =
   match find_edge entity name with
   | None -> Error (`Bad_query ("edge not found: " ^ name))
@@ -97,56 +112,92 @@ and remap_id_predicates storage_key predicates =
 let rec predicate_to_bson ?entity predicate =
   match predicate with
   | Ent_ocaml.Eq (field, value) -> (
-      match value_to_bson value with
-      | Ok bson -> Ok (doc [ (field, bson) ])
+      match (predicate_field ?entity field, value_to_bson value) with
+      | Ok field, Ok bson -> Ok (doc [ (field, bson) ])
+      | Error _ as error, _ | _, (Error _ as error) -> error)
+  | Neq (field, value) -> (
+      match predicate_field ?entity field with
+      | Ok field -> op_doc field "$ne" value
       | Error _ as error -> error)
-  | Neq (field, value) -> op_doc field "$ne" value
-  | Gt (field, value) -> op_doc field "$gt" value
-  | Gte (field, value) -> op_doc field "$gte" value
-  | Lt (field, value) -> op_doc field "$lt" value
-  | Lte (field, value) -> op_doc field "$lte" value
-  | In (field, values) -> op_doc field "$in" (V_list values)
-  | Not_in (field, values) -> op_doc field "$nin" (V_list values)
-  | Is_nil field -> Ok (doc [ (field, Bson.create_null ()) ])
-  | Not_nil field ->
-      Ok
-        (doc
-           [
-             ( field,
-               Bson.create_doc_element
-                 (doc [ ("$ne", Bson.create_null ()) ]) );
-           ])
+  | Gt (field, value) -> (
+      match predicate_field ?entity field with
+      | Ok field -> op_doc field "$gt" value
+      | Error _ as error -> error)
+  | Gte (field, value) -> (
+      match predicate_field ?entity field with
+      | Ok field -> op_doc field "$gte" value
+      | Error _ as error -> error)
+  | Lt (field, value) -> (
+      match predicate_field ?entity field with
+      | Ok field -> op_doc field "$lt" value
+      | Error _ as error -> error)
+  | Lte (field, value) -> (
+      match predicate_field ?entity field with
+      | Ok field -> op_doc field "$lte" value
+      | Error _ as error -> error)
+  | In (field, values) -> (
+      match predicate_field ?entity field with
+      | Ok field -> op_doc field "$in" (V_list values)
+      | Error _ as error -> error)
+  | Not_in (field, values) -> (
+      match predicate_field ?entity field with
+      | Ok field -> op_doc field "$nin" (V_list values)
+      | Error _ as error -> error)
+  | Is_nil field -> (
+      match predicate_field ?entity field with
+      | Ok field -> Ok (doc [ (field, Bson.create_null ()) ])
+      | Error _ as error -> error)
+  | Not_nil field -> (
+      match predicate_field ?entity field with
+      | Ok field ->
+          Ok
+            (doc
+               [
+                 ( field,
+                   Bson.create_doc_element
+                     (doc [ ("$ne", Bson.create_null ()) ]) );
+               ])
+      | Error _ as error -> error)
   | And predicates -> logical ?entity "$and" predicates
   | Or predicates -> logical ?entity "$or" predicates
   | Not predicate -> (
       match predicate_to_bson ?entity predicate with
       | Ok bson -> Ok (doc [ ("$nor", Bson.create_list [ Bson.create_doc_element bson ]) ])
       | Error _ as error -> error)
-  | Contains (field, value) ->
-      Ok
-        (doc
-           [
-             ( field,
-               Bson.create_doc_element
-                 (doc [ ("$regex", Bson.create_string (".*" ^ value ^ ".*")) ])
-             );
-           ])
-  | Has_prefix (field, value) ->
-      Ok
-        (doc
-           [
-             ( field,
-               Bson.create_doc_element
-                 (doc [ ("$regex", Bson.create_string ("^" ^ value)) ]) );
-           ])
-  | Has_suffix (field, value) ->
-      Ok
-        (doc
-           [
-             ( field,
-               Bson.create_doc_element
-                 (doc [ ("$regex", Bson.create_string (value ^ "$")) ]) );
-           ])
+  | Contains (field, value) -> (
+      match predicate_field ?entity field with
+      | Ok field ->
+          Ok
+            (doc
+               [
+                 ( field,
+                   Bson.create_doc_element
+                     (doc [ ("$regex", Bson.create_string (".*" ^ value ^ ".*")) ])
+                 );
+               ])
+      | Error _ as error -> error)
+  | Has_prefix (field, value) -> (
+      match predicate_field ?entity field with
+      | Ok field ->
+          Ok
+            (doc
+               [
+                 ( field,
+                   Bson.create_doc_element
+                     (doc [ ("$regex", Bson.create_string ("^" ^ value)) ]) );
+               ])
+      | Error _ as error -> error)
+  | Has_suffix (field, value) -> (
+      match predicate_field ?entity field with
+      | Ok field ->
+          Ok
+            (doc
+               [
+                 ( field,
+                   Bson.create_doc_element
+                     (doc [ ("$regex", Bson.create_string (value ^ "$")) ]) );
+               ])
+      | Error _ as error -> error)
   | Has_edge edge_name -> (
       match entity with
       | None -> Error (`Bad_query "edge predicate needs entity context")
@@ -196,7 +247,7 @@ let filter_to_bson (query : Ent_ocaml.query) =
   | [ predicate ] -> predicate_to_bson ~entity:query.entity predicate
   | predicates -> predicate_to_bson ~entity:query.entity (And predicates)
 
-let sort_to_bson orders =
+let sort_to_bson ?entity orders =
   let direction = function
     | Ent_ocaml.Asc -> Bson.create_int32 1l
     | Desc -> Bson.create_int32 (-1l)
@@ -204,15 +255,18 @@ let sort_to_bson orders =
   match orders with
   | [] -> None
   | orders ->
-      orders
-      |> List.map (fun order -> (order.Ent_ocaml.field, direction order.direction))
-      |> doc |> Option.some
-
-let field_storage_key ?(missing = "field not found: ") (entity : Ent_ocaml.entity)
-    name =
-  match List.find_opt (fun (field : Ent_ocaml.field) -> field.name = name) entity.fields with
-  | Some field -> Ok field.storage_key
-  | None -> Error (`Bad_schema (missing ^ name))
+      let fields =
+        List.map
+          (fun order ->
+            let field =
+              match predicate_field ?entity order.Ent_ocaml.field with
+              | Ok field -> field
+              | Error _ -> order.field
+            in
+            (field, direction order.direction))
+          orders
+      in
+      Some (doc fields)
 
 let projection_to_bson (query : Ent_ocaml.query) =
   match query.select with
@@ -235,7 +289,7 @@ let find_options (query : Ent_ocaml.query) =
          {
            (Mongo_crud.default_find query.Ent_ocaml.entity.collection filter) with
            projection;
-           sort = sort_to_bson query.orders;
+           sort = sort_to_bson ~entity:query.entity query.orders;
            skip = query.offset;
            limit = query.limit;
          }
@@ -343,13 +397,13 @@ let ensure_indexes ctx entities =
   in
   entity_loop entities
 
-let document_to_bson fields =
+let document_to_bson ?entity fields =
   let rec loop doc = function
     | [] -> Ok doc
     | (name, value) :: rest -> (
-        match value_to_bson value with
-        | Ok bson -> loop (Bson.add_element name bson doc) rest
-        | Error _ as error -> error)
+        match (predicate_field ?entity name, value_to_bson value) with
+        | Ok name, Ok bson -> loop (Bson.add_element name bson doc) rest
+        | Error _ as error, _ | _, (Error _ as error) -> error)
   in
   loop Bson.empty fields
 
@@ -360,9 +414,9 @@ let update_to_bson (mutation : Ent_ocaml.mutation) =
     else Bson.add_element name (Bson.create_doc_element doc) update
   in
   match
-    ( document_to_bson mutation.set,
-      document_to_bson mutation.add,
-      document_to_bson mutation.on_insert )
+    ( document_to_bson ~entity:mutation.entity mutation.set,
+      document_to_bson ~entity:mutation.entity mutation.add,
+      document_to_bson ~entity:mutation.entity mutation.on_insert )
   with
   | Error _ as error, _, _
   | _, (Error _ as error), _
@@ -563,7 +617,7 @@ let insert_values ctx (mutation : Ent_ocaml.mutation) =
       match Ent_ocaml.validate_mutation mutation with
       | Error _ as error -> error
       | Ok () -> (
-          match document_to_bson mutation.set with
+          match document_to_bson ~entity:mutation.entity mutation.set with
           | Error _ as error -> error
           | Ok doc -> insert ctx mutation.entity doc))
   | Update_one | Update | Delete_one | Delete | Upsert_one ->
@@ -591,7 +645,7 @@ let insert_many_values ?ordered ctx mutations =
                 if not same_entity then
                   Error (`Bad_query "insert_many_values expects one entity")
                 else
-                  match document_to_bson mutation.set with
+                  match document_to_bson ~entity:mutation.entity mutation.set with
                   | Error _ as error -> error
                   | Ok doc ->
                       loop (Some mutation.entity) (doc :: acc) rest)

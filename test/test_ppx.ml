@@ -102,18 +102,16 @@ let test_entity_metadata () =
   Alcotest.(check string) "entity name" "Post" post_entity.name;
   Alcotest.(check string) "collection" "posts" post_entity.collection;
   Alcotest.(check int) "field count" 8 (List.length post_entity.fields);
-  Alcotest.(check int) "index count" 3 (List.length post_entity.indexes);
+  Alcotest.(check int) "index count" 2 (List.length post_entity.indexes);
   Alcotest.(check int) "edge count" 1 (List.length post_entity.edges);
   let id = find_field "id" in
   Alcotest.(check string) "id storage key" "_id" id.storage_key;
   Alcotest.(check bool) "id unique" true id.unique;
   Alcotest.(check bool) "id immutable" true id.immutable;
   Alcotest.(check bool)
-    "unique id index" true
+    "id unique index is implicit" false
     (List.exists
-       (fun (index : Ent_ocaml.index) ->
-         index.name = Some "unique_posts_id" && index.fields = [ "id" ]
-         && index.unique)
+       (fun (index : Ent_ocaml.index) -> index.fields = [ "id" ])
        post_entity.indexes);
   Alcotest.(check bool)
     "named user index" true

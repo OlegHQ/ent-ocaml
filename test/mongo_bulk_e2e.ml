@@ -16,7 +16,7 @@ let post_entity =
         [
           {
             name = "id";
-            storage_key = "id";
+            storage_key = "_id";
             typ = String;
             required = true;
             unique = true;
@@ -68,12 +68,6 @@ let post_entity =
         ];
       indexes =
         [
-          {
-            name = Some "unique_post_id";
-            fields = [ "id" ];
-            edges = [];
-            unique = true;
-          };
           {
             name = Some "posts_by_id_body";
             fields = [ "id"; "body" ];
@@ -222,7 +216,7 @@ let run_flow client =
   let* page = Ent_ocaml_mongo.find ctx query_after_post_1 in
   assert_true "seek pagination returns next row"
     (match page with
-    | [ doc ] -> Bson.get_string (Bson.get_element "id" doc) = "post_2"
+    | [ doc ] -> Bson.get_string (Bson.get_element "_id" doc) = "post_2"
     | _ -> false);
   let* user_posts = Ent_ocaml_mongo.find ctx query_user_1 in
   assert_true "edge predicate returns user posts" (List.length user_posts = 1);

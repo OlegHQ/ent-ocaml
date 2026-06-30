@@ -7,13 +7,16 @@ type doc = Bson.t
 
 val create : client:Mongo_eio.direct_client -> config -> ctx
 val filter_to_bson : Ent_ocaml.query -> (Bson.t, Ent_ocaml.error) result
-val sort_to_bson : Ent_ocaml.order list -> Bson.t option
+val sort_to_bson : ?entity:Ent_ocaml.entity -> Ent_ocaml.order list -> Bson.t option
 val projection_to_bson : Ent_ocaml.query -> (Bson.t option, Ent_ocaml.error) result
 val aggregate_pipeline_to_bson :
   Ent_ocaml.aggregate -> (Bson.t list, Ent_ocaml.error) result
 val group_pipeline_to_bson :
   Ent_ocaml.group_aggregate -> (Bson.t list, Ent_ocaml.error) result
-val document_to_bson : (string * Ent_ocaml.value) list -> (Bson.t, Ent_ocaml.error) result
+val document_to_bson :
+  ?entity:Ent_ocaml.entity ->
+  (string * Ent_ocaml.value) list ->
+  (Bson.t, Ent_ocaml.error) result
 val update_to_bson : Ent_ocaml.mutation -> (Bson.t, Ent_ocaml.error) result
 val predicate_to_bson :
   ?entity:Ent_ocaml.entity -> Ent_ocaml.predicate -> (Bson.t, Ent_ocaml.error) result

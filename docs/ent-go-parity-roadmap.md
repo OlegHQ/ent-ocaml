@@ -72,7 +72,8 @@ The initial package scaffold already provides:
   field selection/projection, ordering, limit/offset, insert, bulk insert,
   update, upsert-one with `$setOnInsert`, delete, count, filtered and grouped
   min/max/sum/avg aggregates, single-field seek pagination, stored-FK edge
-  predicates, and basic value translation.
+  predicates, storage-key mapping for filters/sorts/mutations/indexes, and
+  basic value translation.
 - `[@@deriving ent]` generation for entity metadata, functional query helpers,
   typed field predicates, typed ordering helpers, typed `after_<field>` and
   `before_<field>` seek helpers, create/update/delete mutation values,
@@ -140,7 +141,10 @@ The initial package scaffold already provides:
 2. Mongo query planner:
    translate all scalar predicates, boolean predicates, limit/offset/order, and
    simple CRUD mutations to BSON/Mongo driver calls. Include duplicate-key,
-   not-found, bad-document, and unavailable errors.
+   not-found, bad-document, and unavailable errors. Entity field names are
+   mapped to storage keys for filters, ordering, mutation documents, indexes,
+   and aggregation terms; `[@ent.key "_id"] [@ent.unique]` relies on Mongo's
+   implicit `_id` index instead of generating a duplicate unique index.
 
 3. PPX schema model:
    define the user-facing schema syntax and attributes. Generate entity

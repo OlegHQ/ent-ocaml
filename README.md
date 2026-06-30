@@ -108,7 +108,10 @@ typed values with `result`-returning functions such as
 `Ent_ocaml_mongo.insert_many_values`. Core mutation validation catches missing
 required create/upsert fields, unknown mutation fields, duplicate mutation
 fields, unsafe upsert field overlap, and immutable-field updates before backend
-execution. Fields annotated with
+execution. Mongo planning maps entity field names through storage keys for
+filters, sorting, projections, inserts, updates, upserts, indexes, and
+aggregates, so callers keep writing `id_eq value` even when the document stores
+that field as `_id`. Fields annotated with
 `[@ent.default expr]` are inserted by generated create helpers when omitted, and
 `[@ent.update_default expr]` is inserted by generated update helpers unless the
 field is explicitly set or cleared. Fields annotated with
