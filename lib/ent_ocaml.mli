@@ -337,10 +337,16 @@ type privacy_decision = Allow | Deny of string | Skip
 type 'ctx query_rule = 'ctx -> query -> privacy_decision
 type 'ctx mutation_rule = 'ctx -> mutation -> privacy_decision
 type ('ctx, 'a) query_executor = 'ctx -> query -> ('a, error) result
+type ('ctx, 'a) edge_executor = 'ctx -> edge_query -> ('a, error) result
 type ('ctx, 'a) mutation_executor = 'ctx -> mutation -> ('a, error) result
 
 type 'ctx query_interceptor = {
   wrap_query : 'a. ('ctx, 'a) query_executor -> 'ctx -> query -> ('a, error) result;
+}
+
+type 'ctx edge_interceptor = {
+  wrap_edge :
+    'a. ('ctx, 'a) edge_executor -> 'ctx -> edge_query -> ('a, error) result;
 }
 
 type 'ctx mutation_hook = {
@@ -374,6 +380,21 @@ module Interceptor : sig
 
   val run_query_value :
     'ctx query_interceptor list -> 'ctx -> query -> (query, error) result
+end
+
+module Edge_interceptor : sig
+  val run_edge :
+    'ctx edge_interceptor list ->
+    ('ctx, 'a) edge_executor ->
+    'ctx ->
+    edge_query ->
+    ('a, error) result
+
+  val run_edge_value :
+    'ctx edge_interceptor list ->
+    'ctx ->
+    edge_query ->
+    (edge_query, error) result
 end
 
 module Hook : sig

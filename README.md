@@ -259,6 +259,34 @@ let count_scoped ctx query =
       Scoped_post_client.Tx.count tx query)
 ```
 
+Edge interceptors wrap traversal and eager-loading edge queries when middleware
+needs the edge name, alias, target, and source query together:
+
+```ocaml
+module Scoped_edges =
+  Posts.With_edge_interceptors (struct
+    let edge_interceptors = [ scope_post_edges_to_current_user ]
+  end)
+
+let load_scoped_authors ctx edge_query =
+  Scoped_edges.traverse ctx ~decode:user_of_bson_doc_result edge_query
+```
+
+Client edge interceptors use the same module shape and apply to `Tx`
+operations:
+
+```ocaml
+module Scoped_edge_client =
+  Post_client.With_edge_interceptors (struct
+    let edge_interceptors = [ scope_post_edges_to_current_user ]
+  end)
+
+let load_scoped_authors ctx edge_query =
+  let client = Scoped_edge_client.make ctx in
+  Scoped_edge_client.with_transaction client (fun tx ->
+      Scoped_edge_client.Tx.traverse tx ~decode:user_of_bson_doc_result edge_query)
+```
+
 Schemas can register policy, hook, and interceptor lists directly and expose
 generated modules for them:
 
@@ -270,6 +298,7 @@ type post = {
 [@@ent.query_rules [ require_can_read_posts ]]
 [@@ent.mutation_hooks [ audit_post_mutations ]]
 [@@ent.query_interceptors [ scope_posts_to_current_user ]]
+[@@ent.edge_interceptors [ scope_post_edges_to_current_user ]]
 [@@deriving ent]
 
 module Posts = Post.Store (Ent_ocaml_mongo)
@@ -277,6 +306,10 @@ module Post_client = Post.Client (Ent_ocaml_mongo)
 
 let load_scoped ctx query =
   Posts.Schema_interceptors.all ctx ~decode:post_of_bson_doc_result query
+
+let load_scoped_edge ctx edge_query =
+  Posts.Schema_edge_interceptors.traverse ctx
+    ~decode:user_of_bson_doc_result edge_query
 
 let save_audited ctx mutation =
   let client = Post_client.Schema_hooks.make ctx in

@@ -79,6 +79,18 @@ type post = {
                      ("status", Ent_ocaml.V_string "schema interceptor"))));
     };
   ]]
+[@@ent.edge_interceptors
+  [
+    {
+      Ent_ocaml.wrap_edge =
+        (fun next ctx edge_query ->
+          next ctx
+            {
+              edge_query with
+              Ent_ocaml.target = edge_query.Ent_ocaml.source.entity;
+            });
+    };
+  ]]
 [@@deriving ent]
 
 type publish_state = {
@@ -1160,17 +1172,53 @@ let test_generated_client_interceptor_api () =
         ]
     end)
   in
+  let module Edge_intercepted =
+    Client.With_edge_interceptors (struct
+      let edge_interceptors =
+        [
+          {
+            Ent_ocaml.wrap_edge =
+              (fun next ctx edge_query ->
+                next ctx
+                  {
+                    edge_query with
+                    Ent_ocaml.target = edge_query.Ent_ocaml.source.entity;
+                  });
+          };
+        ]
+    end)
+  in
   let client = Intercepted.make () in
+  let edge_client = Edge_intercepted.make () in
   let query = Post.query () in
+  let edge_query =
+    let open Post in
+    query () |> with_user ~target:user_entity
+  in
+  let decode = function
+    | Ent_ocaml.V_string value -> Ok value
+    | _ -> Error "expected string"
+  in
   (match Intercepted.count client query with
   | Ok 1 -> ()
   | Ok count -> Alcotest.failf "expected intercepted client count, got %d" count
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
-  match
+  (match
     Intercepted.with_transaction client (fun tx -> Intercepted.Tx.count tx query)
   with
   | Ok 1 -> ()
   | Ok count -> Alcotest.failf "expected intercepted tx count, got %d" count
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  (match Edge_intercepted.traverse edge_client ~decode edge_query with
+  | Ok [ "Post" ] -> ()
+  | Ok _ -> Alcotest.fail "unexpected edge-intercepted client traverse result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  match
+    Edge_intercepted.with_transaction edge_client (fun tx ->
+        Edge_intercepted.Tx.traverse tx ~decode edge_query)
+  with
+  | Ok [ "Post" ] -> ()
+  | Ok _ -> Alcotest.fail "unexpected edge-intercepted tx traverse result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
 let test_generated_schema_client_api () =
@@ -1178,6 +1226,7 @@ let test_generated_schema_client_api () =
   let module Schema_policy = Client.Schema_policy in
   let module Schema_hooks = Client.Schema_hooks in
   let module Schema_interceptors = Client.Schema_interceptors in
+  let module Schema_edge_interceptors = Client.Schema_edge_interceptors in
   let decode = function
     | Ent_ocaml.V_string value -> Ok value
     | _ -> Error "expected string"
@@ -1197,6 +1246,7 @@ let test_generated_schema_client_api () =
   let policy_client = Schema_policy.make () in
   let hooks_client = Schema_hooks.make () in
   let interceptor_client = Schema_interceptors.make () in
+  let edge_interceptor_client = Schema_edge_interceptors.make () in
   (match Schema_policy.all policy_client ~decode query with
   | Error (`Denied "schema no reads") -> ()
   | Ok _ -> Alcotest.fail "expected schema client read denial"
@@ -1212,10 +1262,20 @@ let test_generated_schema_client_api () =
       | _ -> Alcotest.fail "expected schema client hook body")
   | Ok _ -> Alcotest.fail "unexpected schema client hook insert result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
-  match Schema_interceptors.count interceptor_client query with
+  (match Schema_interceptors.count interceptor_client query with
   | Ok 1 -> ()
   | Ok count ->
       Alcotest.failf "expected schema client intercepted count, got %d" count
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  let edge_query =
+    let open Post in
+    query () |> with_user ~target:user_entity
+  in
+  match
+    Schema_edge_interceptors.traverse edge_interceptor_client ~decode edge_query
+  with
+  | Ok [ "Post" ] -> ()
+  | Ok _ -> Alcotest.fail "unexpected schema edge-intercepted client traverse"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
 let test_generated_policy_store_api () =
@@ -1320,6 +1380,7 @@ let test_generated_hook_store_api () =
 let test_generated_interceptor_store_api () =
   let module Store = Post.Store (Memory_backend) in
   let module Schema_interceptors = Store.Schema_interceptors in
+  let module Schema_edge_interceptors = Store.Schema_edge_interceptors in
   let module Intercepted = Store.With_interceptors (struct
     let query_interceptors =
       [
@@ -1331,6 +1392,20 @@ let test_generated_interceptor_store_api () =
                 intercepted_query |> where (status_eq "intercepted")
               in
               next ctx query);
+        };
+      ]
+  end) in
+  let module Edge_intercepted = Store.With_edge_interceptors (struct
+    let edge_interceptors =
+      [
+        {
+          Ent_ocaml.wrap_edge =
+            (fun next ctx edge_query ->
+              next ctx
+                {
+                  edge_query with
+                  Ent_ocaml.target = edge_query.Ent_ocaml.source.entity;
+                });
         };
       ]
   end) in
@@ -1355,9 +1430,22 @@ let test_generated_interceptor_store_api () =
     let open Post in
     query () |> avg select_updated_at_ms
   in
-  match Intercepted.aggregate () aggregate with
+  (match Intercepted.aggregate () aggregate with
   | Ok (Some (Ent_ocaml.V_int64 42L)) -> ()
   | Ok _ -> Alcotest.fail "unexpected aggregate result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  let edge_query =
+    let open Post in
+    query () |> with_user ~target:user_entity
+  in
+  (match Edge_intercepted.traverse () ~decode edge_query with
+  | Ok [ "Post" ] -> ()
+  | Ok _ -> Alcotest.fail "unexpected edge-intercepted traverse result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  match Schema_edge_interceptors.load_edge () ~decode_source:decode
+          ~decode_target:decode edge_query with
+  | Ok [ ("Post", Some "Post") ] -> ()
+  | Ok _ -> Alcotest.fail "unexpected schema edge-intercepted load result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
 let test_generated_dynamic_filter_api () =

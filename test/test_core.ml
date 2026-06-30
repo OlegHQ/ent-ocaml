@@ -366,6 +366,31 @@ let test_query_interceptor_chain () =
   | Ok count -> Alcotest.failf "expected one predicate, got %d" count
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
+let test_edge_interceptor_chain () =
+  let query = Ent_ocaml.Query.make post_entity in
+  let edge_query =
+    Ent_ocaml.Edge_query.make ~edge:"user" ~target:post_entity query
+  in
+  let interceptor =
+    {
+      Ent_ocaml.wrap_edge =
+        (fun next ctx intercepted_edge_query ->
+          let source =
+            Ent_ocaml.Query.where
+              (Ent_ocaml.Eq ("status", Ent_ocaml.V_string "edge-intercepted"))
+              intercepted_edge_query.source
+          in
+          next ctx { intercepted_edge_query with source });
+    }
+  in
+  let executor () (edge_query : Ent_ocaml.edge_query) =
+    Ok (List.length edge_query.Ent_ocaml.source.predicates)
+  in
+  match Ent_ocaml.Edge_interceptor.run_edge [ interceptor ] executor () edge_query with
+  | Ok 1 -> ()
+  | Ok count -> Alcotest.failf "expected one edge predicate, got %d" count
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+
 let test_edge_query_alias () =
   let edge_query =
     Ent_ocaml.Edge_query.make ~as_:"author" ~edge:"user" ~target:post_entity
@@ -1012,6 +1037,8 @@ let () =
           Alcotest.test_case "mutation hook chain" `Quick test_mutation_hook_chain;
           Alcotest.test_case "query interceptor chain" `Quick
             test_query_interceptor_chain;
+          Alcotest.test_case "edge interceptor chain" `Quick
+            test_edge_interceptor_chain;
           Alcotest.test_case "edge query alias" `Quick test_edge_query_alias;
           Alcotest.test_case "transaction hooks" `Quick test_transaction_hooks;
           Alcotest.test_case "dynamic filter api" `Quick test_dynamic_filter_api;

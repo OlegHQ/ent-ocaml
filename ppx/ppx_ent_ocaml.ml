@@ -86,6 +86,11 @@ let ent_query_interceptors_attr =
     Ast_pattern.(single_expr_payload (elist __))
     (fun interceptors -> interceptors)
 
+let ent_edge_interceptors_attr =
+  Attribute.declare "ent.edge_interceptors" Attribute.Context.type_declaration
+    Ast_pattern.(single_expr_payload (elist __))
+    (fun interceptors -> interceptors)
+
 let ent_optional_attr =
   Attribute.declare "ent.optional" Attribute.Context.label_declaration
     Ast_pattern.(pstr nil)
@@ -1586,6 +1591,9 @@ let gen_query_module td =
   let schema_query_interceptors =
     Attribute.get ent_query_interceptors_attr td |> Option.value ~default:[]
   in
+  let schema_edge_interceptors =
+    Attribute.get ent_edge_interceptors_attr td |> Option.value ~default:[]
+  in
   let query_body =
     A.pexp_record ~loc
       [
@@ -2621,6 +2629,23 @@ let gen_query_module td =
       A.pmty_signature ~loc
         [ value_sig "query_interceptors" (list_typ query_interceptor_typ) ]
     in
+    let edge_interceptors_type =
+      let backend_ctx =
+        A.ptyp_constr ~loc (lid ~loc [ "Backend"; "ctx" ]) []
+      in
+      let edge_interceptor_typ =
+        A.ptyp_constr ~loc
+          (lid ~loc [ "Ent_ocaml"; "edge_interceptor" ])
+          [ backend_ctx ]
+      in
+      let value_sig name type_ =
+        A.psig_value ~loc
+          (A.value_description ~loc ~name:{ loc; txt = name } ~type_ ~prim:[])
+      in
+      let list_typ typ = A.ptyp_constr ~loc (lid ~loc [ "list" ]) [ typ ] in
+      A.pmty_signature ~loc
+        [ value_sig "edge_interceptors" (list_typ edge_interceptor_typ) ]
+    in
     let with_policy_module =
       let structure =
         [
@@ -3220,7 +3245,7 @@ let gen_query_module td =
       schema_module "Schema_interceptors" "With_interceptors"
         [ ("query_interceptors", list ~loc schema_query_interceptors) ]
     in
-    let structure =
+    let base_structure =
       [
         value_fun "all"
           (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
@@ -3364,13 +3389,79 @@ let gen_query_module td =
                      (Nolabel, evar ~loc "ctx");
                      (Nolabel, evar ~loc "mutation");
                   ])));
-        with_policy_module;
-        with_hooks_module;
-        with_interceptors_module;
-        schema_policy_module;
-        schema_hooks_module;
-        schema_interceptors_module;
       ]
+    in
+    let with_edge_interceptors_module =
+      let run_edge edge_query_expr body =
+        let next =
+          A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+            (A.pexp_fun ~loc Nolabel None edge_query_pat body)
+        in
+        A.pexp_apply ~loc
+          (ident ~loc [ "Ent_ocaml"; "Edge_interceptor"; "run_edge" ])
+          [
+            (Nolabel, ident ~loc [ "Edge_interceptors"; "edge_interceptors" ]);
+            (Nolabel, next);
+            (Nolabel, evar ~loc "ctx");
+            (Nolabel, edge_query_expr);
+          ]
+      in
+      let edge_structure =
+        [
+          value_fun "traverse"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc (Labelled "decode") None (pvar ~loc "decode")
+                  (A.pexp_fun ~loc Nolabel None edge_query_pat
+                     (run_edge (evar ~loc "edge_query")
+                        (backend_apply "traverse_as"
+                           [
+                             (Nolabel, evar ~loc "ctx");
+                             (Nolabel, evar ~loc "edge_query");
+                             (Labelled "decode", evar ~loc "decode");
+                           ])))));
+          value_fun "load_edge"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc (Labelled "decode_source") None
+                  (pvar ~loc "decode_source")
+                  (A.pexp_fun ~loc (Labelled "decode_target") None
+                     (pvar ~loc "decode_target")
+                     (A.pexp_fun ~loc Nolabel None edge_query_pat
+                        (run_edge (evar ~loc "edge_query")
+                           (backend_apply "load_edge_as"
+                              [
+                                (Nolabel, evar ~loc "ctx");
+                                (Nolabel, evar ~loc "edge_query");
+                                (Labelled "decode_source", evar ~loc "decode_source");
+                                (Labelled "decode_target", evar ~loc "decode_target");
+                              ]))))));
+        ]
+      in
+      A.pstr_module ~loc
+        (A.module_binding ~loc ~name:{ loc; txt = Some "With_edge_interceptors" }
+           ~expr:
+             (A.pmod_functor ~loc
+                (Named
+                   ({ loc; txt = Some "Edge_interceptors" }, edge_interceptors_type))
+                (A.pmod_structure ~loc
+                   (base_structure @ edge_structure
+                   @ [ load_edge_named_value; load_edges_named_value ]))))
+    in
+    let schema_edge_interceptors_module =
+      schema_module "Schema_edge_interceptors" "With_edge_interceptors"
+        [ ("edge_interceptors", list ~loc schema_edge_interceptors) ]
+    in
+    let structure =
+      base_structure
+      @ [
+          with_policy_module;
+          with_hooks_module;
+          with_interceptors_module;
+          with_edge_interceptors_module;
+          schema_policy_module;
+          schema_hooks_module;
+          schema_interceptors_module;
+          schema_edge_interceptors_module;
+        ]
     in
     A.pstr_module ~loc
       (A.module_binding ~loc ~name:{ loc; txt = Some "Store" }
@@ -3588,6 +3679,23 @@ let gen_query_module td =
       A.pmty_signature ~loc
         [ value_sig "query_interceptors" (list_typ query_interceptor_typ) ]
     in
+    let edge_interceptors_type =
+      let backend_ctx =
+        A.ptyp_constr ~loc (lid ~loc [ "Backend"; "ctx" ]) []
+      in
+      let edge_interceptor_typ =
+        A.ptyp_constr ~loc
+          (lid ~loc [ "Ent_ocaml"; "edge_interceptor" ])
+          [ backend_ctx ]
+      in
+      let value_sig name type_ =
+        A.psig_value ~loc
+          (A.value_description ~loc ~name:{ loc; txt = name } ~type_ ~prim:[])
+      in
+      let list_typ typ = A.ptyp_constr ~loc (lid ~loc [ "list" ]) [ typ ] in
+      A.pmty_signature ~loc
+        [ value_sig "edge_interceptors" (list_typ edge_interceptor_typ) ]
+    in
     let wrapped_client_module ~module_name ~param_name ~param_type
         ~store_functor ~store_module_name =
       let structure =
@@ -3642,6 +3750,12 @@ let gen_query_module td =
         ~store_functor:"With_interceptors"
         ~store_module_name:"Intercepted_store"
     in
+    let with_edge_interceptors_module =
+      wrapped_client_module ~module_name:"With_edge_interceptors"
+        ~param_name:"Edge_interceptors" ~param_type:edge_interceptors_type
+        ~store_functor:"With_edge_interceptors"
+        ~store_module_name:"Edge_intercepted_store"
+    in
     let schema_module name functor_name bindings =
       A.pstr_module ~loc
         (A.module_binding ~loc ~name:{ loc; txt = Some name }
@@ -3673,6 +3787,10 @@ let gen_query_module td =
       schema_module "Schema_interceptors" "With_interceptors"
         [ ("query_interceptors", list ~loc schema_query_interceptors) ]
     in
+    let schema_edge_interceptors_module =
+      schema_module "Schema_edge_interceptors" "With_edge_interceptors"
+        [ ("edge_interceptors", list ~loc schema_edge_interceptors) ]
+    in
     let structure =
       [
         A.pstr_module ~loc
@@ -3699,9 +3817,11 @@ let gen_query_module td =
         with_policy_module;
         with_hooks_module;
         with_interceptors_module;
+        with_edge_interceptors_module;
         schema_policy_module;
         schema_hooks_module;
         schema_interceptors_module;
+        schema_edge_interceptors_module;
       ]
       @ client_values "Entity_store"
     in
@@ -4329,6 +4449,15 @@ let gen_sig_for_type td =
       A.pmty_signature ~loc
         [ value_sig "query_interceptors" (list_typ query_interceptor_typ) ]
     in
+    let edge_interceptors_type =
+      let edge_interceptor_typ =
+        A.ptyp_constr ~loc
+          (lid ~loc [ "Ent_ocaml"; "edge_interceptor" ])
+          [ backend_ctx ]
+      in
+      A.pmty_signature ~loc
+        [ value_sig "edge_interceptors" (list_typ edge_interceptor_typ) ]
+    in
     let store_items =
       base_store_items
       @ [
@@ -4354,6 +4483,15 @@ let gen_sig_for_type td =
                          interceptors_type ))
                     (A.pmty_signature ~loc base_store_items)));
           A.psig_module ~loc
+            (A.module_declaration ~loc
+               ~name:{ loc; txt = Some "With_edge_interceptors" }
+               ~type_:
+                 (A.pmty_functor ~loc
+                    (Named
+                       ( { loc; txt = Some "Edge_interceptors" },
+                         edge_interceptors_type ))
+                    (A.pmty_signature ~loc base_store_items)));
+          A.psig_module ~loc
             (A.module_declaration ~loc ~name:{ loc; txt = Some "Schema_policy" }
                ~type_:(A.pmty_signature ~loc base_store_items));
           A.psig_module ~loc
@@ -4362,6 +4500,10 @@ let gen_sig_for_type td =
           A.psig_module ~loc
             (A.module_declaration ~loc
                ~name:{ loc; txt = Some "Schema_interceptors" }
+               ~type_:(A.pmty_signature ~loc base_store_items));
+          A.psig_module ~loc
+            (A.module_declaration ~loc
+               ~name:{ loc; txt = Some "Schema_edge_interceptors" }
                ~type_:(A.pmty_signature ~loc base_store_items));
         ]
     in
@@ -4435,6 +4577,15 @@ let gen_sig_for_type td =
       in
       A.pmty_signature ~loc
         [ value_sig "query_interceptors" (list_typ query_interceptor_typ) ]
+    in
+    let edge_interceptors_type =
+      let edge_interceptor_typ =
+        A.ptyp_constr ~loc
+          (lid ~loc [ "Ent_ocaml"; "edge_interceptor" ])
+          [ backend_ctx ]
+      in
+      A.pmty_signature ~loc
+        [ value_sig "edge_interceptors" (list_typ edge_interceptor_typ) ]
     in
     let doc_result = result_typ backend_doc error_typ in
     let docs_result = result_typ (list_typ backend_doc) error_typ in
@@ -4598,6 +4749,15 @@ let gen_sig_for_type td =
                          interceptors_type ))
                     (A.pmty_signature ~loc client_base_items)));
           A.psig_module ~loc
+            (A.module_declaration ~loc
+               ~name:{ loc; txt = Some "With_edge_interceptors" }
+               ~type_:
+                 (A.pmty_functor ~loc
+                    (Named
+                       ( { loc; txt = Some "Edge_interceptors" },
+                         edge_interceptors_type ))
+                    (A.pmty_signature ~loc client_base_items)));
+          A.psig_module ~loc
             (A.module_declaration ~loc ~name:{ loc; txt = Some "Schema_policy" }
                ~type_:(A.pmty_signature ~loc client_base_items));
           A.psig_module ~loc
@@ -4606,6 +4766,10 @@ let gen_sig_for_type td =
           A.psig_module ~loc
             (A.module_declaration ~loc
                ~name:{ loc; txt = Some "Schema_interceptors" }
+               ~type_:(A.pmty_signature ~loc client_base_items));
+          A.psig_module ~loc
+            (A.module_declaration ~loc
+               ~name:{ loc; txt = Some "Schema_edge_interceptors" }
                ~type_:(A.pmty_signature ~loc client_base_items));
         ]
     in

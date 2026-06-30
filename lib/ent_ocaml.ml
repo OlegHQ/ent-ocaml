@@ -1318,10 +1318,16 @@ type privacy_decision = Allow | Deny of string | Skip
 type 'ctx query_rule = 'ctx -> query -> privacy_decision
 type 'ctx mutation_rule = 'ctx -> mutation -> privacy_decision
 type ('ctx, 'a) query_executor = 'ctx -> query -> ('a, error) result
+type ('ctx, 'a) edge_executor = 'ctx -> edge_query -> ('a, error) result
 type ('ctx, 'a) mutation_executor = 'ctx -> mutation -> ('a, error) result
 
 type 'ctx query_interceptor = {
   wrap_query : 'a. ('ctx, 'a) query_executor -> 'ctx -> query -> ('a, error) result;
+}
+
+type 'ctx edge_interceptor = {
+  wrap_edge :
+    'a. ('ctx, 'a) edge_executor -> 'ctx -> edge_query -> ('a, error) result;
 }
 
 type 'ctx mutation_hook = {
@@ -1373,6 +1379,20 @@ module Interceptor = struct
 
   let run_query_value interceptors ctx query =
     run_query interceptors (fun _ query -> Ok query) ctx query
+end
+
+module Edge_interceptor = struct
+  let run_edge interceptors next =
+    let wrapped =
+      List.fold_right
+        (fun interceptor next ctx edge_query ->
+          interceptor.wrap_edge next ctx edge_query)
+        interceptors next
+    in
+    wrapped
+
+  let run_edge_value interceptors ctx edge_query =
+    run_edge interceptors (fun _ edge_query -> Ok edge_query) ctx edge_query
 end
 
 module Hook = struct
