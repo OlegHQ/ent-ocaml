@@ -1,3 +1,9 @@
 (test
  (name test_core)
  (libraries ent-ocaml ent-ocaml-mongo alcotest))
+
+(test
+ (name test_ppx)
+ (libraries ent-ocaml alcotest)
+ (preprocess
+  (pps ent-ocaml-ppx)))

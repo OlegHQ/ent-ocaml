@@ -26,6 +26,25 @@ Poster should depend on the submodule through opam pins and keep MongoDB
 required. The app should keep explicit domain-to-entity mapping so generated code
 does mechanical CRUD/query work, not business validation.
 
+## Public API Principle
+
+Ent Go is the capability checklist, not the OCaml API shape. `ent-ocaml` should
+feel like a small typed OCaml library:
+
+- Prefer records, variants, modules, labels, and `result` values over method
+  chains that copy Go builder semantics.
+- Use PPX to remove mechanical entity boilerplate: descriptors, predicates,
+  CRUD modules, edge traversal modules, mutation records, hook/privacy plumbing,
+  and backend bindings.
+- Keep user-written schema declarations compact and declarative. Repetitive
+  setters, string field constants, BSON field names, and collection metadata
+  should be generated.
+- Preserve explicit application/domain mapping. Generated code should not hide
+  validation, publishing policy, authentication, or business decisions.
+- Provide composable functional helpers for filters, ordering, transactions,
+  hooks, privacy, and interceptors, with backend-specific escape hatches kept
+  typed and local.
+
 ## Ent Go Capability Matrix
 
 | Ent Go capability | ent-ocaml target | Mongo mapping |

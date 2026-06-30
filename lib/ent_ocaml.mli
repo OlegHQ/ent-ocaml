@@ -10,6 +10,8 @@ type field_type =
   | Bytes
   | Json
   | Enum of string list
+  | List of field_type
+  | Option of field_type
   | Custom of string
 
 type field = {
