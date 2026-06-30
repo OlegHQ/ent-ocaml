@@ -372,7 +372,17 @@ let test_edge_query_alias () =
       (Ent_ocaml.Query.make post_entity)
   in
   Alcotest.(check (option string))
-    "edge alias" (Some "author") edge_query.edge_alias
+    "edge alias" (Some "author") edge_query.edge_alias;
+  Alcotest.(check string)
+    "edge load name" "author" (Ent_ocaml.Edge_load.name edge_query);
+  let loaded = Ent_ocaml.Edge_load.of_pair edge_query ("post", Some "user") in
+  Alcotest.(check string) "loaded edge" "user" loaded.loaded_edge;
+  Alcotest.(check (option string))
+    "loaded alias" (Some "author") loaded.loaded_alias;
+  Alcotest.(check string) "loaded name" "author" loaded.loaded_name;
+  Alcotest.(check string) "loaded source" "post" loaded.loaded_source;
+  Alcotest.(check (option string))
+    "loaded target" (Some "user") loaded.loaded_target
 
 let test_transaction_hooks () =
   let events = ref [] in

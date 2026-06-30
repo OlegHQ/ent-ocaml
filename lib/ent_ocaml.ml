@@ -129,6 +129,14 @@ type edge_query = {
   target_query : query;
 }
 
+type ('source, 'target) loaded_edge = {
+  loaded_edge : string;
+  loaded_alias : string option;
+  loaded_name : string;
+  loaded_source : 'source;
+  loaded_target : 'target option;
+}
+
 type aggregate_op = Count | Min of string | Max of string | Sum of string | Avg of string
 
 type aggregate = {
@@ -440,6 +448,22 @@ module Edge_query = struct
       Option.value target_query ~default:(Query.make target)
     in
     { source; edge; edge_alias = as_; target; target_query }
+end
+
+module Edge_load = struct
+  let name (edge_query : edge_query) =
+    Option.value edge_query.edge_alias ~default:edge_query.edge
+
+  let of_pair (edge_query : edge_query) (source, target) =
+    {
+      loaded_edge = edge_query.edge;
+      loaded_alias = edge_query.edge_alias;
+      loaded_name = name edge_query;
+      loaded_source = source;
+      loaded_target = target;
+    }
+
+  let of_pairs edge_query rows = List.map (of_pair edge_query) rows
 end
 
 module Aggregate = struct

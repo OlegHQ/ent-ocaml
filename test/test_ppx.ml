@@ -509,11 +509,47 @@ let test_generated_traversal_api () =
   | Ok [ "User" ] -> ()
   | Ok _ -> Alcotest.fail "unexpected traverse result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
-  match
-    Store.load_edge () ~decode_source:decode ~decode_target:decode edge_query
-  with
+  (match
+     Store.load_edge () ~decode_source:decode ~decode_target:decode edge_query
+   with
   | Ok [ ("Post", Some "User") ] -> ()
   | Ok _ -> Alcotest.fail "unexpected load_edge result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  (match
+     Store.load_edge_named () ~decode_source:decode ~decode_target:decode
+       edge_query
+   with
+  | Ok
+      [
+        {
+          Ent_ocaml.loaded_edge = "user";
+          loaded_alias = Some "author";
+          loaded_name = "author";
+          loaded_source = "Post";
+          loaded_target = Some "User";
+        };
+      ] ->
+      ()
+  | Ok _ -> Alcotest.fail "unexpected named load_edge result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  let module Client = Post.Client (Memory_backend) in
+  let client = Client.make () in
+  match
+    Client.load_edge_named client ~decode_source:decode ~decode_target:decode
+      edge_query
+  with
+  | Ok
+      [
+        {
+          Ent_ocaml.loaded_edge = "user";
+          loaded_alias = Some "author";
+          loaded_name = "author";
+          loaded_source = "Post";
+          loaded_target = Some "User";
+        };
+      ] ->
+      ()
+  | Ok _ -> Alcotest.fail "unexpected client named load_edge result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
 let test_generated_mutation_api () =

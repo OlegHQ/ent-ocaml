@@ -456,7 +456,18 @@ let drafts_with_authors ctx =
 ```
 
 The optional `~as_` label is preserved on the edge query so higher-level loaders
-can distinguish several eager loads of the same edge.
+can distinguish several eager loads of the same edge. Use `load_edge_named`
+when the result should carry that edge name with every row:
+
+```ocaml
+let named_authors ctx =
+  let open Post in
+  query ()
+  |> with_user ~as_:"author" ~target:User.user_entity
+  |> Posts.load_edge_named ctx
+       ~decode_source:post_of_bson_doc_result
+       ~decode_target:user_of_bson_doc_result
+```
 
 Backends execute those
 typed values with `result`-returning functions such as

@@ -129,6 +129,14 @@ type edge_query = {
   target_query : query;
 }
 
+type ('source, 'target) loaded_edge = {
+  loaded_edge : string;
+  loaded_alias : string option;
+  loaded_name : string;
+  loaded_source : 'source;
+  loaded_target : 'target option;
+}
+
 type aggregate_op = Count | Min of string | Max of string | Sum of string | Avg of string
 
 type aggregate = {
@@ -203,6 +211,20 @@ module Edge_query : sig
     target:entity ->
     query ->
     edge_query
+end
+
+module Edge_load : sig
+  val name : edge_query -> string
+
+  val of_pair :
+    edge_query ->
+    'source * 'target option ->
+    ('source, 'target) loaded_edge
+
+  val of_pairs :
+    edge_query ->
+    ('source * 'target option) list ->
+    ('source, 'target) loaded_edge list
 end
 
 module Aggregate : sig
