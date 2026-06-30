@@ -80,6 +80,27 @@ let test_mongo_update_planning () =
   Alcotest.(check int64)
     "increment" 1L (Bson.get_int64 (Bson.get_element "revision" inc))
 
+let test_mongo_document_planning () =
+  let doc =
+    match
+      Ent_ocaml_mongo.document_to_bson
+        Ent_ocaml.
+          [
+            ("id", V_string "post_1");
+            ("media_ids", V_list [ V_string "media_1"; V_string "media_2" ]);
+            ("published_at_ms", V_null);
+          ]
+    with
+    | Ok doc -> doc
+    | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+  in
+  Alcotest.(check string)
+    "id" "post_1" (Bson.get_string (Bson.get_element "id" doc));
+  Alcotest.(check int)
+    "media count" 2
+    (Bson.get_list (Bson.get_element "media_ids" doc) |> List.length);
+  ignore (Bson.get_null (Bson.get_element "published_at_ms" doc))
+
 let () =
   Alcotest.run "ent-ocaml"
     [
@@ -90,6 +111,8 @@ let () =
           Alcotest.test_case "filter planning" `Quick test_mongo_filter_planning;
           Alcotest.test_case "sort planning" `Quick test_mongo_sort_planning;
           Alcotest.test_case "update planning" `Quick test_mongo_update_planning;
+          Alcotest.test_case "document planning" `Quick
+            test_mongo_document_planning;
         ]
       );
     ]

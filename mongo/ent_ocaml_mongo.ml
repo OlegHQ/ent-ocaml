@@ -148,7 +148,7 @@ let find_options (query : Ent_ocaml.query) =
            limit = query.limit;
          })
 
-let fields_doc fields =
+let document_to_bson fields =
   let rec loop doc = function
     | [] -> Ok doc
     | (name, value) :: rest -> (
@@ -164,7 +164,7 @@ let update_to_bson (mutation : Ent_ocaml.mutation) =
     if doc = Bson.empty then update
     else Bson.add_element name (Bson.create_doc_element doc) update
   in
-  match (fields_doc mutation.set, fields_doc mutation.add) with
+  match (document_to_bson mutation.set, document_to_bson mutation.add) with
   | Error _ as error, _ | _, (Error _ as error) -> error
   | Ok set_doc, Ok inc_doc ->
       let unset_doc =
@@ -225,6 +225,15 @@ let insert ctx entity doc =
   | Error error when Mongo_error.is_duplicate_key error ->
       Error (`Constraint "duplicate key")
   | Error error -> Error (backend_error "insert" entity error)
+
+let insert_values ctx (mutation : Ent_ocaml.mutation) =
+  match mutation.op with
+  | Ent_ocaml.Create -> (
+      match document_to_bson mutation.set with
+      | Error _ as error -> error
+      | Ok doc -> insert ctx mutation.entity doc)
+  | Update_one | Update | Delete_one | Delete ->
+      Error (`Bad_query "insert_values expects Create mutation op")
 
 let update ctx (mutation : Ent_ocaml.mutation) =
   let entity = mutation.Ent_ocaml.entity in

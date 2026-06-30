@@ -53,6 +53,37 @@ let test_generated_query_api () =
     | Ent_ocaml.Eq ("user_id", V_string "user_1") -> true
     | _ -> false)
 
+let test_generated_mutation_api () =
+  let create =
+    Post.create
+      [
+        Post.id "post_1";
+        Post.user_id "user_1";
+        Post.body "hello";
+        Post.media_ids [ "media_1"; "media_2" ];
+        Post.status "draft";
+        Post.published_at_ms None;
+      ]
+  in
+  Alcotest.(check bool)
+    "create op" true
+    (match create.op with Ent_ocaml.Create -> true | _ -> false);
+  Alcotest.(check int) "create fields" 6 (List.length create.set);
+  let update =
+    Post.update_one ~where:[ Post.id_eq "post_1" ]
+      ~set:[ Post.body "updated" ] ~clear:[ "published_at_ms" ] ()
+  in
+  Alcotest.(check bool)
+    "update one op" true
+    (match update.op with Ent_ocaml.Update_one -> true | _ -> false);
+  Alcotest.(check int) "update predicates" 1 (List.length update.predicates);
+  Alcotest.(check int) "update set" 1 (List.length update.set);
+  Alcotest.(check int) "update clear" 1 (List.length update.clear);
+  let delete = Post.delete_one ~where:[ Post.id_eq "post_1" ] () in
+  Alcotest.(check bool)
+    "delete one op" true
+    (match delete.op with Ent_ocaml.Delete_one -> true | _ -> false)
+
 let () =
   Alcotest.run "ent-ocaml-ppx"
     [
@@ -61,5 +92,7 @@ let () =
           Alcotest.test_case "entity metadata" `Quick test_entity_metadata;
           Alcotest.test_case "generated query api" `Quick
             test_generated_query_api;
+          Alcotest.test_case "generated mutation api" `Quick
+            test_generated_mutation_api;
         ] );
     ]

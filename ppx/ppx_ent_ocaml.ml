@@ -163,7 +163,65 @@ let rec value_constructor field =
           ({ txt = Longident.Ldot (Longident.Lident "Option", "t"); _ }, [ inner ])
         ->
           value_constructor { field with pld_type = inner }
+      | Ptyp_constr ({ txt = Longident.Lident "list"; _ }, [ inner ])
+      | Ptyp_constr
+          ({ txt = Longident.Ldot (Longident.Lident "List", "t"); _ }, [ inner ])
+        ->
+          let inner = { field with pld_type = inner } in
+          Option.map (fun _ -> [ "Ent_ocaml"; "V_list" ]) (value_constructor inner)
       | _ -> None)
+
+let rec value_expr ~loc field value =
+  match Attribute.get ent_enum_attr field with
+  | Some _ -> constr_arg ~loc [ "Ent_ocaml"; "V_string" ] value
+  | None -> (
+      match field.pld_type.ptyp_desc with
+      | Ptyp_constr ({ txt = Longident.Lident "string"; _ }, []) ->
+          constr_arg ~loc [ "Ent_ocaml"; "V_string" ] value
+      | Ptyp_constr ({ txt = Longident.Lident "int"; _ }, []) ->
+          constr_arg ~loc [ "Ent_ocaml"; "V_int" ] value
+      | Ptyp_constr ({ txt = Longident.Lident "int32"; _ }, [])
+      | Ptyp_constr
+          ({ txt = Longident.Ldot (Longident.Lident "Int32", "t"); _ }, []) ->
+          constr_arg ~loc [ "Ent_ocaml"; "V_int32" ] value
+      | Ptyp_constr ({ txt = Longident.Lident "int64"; _ }, [])
+      | Ptyp_constr
+          ({ txt = Longident.Ldot (Longident.Lident "Int64", "t"); _ }, []) ->
+          constr_arg ~loc [ "Ent_ocaml"; "V_int64" ] value
+      | Ptyp_constr ({ txt = Longident.Lident "float"; _ }, []) ->
+          constr_arg ~loc [ "Ent_ocaml"; "V_float" ] value
+      | Ptyp_constr ({ txt = Longident.Lident "bool"; _ }, []) ->
+          constr_arg ~loc [ "Ent_ocaml"; "V_bool" ] value
+      | Ptyp_constr ({ txt = Longident.Lident "option"; _ }, [ inner ])
+      | Ptyp_constr
+          ({ txt = Longident.Ldot (Longident.Lident "Option", "t"); _ }, [ inner ])
+        ->
+          A.pexp_match ~loc value
+            [
+              A.case
+                ~lhs:(A.ppat_construct ~loc (lid ~loc [ "None" ]) None)
+                ~guard:None ~rhs:(constr ~loc [ "Ent_ocaml"; "V_null" ]);
+              A.case
+                ~lhs:
+                  (A.ppat_construct ~loc (lid ~loc [ "Some" ])
+                     (Some (pvar ~loc "value")))
+                ~guard:None
+                ~rhs:(value_expr ~loc { field with pld_type = inner } (evar ~loc "value"));
+            ]
+      | Ptyp_constr ({ txt = Longident.Lident "list"; _ }, [ inner ])
+      | Ptyp_constr
+          ({ txt = Longident.Ldot (Longident.Lident "List", "t"); _ }, [ inner ])
+        ->
+          let inner = { field with pld_type = inner } in
+          let mapper =
+            A.pexp_fun ~loc Nolabel None (pvar ~loc "value")
+              (value_expr ~loc inner (evar ~loc "value"))
+          in
+          constr_arg ~loc [ "Ent_ocaml"; "V_list" ]
+            (app ~loc (ident ~loc [ "List"; "map" ]) [ mapper; value ])
+      | _ ->
+          Location.raise_errorf ~loc:field.pld_type.ptyp_loc
+            "ent deriving cannot generate value helper for this field type")
 
 let predicate_function ~loc name constructor field_name value_path =
   let value = evar ~loc "value" in
@@ -259,8 +317,26 @@ let field_helper_items field =
   let loc = field.pld_loc in
   let field_name = field.pld_name.txt in
   let order = order_function ~loc field_name in
+  let value_item =
+    match value_constructor field with
+    | None -> []
+    | Some _ ->
+        [
+          A.pstr_value ~loc Nonrecursive
+            [
+              A.value_binding ~loc ~pat:(pvar ~loc field_name)
+                ~expr:
+                  (A.pexp_fun ~loc Nolabel None (pvar ~loc "value")
+                     (A.pexp_tuple ~loc
+                        [
+                          str ~loc field_name;
+                          value_expr ~loc field (evar ~loc "value");
+                        ]));
+            ];
+        ]
+  in
   match value_constructor field with
-  | None -> [ order ]
+  | None -> value_item @ [ order ]
   | Some value_path ->
       let base =
         [
@@ -298,7 +374,7 @@ let field_helper_items field =
             ]
         | _ -> []
       in
-      base @ nil_helpers @ string_helpers
+      value_item @ base @ nil_helpers @ string_helpers
 
 let field_expr field =
   let loc = field.pld_loc in
@@ -380,7 +456,69 @@ let gen_query_module td =
                            query_body)))));
       ]
   in
-  let structure = query :: List.concat_map field_helper_items fields in
+  let mutation_record ~op ~predicates ~set ~clear ~add =
+    A.pexp_record ~loc
+      [
+        (lid ~loc [ "Ent_ocaml"; "entity" ], evar ~loc (type_name ^ "_entity"));
+        (lid ~loc [ "Ent_ocaml"; "op" ], constr ~loc [ "Ent_ocaml"; op ]);
+        (lid ~loc [ "Ent_ocaml"; "predicates" ], predicates);
+        (lid ~loc [ "Ent_ocaml"; "set" ], set);
+        (lid ~loc [ "Ent_ocaml"; "clear" ], clear);
+        (lid ~loc [ "Ent_ocaml"; "add" ], add);
+      ]
+      None
+  in
+  let create =
+    A.pstr_value ~loc Nonrecursive
+      [
+        A.value_binding ~loc ~pat:(pvar ~loc "create")
+          ~expr:
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "fields")
+               (mutation_record ~op:"Create" ~predicates:(list ~loc [])
+                  ~set:(evar ~loc "fields") ~clear:(list ~loc [])
+                  ~add:(list ~loc [])));
+      ]
+  in
+  let update_fn name op =
+    A.pstr_value ~loc Nonrecursive
+      [
+        A.value_binding ~loc ~pat:(pvar ~loc name)
+          ~expr:
+            (A.pexp_fun ~loc (Optional "where") (Some (list ~loc []))
+               (pvar ~loc "where")
+               (A.pexp_fun ~loc (Optional "set") (Some (list ~loc []))
+                  (pvar ~loc "set")
+                  (A.pexp_fun ~loc (Optional "clear") (Some (list ~loc []))
+                     (pvar ~loc "clear")
+                     (A.pexp_fun ~loc (Optional "add") (Some (list ~loc []))
+                        (pvar ~loc "add")
+                        (A.pexp_fun ~loc Nolabel None (unit_pat ~loc)
+                           (mutation_record ~op ~predicates:(evar ~loc "where")
+                              ~set:(evar ~loc "set")
+                              ~clear:(evar ~loc "clear")
+                              ~add:(evar ~loc "add")))))));
+      ]
+  in
+  let delete_fn name op =
+    A.pstr_value ~loc Nonrecursive
+      [
+        A.value_binding ~loc ~pat:(pvar ~loc name)
+          ~expr:
+            (A.pexp_fun ~loc (Optional "where") (Some (list ~loc []))
+               (pvar ~loc "where")
+               (A.pexp_fun ~loc Nolabel None (unit_pat ~loc)
+                  (mutation_record ~op ~predicates:(evar ~loc "where")
+                     ~set:(list ~loc []) ~clear:(list ~loc [])
+                     ~add:(list ~loc []))));
+      ]
+  in
+  let structure =
+    query :: create :: update_fn "update_one" "Update_one"
+    :: update_fn "update" "Update"
+    :: delete_fn "delete_one" "Delete_one"
+    :: delete_fn "delete" "Delete"
+    :: List.concat_map field_helper_items fields
+  in
   A.pstr_module ~loc
     (A.module_binding ~loc ~name:{ loc; txt = Some module_name }
        ~expr:(A.pmod_structure ~loc structure))
