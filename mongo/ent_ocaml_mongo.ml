@@ -345,6 +345,35 @@ let group_pipeline_to_bson (group : Ent_ocaml.group_aggregate) =
       |> Result.map (fun key -> Some key))
     group.aggregate
 
+let aggregate_scan_pipeline_to_bson (scan : Ent_ocaml.aggregate_scan) =
+  let query = scan.query in
+  let scan_expr (name, op) =
+    let field_key =
+      match aggregate_field op with
+      | None -> Ok ""
+      | Some field -> field_storage_key query.entity field
+    in
+    field_key |> Result.map (fun key -> (name, aggregate_expr op key))
+  in
+  let rec exprs acc = function
+    | [] -> Ok (List.rev acc)
+    | op :: rest -> (
+        match scan_expr op with
+        | Ok expr -> exprs (expr :: acc) rest
+        | Error _ as error -> error)
+  in
+  match (filter_to_bson query, exprs [] scan.ops) with
+  | Error _ as error, _ | _, (Error _ as error) -> error
+  | Ok filter, Ok exprs ->
+      let match_stage =
+        if filter = Bson.empty then []
+        else [ doc [ ("$match", Bson.create_doc_element filter) ] ]
+      in
+      let group =
+        Bson.add_element "_id" (Bson.create_null ()) (doc exprs)
+      in
+      Ok (match_stage @ [ doc [ ("$group", Bson.create_doc_element group) ] ])
+
 let index_storage_fields (entity : Ent_ocaml.entity) (index : Ent_ocaml.index) =
   let rec loop acc = function
     | [] -> Ok (List.rev acc)
@@ -681,6 +710,31 @@ let aggregate ctx (aggregate : Ent_ocaml.aggregate) =
           match Bson.get_element "value" doc with
           | value -> value_of_bson_element value |> Result.map Option.some
           | exception Not_found -> Error (`Decode "aggregate value missing")))
+
+let aggregate_scan ctx (scan : Ent_ocaml.aggregate_scan) =
+  let query = scan.Ent_ocaml.query in
+  match aggregate_scan_pipeline_to_bson scan with
+  | Error _ as error -> error
+  | Ok pipeline -> (
+      match run_aggregate ctx query pipeline with
+      | Error _ as error -> error
+      | Ok [] -> Ok (List.map (fun (name, _) -> (name, None)) scan.ops)
+      | Ok (doc :: _) ->
+          let decode (name, _) =
+            match Bson.get_element name doc with
+            | exception Not_found -> Ok (name, None)
+            | element ->
+                value_of_bson_element element
+                |> Result.map (fun value -> (name, Some value))
+          in
+          let rec loop acc = function
+            | [] -> Ok (List.rev acc)
+            | op :: rest -> (
+                match decode op with
+                | Ok value -> loop (value :: acc) rest
+                | Error _ as error -> error)
+          in
+          loop [] scan.ops)
 
 let group ctx (group : Ent_ocaml.group_aggregate) =
   let query = group.Ent_ocaml.aggregate.query in

@@ -105,6 +105,16 @@ module Memory_backend = struct
     | Ent_ocaml.Min _ | Ent_ocaml.Max _ | Ent_ocaml.Sum _ | Ent_ocaml.Avg _ ->
         Ok (Some (Ent_ocaml.V_int64 42L))
 
+  let aggregate_scan () (scan : Ent_ocaml.aggregate_scan) =
+    Ok
+      (List.map
+         (fun (name, op) ->
+           match op with
+           | Ent_ocaml.Count -> (name, Some (Ent_ocaml.V_int 2))
+           | Min _ | Max _ | Sum _ | Avg _ ->
+               (name, Some (Ent_ocaml.V_int64 42L)))
+         scan.ops)
+
   let group () (group : Ent_ocaml.group_aggregate) =
     Ok
       [
@@ -447,6 +457,21 @@ let test_generated_store_api () =
   | Ok (Some (Ent_ocaml.V_int64 value)) ->
       Alcotest.(check int64) "aggregate value" 42L value
   | Ok _ -> Alcotest.fail "unexpected aggregate result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  let scanned =
+    let open Post in
+    query ()
+    |> where (status_eq "draft")
+    |> scan [ count_as "posts"; sum_as "created" select_created_at_ms ]
+  in
+  (match Store.aggregate_scan () scanned with
+  | Ok
+      [
+        ("posts", Some (Ent_ocaml.V_int 2));
+        ("created", Some (Ent_ocaml.V_int64 value));
+      ] ->
+      Alcotest.(check int64) "scan aggregate value" 42L value
+  | Ok _ -> Alcotest.fail "unexpected aggregate scan result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
   let grouped =
     let open Post in

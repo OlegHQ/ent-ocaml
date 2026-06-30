@@ -350,6 +350,29 @@ let test_mongo_aggregate_planning () =
     "max storage key" "$_id"
     (Bson.get_string (Bson.get_element "$max" value))
 
+let test_mongo_aggregate_scan_planning () =
+  let scan =
+    Ent_ocaml.Aggregate.scan
+      Ent_ocaml.Aggregate.
+        [ count_as "posts"; sum_as "views" "id" ]
+      (query ~predicates:Ent_ocaml.[ Eq ("user_id", V_string "user_1") ] ())
+  in
+  let pipeline =
+    match Ent_ocaml_mongo.aggregate_scan_pipeline_to_bson scan with
+    | Ok pipeline -> pipeline
+    | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+  in
+  Alcotest.(check int) "scan pipeline stages" 2 (List.length pipeline);
+  let group_stage = List.nth pipeline 1 in
+  let group = Bson.get_doc_element (Bson.get_element "$group" group_stage) in
+  let posts = Bson.get_doc_element (Bson.get_element "posts" group) in
+  let views = Bson.get_doc_element (Bson.get_element "views" group) in
+  Alcotest.(check int32)
+    "scan count" 1l (Bson.get_int32 (Bson.get_element "$sum" posts));
+  Alcotest.(check string)
+    "scan storage key" "$_id"
+    (Bson.get_string (Bson.get_element "$sum" views))
+
 let test_mongo_group_planning () =
   let pipeline =
     match
@@ -535,6 +558,8 @@ let () =
             test_mongo_projection_missing_field;
           Alcotest.test_case "aggregate planning" `Quick
             test_mongo_aggregate_planning;
+          Alcotest.test_case "aggregate scan planning" `Quick
+            test_mongo_aggregate_scan_planning;
           Alcotest.test_case "group planning" `Quick test_mongo_group_planning;
           Alcotest.test_case "update planning" `Quick test_mongo_update_planning;
           Alcotest.test_case "upsert planning" `Quick test_mongo_upsert_planning;

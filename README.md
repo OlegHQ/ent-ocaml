@@ -103,6 +103,17 @@ let views_by_status =
   |> Posts.group ctx
 ```
 
+Aggregate scans return several named values from one composed query:
+
+```ocaml
+let summary =
+  let open Post in
+  query ()
+  |> where (user (User.id_eq user_id))
+  |> scan [ count_as "posts"; sum_as "views" select_views ]
+  |> Posts.aggregate_scan ctx
+```
+
 Stored foreign-key edge traversals are also first-class values:
 
 ```ocaml

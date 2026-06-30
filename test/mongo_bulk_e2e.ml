@@ -238,6 +238,11 @@ let value_to_int64 = function
   | Ent_ocaml.V_int value -> Some (Int64.of_int value)
   | _ -> None
 
+let assoc_int64 key values =
+  match List.assoc_opt key values with
+  | Some (Some value) -> value_to_int64 value
+  | Some None | None -> None
+
 let group_value key groups =
   match
     List.find_opt
@@ -302,6 +307,15 @@ let run_flow client =
     Ent_ocaml_mongo.aggregate ctx (Ent_ocaml.Aggregate.avg "views" query_all)
   in
   assert_float_value "aggregate avg returns all views" 15.0 avg_value;
+  let* scanned =
+    Ent_ocaml_mongo.aggregate_scan ctx
+      (Ent_ocaml.Aggregate.scan
+         Ent_ocaml.Aggregate.[ count_as "posts"; sum_as "views" "views" ]
+         query_all)
+  in
+  assert_true "aggregate scan returns count and sum"
+    (assoc_int64 "posts" scanned = Some 2L
+    && assoc_int64 "views" scanned = Some 30L);
   let* grouped =
     Ent_ocaml_mongo.group ctx
       (Ent_ocaml.Aggregate.group_by "user_id"

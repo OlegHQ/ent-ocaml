@@ -114,6 +114,11 @@ type aggregate = {
   op : aggregate_op;
 }
 
+type aggregate_scan = {
+  query : query;
+  ops : (string * aggregate_op) list;
+}
+
 type group_aggregate = {
   aggregate : aggregate;
   group : string;
@@ -179,6 +184,12 @@ module Aggregate = struct
   let max field query = { query; op = Max field }
   let sum field query = { query; op = Sum field }
   let avg field query = { query; op = Avg field }
+  let count_as name = (name, Count)
+  let min_as name field = (name, Min field)
+  let max_as name field = (name, Max field)
+  let sum_as name field = (name, Sum field)
+  let avg_as name field = (name, Avg field)
+  let scan ops query = { query; ops }
   let group_by group aggregate = { aggregate; group }
 end
 
@@ -423,6 +434,8 @@ module type BACKEND = sig
   val upsert_one : ctx -> mutation -> (unit, error) result
   val delete : ctx -> mutation -> (int, error) result
   val aggregate : ctx -> aggregate -> (value option, error) result
+  val aggregate_scan :
+    ctx -> aggregate_scan -> ((string * value option) list, error) result
   val group : ctx -> group_aggregate -> (group_result list, error) result
   val count : ctx -> query -> (int, error) result
   val transaction : ctx -> (tx -> ('a, error) result) -> ('a, error) result
@@ -467,6 +480,8 @@ module type STORE_BACKEND = sig
   val upsert_one : ctx -> mutation -> (unit, error) result
   val delete : ctx -> mutation -> (int, error) result
   val aggregate : ctx -> aggregate -> (value option, error) result
+  val aggregate_scan :
+    ctx -> aggregate_scan -> ((string * value option) list, error) result
   val group : ctx -> group_aggregate -> (group_result list, error) result
   val count : ctx -> query -> (int, error) result
 end
