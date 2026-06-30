@@ -38,13 +38,14 @@ let test_generated_query_api () =
         [
           Post.user_id_eq "user_1";
           Post.body_contains "hello";
+          Post.media_ids_eq [ "media_1"; "media_2" ];
           Post.published_at_ms_is_nil ();
         ]
       ~order:[ Post.published_at_ms_order ~direction:Ent_ocaml.Desc () ]
       ~limit:10 ()
   in
   Alcotest.(check string) "entity" "Post" query.entity.name;
-  Alcotest.(check int) "predicates" 3 (List.length query.predicates);
+  Alcotest.(check int) "predicates" 4 (List.length query.predicates);
   Alcotest.(check int) "orders" 1 (List.length query.orders);
   Alcotest.(check (option int)) "limit" (Some 10) query.limit;
   Alcotest.(check bool)

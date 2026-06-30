@@ -223,14 +223,14 @@ let rec value_expr ~loc field value =
           Location.raise_errorf ~loc:field.pld_type.ptyp_loc
             "ent deriving cannot generate value helper for this field type")
 
-let predicate_function ~loc name constructor field_name value_path =
+let predicate_function ~loc name constructor field_name field =
   let value = evar ~loc "value" in
   let body =
     constr_arg ~loc constructor
       (A.pexp_tuple ~loc
          [
            str ~loc field_name;
-           constr_arg ~loc value_path value;
+           value_expr ~loc field value;
          ])
   in
   A.pstr_value ~loc Nonrecursive
@@ -240,11 +240,11 @@ let predicate_function ~loc name constructor field_name value_path =
         ~expr:(A.pexp_fun ~loc Nolabel None (pvar ~loc "value") body);
     ]
 
-let list_predicate_function ~loc name constructor field_name value_path =
+let list_predicate_function ~loc name constructor field_name field =
   let values = evar ~loc "values" in
   let mapper =
     A.pexp_fun ~loc Nolabel None (pvar ~loc "value")
-      (constr_arg ~loc value_path (evar ~loc "value"))
+      (value_expr ~loc field (evar ~loc "value"))
   in
   let body =
     constr_arg ~loc constructor
@@ -341,13 +341,13 @@ let field_helper_items field =
       let base =
         [
           predicate_function ~loc (field_name ^ "_eq") [ "Ent_ocaml"; "Eq" ]
-            field_name value_path;
+            field_name field;
           predicate_function ~loc (field_name ^ "_neq") [ "Ent_ocaml"; "Neq" ]
-            field_name value_path;
+            field_name field;
           list_predicate_function ~loc (field_name ^ "_in")
-            [ "Ent_ocaml"; "In" ] field_name value_path;
+            [ "Ent_ocaml"; "In" ] field_name field;
           list_predicate_function ~loc (field_name ^ "_not_in")
-            [ "Ent_ocaml"; "Not_in" ] field_name value_path;
+            [ "Ent_ocaml"; "Not_in" ] field_name field;
           order;
         ]
       in
