@@ -2248,7 +2248,7 @@ let join_source_target_ids join join_docs =
 let collect_join_target_ids join_docs join =
   collect_document_values join.Ent_ocaml.target_key join_docs
 
-let traverse_as ctx (edge_query : Ent_ocaml.edge_query) ~decode =
+let traverse_docs ctx (edge_query : Ent_ocaml.edge_query) =
   match stored_edge edge_query with
   | Error _ as error -> error
   | Ok (Stored_to_one { source_fk_key }) -> (
@@ -2261,7 +2261,7 @@ let traverse_as ctx (edge_query : Ent_ocaml.edge_query) ~decode =
           | Ok ids -> (
               match find_traversal_targets ctx edge_query ids with
               | Error _ as error -> error
-              | Ok target_docs -> decode_documents ~decode target_docs)))
+              | Ok target_docs -> Ok target_docs)))
   | Ok (Stored_to_many { source_id_key; target_fk_key }) -> (
       let source_query = { edge_query.source with Ent_ocaml.select = [] } in
       match find ctx source_query with
@@ -2272,7 +2272,7 @@ let traverse_as ctx (edge_query : Ent_ocaml.edge_query) ~decode =
           | Ok source_ids -> (
               match find_to_many_targets ctx edge_query target_fk_key source_ids with
               | Error _ as error -> error
-              | Ok target_docs -> decode_documents ~decode target_docs)))
+              | Ok target_docs -> Ok target_docs)))
   | Ok (Join_to_many { source_id_key; join }) -> (
       let source_query = { edge_query.source with Ent_ocaml.select = [] } in
       match find ctx source_query with
@@ -2289,7 +2289,48 @@ let traverse_as ctx (edge_query : Ent_ocaml.edge_query) ~decode =
                   | Ok target_ids -> (
                       match find_traversal_targets ctx edge_query target_ids with
                       | Error _ as error -> error
-                      | Ok target_docs -> decode_documents ~decode target_docs)))))
+                      | Ok target_docs -> Ok target_docs)))))
+
+let traverse_as ctx (edge_query : Ent_ocaml.edge_query) ~decode =
+  match traverse_docs ctx edge_query with
+  | Error _ as error -> error
+  | Ok target_docs -> decode_documents ~decode target_docs
+
+let source_query_from_docs entity docs =
+  match field_storage_key entity "id" with
+  | Error _ as error -> error
+  | Ok id_key -> (
+      match collect_document_values id_key docs with
+      | Error _ as error -> error
+      | Ok ids ->
+          Ok
+            (Ent_ocaml.Query.make entity
+            |> Ent_ocaml.Query.where (Ent_ocaml.In ("id", ids))))
+
+let traverse_chain_docs ctx (chain : Ent_ocaml.edge_chain) =
+  let rec loop current_entity docs = function
+    | [] -> Ok docs
+    | step :: rest -> (
+        match source_query_from_docs current_entity docs with
+        | Error _ as error -> error
+        | Ok source ->
+            let edge_query =
+              Ent_ocaml.Edge_query.make ?as_:step.Ent_ocaml.chain_edge_alias
+                ~target_query:step.chain_target_query ~edge:step.chain_edge
+                ~target:step.chain_target source
+            in
+            match traverse_docs ctx edge_query with
+            | Error _ as error -> error
+            | Ok docs -> loop step.chain_target docs rest)
+  in
+  match traverse_docs ctx chain.chain_first with
+  | Error _ as error -> error
+  | Ok docs -> loop chain.chain_first.target docs chain.chain_rest
+
+let traverse_chain_as ctx chain ~decode =
+  match traverse_chain_docs ctx chain with
+  | Error _ as error -> error
+  | Ok docs -> decode_documents ~decode docs
 
 let load_edge_as ctx (edge_query : Ent_ocaml.edge_query) ~decode_source
     ~decode_target =

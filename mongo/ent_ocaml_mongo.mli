@@ -109,6 +109,12 @@ val traverse_as :
   decode:(Bson.t -> ('a, string) result) ->
   ('a list, Ent_ocaml.error) result
 
+val traverse_chain_as :
+  ctx ->
+  Ent_ocaml.edge_chain ->
+  decode:(Bson.t -> ('a, string) result) ->
+  ('a list, Ent_ocaml.error) result
+
 val load_edge_as :
   ctx ->
   Ent_ocaml.edge_query ->

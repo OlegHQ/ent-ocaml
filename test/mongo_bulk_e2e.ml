@@ -1251,6 +1251,27 @@ let run_flow client =
         ("post_2", Some "mongo");
         ("post_2b", Some "ocaml");
       ]);
+  let user_post_tags =
+    query_posts_from_user
+    |> Ent_ocaml.Edge_chain.start
+    |> Ent_ocaml.Edge_chain.then_ ~as_:"labels" ~edge:"tags" ~target:tag_entity
+         ~target_query:
+           Ent_ocaml.
+             {
+               entity = tag_entity;
+               predicates = [ Neq ("name", V_string "skip") ];
+               select = [];
+               orders = [ Order.field ~direction:Asc "name" ];
+               limit = None;
+               offset = None;
+             }
+  in
+  let* traversed_user_post_tags =
+    Ent_ocaml_mongo.traverse_chain_as ctx user_post_tags ~decode:(fun doc ->
+        Ok (Bson.get_string (Bson.get_element "name" doc)))
+  in
+  assert_true "graph traversal chain returns tags through posts"
+    (traversed_user_post_tags = [ "mongo"; "ocaml" ]);
   let editor_edge =
     Ent_ocaml.Edge_query.make ~as_:"editor" ~edge:"user" ~target:user_entity
       query_user_1

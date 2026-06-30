@@ -143,6 +143,18 @@ type edge_query = {
   target_query : query;
 }
 
+type edge_chain_step = {
+  chain_edge : string;
+  chain_edge_alias : string option;
+  chain_target : entity;
+  chain_target_query : query;
+}
+
+type edge_chain = {
+  chain_first : edge_query;
+  chain_rest : edge_chain_step list;
+}
+
 type ('source, 'target) loaded_edge = {
   loaded_edge : string;
   loaded_alias : string option;
@@ -271,6 +283,21 @@ module Edge_query : sig
     target:entity ->
     query ->
     edge_query
+end
+
+module Edge_chain : sig
+  val start : edge_query -> edge_chain
+
+  val then_ :
+    ?as_:string ->
+    ?target_query:query ->
+    edge:string ->
+    target:entity ->
+    edge_chain ->
+    edge_chain
+
+  val source : edge_chain -> query
+  val target : edge_chain -> entity
 end
 
 module Edge_load : sig

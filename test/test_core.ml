@@ -527,6 +527,32 @@ let test_edge_query_alias () =
   Alcotest.(check int)
     "loaded group rows" 1 (List.length group.loaded_group_rows)
 
+let test_edge_chain_builder () =
+  let first =
+    Ent_ocaml.Edge_query.make ~as_:"posts" ~edge:"posts" ~target:post_entity
+      (Ent_ocaml.Query.make user_entity)
+  in
+  let chain =
+    first
+    |> Ent_ocaml.Edge_chain.start
+    |> Ent_ocaml.Edge_chain.then_ ~as_:"labels" ~edge:"tags"
+         ~target:org_entity
+  in
+  Alcotest.(check string)
+    "chain source" "User"
+    (Ent_ocaml.Edge_chain.source chain).Ent_ocaml.entity.name;
+  Alcotest.(check string)
+    "chain target" "Org" (Ent_ocaml.Edge_chain.target chain).name;
+  Alcotest.(check string)
+    "first edge" "posts" chain.Ent_ocaml.chain_first.edge;
+  Alcotest.(check int) "rest length" 1 (List.length chain.chain_rest);
+  match chain.chain_rest with
+  | [ step ] ->
+      Alcotest.(check string) "next edge" "tags" step.chain_edge;
+      Alcotest.(check (option string))
+        "next alias" (Some "labels") step.chain_edge_alias
+  | _ -> Alcotest.fail "unexpected chain rest"
+
 let test_transaction_hooks () =
   let events = ref [] in
   let transaction ?options:_ () f = f () in
@@ -1367,6 +1393,8 @@ let () =
           Alcotest.test_case "edge interceptor chain" `Quick
             test_edge_interceptor_chain;
           Alcotest.test_case "edge query alias" `Quick test_edge_query_alias;
+          Alcotest.test_case "edge chain builder" `Quick
+            test_edge_chain_builder;
           Alcotest.test_case "transaction hooks" `Quick test_transaction_hooks;
           Alcotest.test_case "transaction options" `Quick
             test_transaction_options;

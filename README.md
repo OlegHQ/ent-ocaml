@@ -709,7 +709,21 @@ let users_with_posts ctx =
   |> with_posts ~as_:"posts" ~target:Post.post_entity
   |> Users.load_edge ctx
        ~decode_source:user_of_bson_doc_result
-	       ~decode_target:post_of_bson_doc_result
+       ~decode_target:post_of_bson_doc_result
+```
+
+Graph traversals can be composed as explicit edge chains when a workflow needs
+to walk several relationships and decode the final target rows:
+
+```ocaml
+let user_post_tags ctx user_id =
+  let open User in
+  by_id user_id
+  |> query_posts ~target:Post.post_entity
+  |> Ent_ocaml.Edge_chain.start
+  |> Ent_ocaml.Edge_chain.then_ ~as_:"labels" ~edge:"tags"
+       ~target:Tag.tag_entity
+  |> Ent_ocaml_mongo.traverse_chain_as ctx ~decode:tag_of_bson_doc_result
 ```
 
 Mongo join-backed to-many edges use the same query and eager-load API. Declare

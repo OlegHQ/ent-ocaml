@@ -143,6 +143,18 @@ type edge_query = {
   target_query : query;
 }
 
+type edge_chain_step = {
+  chain_edge : string;
+  chain_edge_alias : string option;
+  chain_target : entity;
+  chain_target_query : query;
+}
+
+type edge_chain = {
+  chain_first : edge_query;
+  chain_rest : edge_chain_step list;
+}
+
 type ('source, 'target) loaded_edge = {
   loaded_edge : string;
   loaded_alias : string option;
@@ -529,6 +541,31 @@ module Edge_query = struct
       Option.value target_query ~default:(Query.make target)
     in
     { source; edge; edge_alias = as_; target; target_query }
+end
+
+module Edge_chain = struct
+  let start edge_query = { chain_first = edge_query; chain_rest = [] }
+
+  let then_ ?as_ ?target_query ~edge ~target chain =
+    let target_query =
+      Option.value target_query ~default:(Query.make target)
+    in
+    let step =
+      {
+        chain_edge = edge;
+        chain_edge_alias = as_;
+        chain_target = target;
+        chain_target_query = target_query;
+      }
+    in
+    { chain with chain_rest = chain.chain_rest @ [ step ] }
+
+  let source chain = chain.chain_first.source
+
+  let target chain =
+    match List.rev chain.chain_rest with
+    | [] -> chain.chain_first.target
+    | step :: _ -> step.chain_target
 end
 
 module Edge_load = struct
