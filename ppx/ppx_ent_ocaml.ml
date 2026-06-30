@@ -100,6 +100,21 @@ let ent_validate_attr =
     Ast_pattern.(single_expr_payload (elist __))
     (fun validators -> validators)
 
+let ent_sensitive_attr =
+  Attribute.declare "ent.sensitive" Attribute.Context.label_declaration
+    Ast_pattern.(pstr nil)
+    ()
+
+let ent_deprecated_attr =
+  Attribute.declare "ent.deprecated" Attribute.Context.label_declaration
+    Ast_pattern.(single_expr_payload (estring __))
+    (fun reason -> reason)
+
+let ent_comment_attr =
+  Attribute.declare "ent.comment" Attribute.Context.label_declaration
+    Ast_pattern.(single_expr_payload (estring __))
+    (fun comment -> comment)
+
 let has_attr attr item = Attribute.get attr item |> Option.is_some
 
 let snake_to_pascal name =
@@ -969,6 +984,11 @@ let field_expr field =
       (lid ~loc [ "Ent_ocaml"; "immutable" ], bool ~loc (has_attr ent_immutable_attr field));
       (lid ~loc [ "Ent_ocaml"; "nillable" ], bool ~loc (is_option field));
       (lid ~loc [ "Ent_ocaml"; "validators" ], validators_expr ~loc field);
+      (lid ~loc [ "Ent_ocaml"; "sensitive" ], bool ~loc (has_attr ent_sensitive_attr field));
+      ( lid ~loc [ "Ent_ocaml"; "deprecated" ],
+        option ~loc (Option.map (str ~loc) (Attribute.get ent_deprecated_attr field)) );
+      ( lid ~loc [ "Ent_ocaml"; "comment" ],
+        option ~loc (Option.map (str ~loc) (Attribute.get ent_comment_attr field)) );
     ]
     None
 

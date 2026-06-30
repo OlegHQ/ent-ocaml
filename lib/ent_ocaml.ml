@@ -34,6 +34,9 @@ type field = {
   immutable : bool;
   nillable : bool;
   validators : (value -> (unit, string) result) list;
+  sensitive : bool;
+  deprecated : string option;
+  comment : string option;
 }
 
 type edge_cardinality = One | Many
@@ -150,6 +153,10 @@ module Schema_snapshot = struct
   let string name value = (name, V_string value)
   let bool name value = (name, V_bool value)
 
+  let option_string = function
+    | None -> V_null
+    | Some value -> V_string value
+
   let rec field_type = function
     | String -> V_string "string"
     | Int -> V_string "int"
@@ -176,6 +183,9 @@ module Schema_snapshot = struct
         bool "unique" field.unique;
         bool "immutable" field.immutable;
         bool "nillable" field.nillable;
+        bool "sensitive" field.sensitive;
+        ("deprecated", option_string field.deprecated);
+        ("comment", option_string field.comment);
       ]
 
   let edge_direction = function
@@ -185,10 +195,6 @@ module Schema_snapshot = struct
   let edge_cardinality = function
     | One -> V_string "one"
     | Many -> V_string "many"
-
-  let option_string = function
-    | None -> V_null
-    | Some value -> V_string value
 
   let edge (edge : edge) =
     V_doc

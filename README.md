@@ -194,6 +194,20 @@ Generated schema snapshots provide stable metadata for drift/debug tooling:
 let snapshot = Post.post_schema_snapshot
 ```
 
+Fields can carry Ent-style metadata without changing runtime validation or
+persistence behavior:
+
+```ocaml
+type post = {
+  id : string [@ent.key "_id"] [@ent.unique];
+  body : string
+  [@ent.sensitive]
+  [@ent.comment "Post body text"]
+  [@ent.deprecated "use summary"];
+}
+[@@deriving ent]
+```
+
 Aggregates compose from queries too:
 
 ```ocaml

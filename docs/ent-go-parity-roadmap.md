@@ -105,7 +105,8 @@ The initial package scaffold already provides:
   Generated JSON path predicate helpers for `[@ent.json]` fields support nested
   equality, comparison, membership, and null checks, plus nested path ordering.
   Generated schema snapshots expose stable `Ent_ocaml.value` metadata documents
-  for drift/debug tooling.
+  for drift/debug tooling, including `[@ent.sensitive]`,
+  `[@ent.deprecated "..."]`, and `[@ent.comment "..."]` field metadata.
 - Poster pilot integration for `User`, `Session`, `Post`, `Media`,
   `PublishState`, and `PublishAttempt` DTO entities.
 
@@ -141,7 +142,7 @@ The initial package scaffold already provides:
 | Mixins | Reusable fields, edges, indexes, hooks, policies | PPX composition step |
 | Field defaults | Generated `[@ent.default expr]` and `[@ent.update_default expr]`; error-returning default funcs pending | OCaml expressions evaluated in create/update APIs |
 | Field validators | Generated `[@ent.validate [fn1; fn2]]` wrappers for primitive/enum fields | Checked before backend mutation |
-| Sensitive/deprecated/comments | Schema metadata and generated output controls | Hidden from display/debug helpers |
+| Sensitive/deprecated/comments | Generated schema metadata implemented with `[@ent.sensitive]`, `[@ent.deprecated "..."]`, and `[@ent.comment "..."]` | Snapshot/display metadata |
 | Indexes | Field, edge, compound, unique, partial/specialized annotations | Mongo indexes with options and partial filters |
 | Annotations | Backend/codegen metadata, only when needed by concrete backend features | OCaml attributes and typed metadata records |
 | Transactions | Generated `with_transaction` and `Tx` clients implemented; commit/rollback hooks and session-backed Mongo transactions pending | Mongo sessions/transactions where deployment supports them |

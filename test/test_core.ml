@@ -14,6 +14,9 @@ let post_entity =
             immutable = true;
             nillable = false;
             validators = [];
+            sensitive = false;
+            deprecated = None;
+            comment = None;
           };
           {
             name = "user_id";
@@ -24,6 +27,9 @@ let post_entity =
             immutable = false;
             nillable = false;
             validators = [];
+            sensitive = false;
+            deprecated = None;
+            comment = None;
           };
           {
             name = "body";
@@ -40,6 +46,9 @@ let post_entity =
                     if value = "" then Error "must not be empty" else Ok ()
                 | _ -> Error "expected string");
               ];
+            sensitive = true;
+            deprecated = Some "use summary";
+            comment = Some "Post body text";
           };
           {
             name = "published_at_ms";
@@ -50,6 +59,9 @@ let post_entity =
             immutable = false;
             nillable = true;
             validators = [];
+            sensitive = false;
+            deprecated = None;
+            comment = None;
           };
           {
             name = "metadata";
@@ -60,6 +72,9 @@ let post_entity =
             immutable = false;
             nillable = false;
             validators = [];
+            sensitive = false;
+            deprecated = None;
+            comment = None;
           };
         ];
       edges =
@@ -409,6 +424,24 @@ let test_schema_snapshot () =
         "fields" true
         (match List.assoc_opt "fields" fields with
         | Some (Ent_ocaml.V_list (_ :: _)) -> true
+        | _ -> false);
+      Alcotest.(check bool)
+        "field metadata" true
+        (match List.assoc_opt "fields" fields with
+        | Some (Ent_ocaml.V_list field_values) ->
+            List.exists
+              (function
+                | Ent_ocaml.V_doc field ->
+                    List.assoc_opt "name" field
+                    = Some (Ent_ocaml.V_string "body")
+                    && List.assoc_opt "sensitive" field
+                       = Some (Ent_ocaml.V_bool true)
+                    && List.assoc_opt "deprecated" field
+                       = Some (Ent_ocaml.V_string "use summary")
+                    && List.assoc_opt "comment" field
+                       = Some (Ent_ocaml.V_string "Post body text")
+                | _ -> false)
+              field_values
         | _ -> false)
   | _ -> Alcotest.fail "expected schema snapshot document"
 

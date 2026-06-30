@@ -23,6 +23,9 @@ let user_entity =
             immutable = false;
             nillable = false;
             validators = [];
+            sensitive = false;
+            deprecated = None;
+            comment = None;
           };
           {
             name = "username";
@@ -33,6 +36,9 @@ let user_entity =
             immutable = false;
             nillable = false;
             validators = [];
+            sensitive = false;
+            deprecated = None;
+            comment = None;
           };
         ];
       edges = [];
@@ -63,6 +69,9 @@ let post_entity =
             immutable = false;
             nillable = false;
             validators = [];
+            sensitive = false;
+            deprecated = None;
+            comment = None;
           };
           {
             name = "body";
@@ -73,6 +82,9 @@ let post_entity =
             immutable = false;
             nillable = false;
             validators = [];
+            sensitive = false;
+            deprecated = None;
+            comment = None;
           };
           {
             name = "user_id";
@@ -83,6 +95,9 @@ let post_entity =
             immutable = false;
             nillable = false;
             validators = [];
+            sensitive = false;
+            deprecated = None;
+            comment = None;
           };
           {
             name = "views";
@@ -93,6 +108,9 @@ let post_entity =
             immutable = false;
             nillable = false;
             validators = [];
+            sensitive = false;
+            deprecated = None;
+            comment = None;
           };
           {
             name = "metadata";
@@ -103,6 +121,9 @@ let post_entity =
             immutable = false;
             nillable = false;
             validators = [];
+            sensitive = false;
+            deprecated = None;
+            comment = None;
           };
         ];
       edges =

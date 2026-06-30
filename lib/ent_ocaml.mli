@@ -34,6 +34,9 @@ type field = {
   immutable : bool;
   nillable : bool;
   validators : (value -> (unit, string) result) list;
+  sensitive : bool;
+  deprecated : string option;
+  comment : string option;
 }
 
 type edge_cardinality = One | Many

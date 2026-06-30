@@ -9,6 +9,9 @@ type post = {
   id : string [@ent.key "_id"] [@ent.unique] [@ent.immutable];
   user_id : string [@ent.index "posts_by_user"];
   body : string
+  [@ent.sensitive]
+  [@ent.comment "Post body text"]
+  [@ent.deprecated "use summary"]
   [@ent.validate
     [
       (fun value -> if value = "" then Error "must not be empty" else Ok ());
@@ -212,7 +215,13 @@ let test_entity_metadata () =
     "enum type" true
     (match status.typ with
     | Ent_ocaml.Enum [ "draft"; "published" ] -> true
-    | _ -> false)
+    | _ -> false);
+  let body = find_field "body" in
+  Alcotest.(check bool) "body sensitive" true body.sensitive;
+  Alcotest.(check (option string))
+    "body deprecated" (Some "use summary") body.deprecated;
+  Alcotest.(check (option string))
+    "body comment" (Some "Post body text") body.comment
 
 let test_generated_schema_snapshot () =
   match post_schema_snapshot with
@@ -226,6 +235,24 @@ let test_generated_schema_snapshot () =
         "fields" true
         (match List.assoc_opt "fields" fields with
         | Some (Ent_ocaml.V_list fields) -> List.length fields = 8
+        | _ -> false);
+      Alcotest.(check bool)
+        "field metadata" true
+        (match List.assoc_opt "fields" fields with
+        | Some (Ent_ocaml.V_list field_values) ->
+            List.exists
+              (function
+                | Ent_ocaml.V_doc field ->
+                    List.assoc_opt "name" field
+                    = Some (Ent_ocaml.V_string "body")
+                    && List.assoc_opt "sensitive" field
+                       = Some (Ent_ocaml.V_bool true)
+                    && List.assoc_opt "deprecated" field
+                       = Some (Ent_ocaml.V_string "use summary")
+                    && List.assoc_opt "comment" field
+                       = Some (Ent_ocaml.V_string "Post body text")
+                | _ -> false)
+              field_values
         | _ -> false)
   | _ -> Alcotest.fail "expected generated schema snapshot document"
 
