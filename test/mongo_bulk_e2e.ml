@@ -277,6 +277,24 @@ let query_user_from_posts =
   Ent_ocaml.Edge_query.make ~as_:"author" ~edge:"user" ~target:user_entity
     query_user_1
 
+let query_user_2 =
+  Ent_ocaml.Query.make user_entity
+    ~where:Ent_ocaml.[ Eq ("id", V_string "user_2") ]
+
+let query_posts_from_user =
+  Ent_ocaml.Edge_query.make ~as_:"posts" ~edge:"posts" ~target:post_entity
+    ~target_query:
+      Ent_ocaml.
+        {
+          entity = post_entity;
+          predicates = [];
+          select = [];
+          orders = [ Order.field ~direction:Asc "id" ];
+          limit = None;
+          offset = None;
+        }
+    query_user_2
+
 let assert_true label condition =
   if condition then Printf.printf "PASS %s\n%!" label
   else failwith ("FAIL " ^ label)
@@ -658,6 +676,21 @@ let run_flow client =
   in
   assert_true "stored edge eager load returns source and user"
     (loaded_users = [ ("first", Some "user_1") ]);
+  let* traversed_posts =
+    Ent_ocaml_mongo.traverse_as ctx query_posts_from_user ~decode:(fun doc ->
+        Ok (Bson.get_string (Bson.get_element "_id" doc)))
+  in
+  assert_true "stored to-many traversal returns posts"
+    (traversed_posts = [ "post_2"; "post_2b" ]);
+  let* loaded_posts =
+    Ent_ocaml_mongo.load_edge_as ctx query_posts_from_user
+      ~decode_source:(fun doc ->
+        Ok (Bson.get_string (Bson.get_element "username" doc)))
+      ~decode_target:(fun doc ->
+        Ok (Bson.get_string (Bson.get_element "_id" doc)))
+  in
+  assert_true "stored to-many eager load returns source and posts"
+    (loaded_posts = [ ("bob", Some "post_2"); ("bob", Some "post_2b") ]);
   let editor_edge =
     Ent_ocaml.Edge_query.make ~as_:"editor" ~edge:"user" ~target:user_entity
       query_user_1

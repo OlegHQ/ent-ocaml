@@ -521,6 +521,28 @@ let drafts_with_authors ctx =
        ~decode_target:user_of_bson_doc_result
 ```
 
+Stored-FK to-many edges use the same generated helpers. `traverse` returns the
+matching target rows, and `load_edge` returns one source/target pair per loaded
+target row:
+
+```ocaml
+module Users = User.Store (Ent_ocaml_mongo)
+
+let user_posts ctx user_id =
+  let open User in
+  by_id user_id
+  |> query_posts ~target:Post.post_entity
+  |> Users.traverse ctx ~decode:post_of_bson_doc_result
+
+let users_with_posts ctx =
+  let open User in
+  query ()
+  |> with_posts ~as_:"posts" ~target:Post.post_entity
+  |> Users.load_edge ctx
+       ~decode_source:user_of_bson_doc_result
+       ~decode_target:post_of_bson_doc_result
+```
+
 The optional `~as_` label is preserved on the edge query so higher-level loaders
 can distinguish several eager loads of the same edge. Use `load_edge_named`
 when the result should carry that edge name with every row:
