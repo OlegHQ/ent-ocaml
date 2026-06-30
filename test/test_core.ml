@@ -869,6 +869,29 @@ let test_mongo_edge_count_order_planning () =
   | Ok None -> Alcotest.fail "expected projection"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
+let test_mongo_backend_order_planning () =
+  let expression =
+    Ent_ocaml.
+      V_doc [ ("$multiply", V_list [ V_string "$views"; V_int64 2L ]) ]
+  in
+  let order =
+    Ent_ocaml_mongo.Order.expression ~name:"double_views"
+      ~direction:Ent_ocaml.Desc ~as_:"score" expression
+  in
+  Alcotest.(check string)
+    "target name" "mongo.double_views"
+    (Ent_ocaml.Order.field_name order);
+  let query =
+    Ent_ocaml.Query.make post_entity |> Ent_ocaml.Query.order_by [ order ]
+  in
+  match Ent_ocaml_mongo.projection_to_bson query with
+  | Ok (Some projection) ->
+      Alcotest.(check int32)
+        "backend order alias projected" 1l
+        (Bson.get_int32 (Bson.get_element "score" projection))
+  | Ok None -> Alcotest.fail "expected projection"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+
 let test_mongo_projection_planning () =
   let projection =
     match
@@ -1207,6 +1230,8 @@ let () =
             test_mongo_edge_order_planning;
           Alcotest.test_case "edge count order planning" `Quick
             test_mongo_edge_count_order_planning;
+          Alcotest.test_case "backend order planning" `Quick
+            test_mongo_backend_order_planning;
           Alcotest.test_case "projection planning" `Quick
             test_mongo_projection_planning;
           Alcotest.test_case "projection missing field" `Quick

@@ -794,6 +794,45 @@ let run_flow client =
   in
   assert_true "selected json order value returns sort term"
     (selected_json_order_value = Some (Ent_ocaml.V_int64 30L));
+  let score_expression =
+    Ent_ocaml.
+      V_doc
+        [
+          ( "$multiply",
+            V_list [ V_string "$views"; V_string "$metadata.priority" ] );
+        ]
+  in
+  let custom_order_query =
+    Ent_ocaml.
+      {
+        query_all with
+        orders =
+          [
+            Ent_ocaml_mongo.Order.expression ~name:"view_priority_score"
+              ~direction:Desc score_expression;
+          ];
+        limit = Some 1;
+      }
+  in
+  let* custom_ordered_posts = Ent_ocaml_mongo.find ctx custom_order_query in
+  assert_true "mongo custom expression order returns highest score"
+    (match custom_ordered_posts with
+    | [ doc ] -> Bson.get_string (Bson.get_element "_id" doc) = "post_2b"
+    | _ -> false);
+  let* selected_custom_order_value =
+    Ent_ocaml_mongo.value ctx
+      Ent_ocaml.
+        {
+          custom_order_query with
+          orders =
+            [
+              Ent_ocaml_mongo.Order.expression ~name:"view_priority_score"
+                ~direction:Desc ~as_:"score" score_expression;
+            ];
+        }
+  in
+  assert_int64_value "selected mongo custom order value returns expression" 600L
+    selected_custom_order_value;
   let* page = Ent_ocaml_mongo.find ctx query_after_post_1 in
   assert_true "seek pagination returns next row"
     (match page with

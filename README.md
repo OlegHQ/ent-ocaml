@@ -259,7 +259,7 @@ let most_active_users ctx =
            ~direction:Ent_ocaml.Desc ~as_:"post_count" ();
        ]
   |> limit 20
-	  |> Users.values ctx
+  |> Users.values ctx
 
 let most_tagged_posts ctx =
   let open Post in
@@ -268,6 +268,29 @@ let most_tagged_posts ctx =
        [
          tags_count_order ~target:Tag.tag_entity
            ~direction:Ent_ocaml.Desc ~as_:"tag_count" ();
+       ]
+  |> limit 20
+  |> Posts.values ctx
+```
+
+Backend-specific ordering stays behind a typed backend module when a query
+needs a computed term that is not part of the portable entity API:
+
+```ocaml
+let by_score ctx =
+  let open Post in
+  let score =
+    Ent_ocaml.V_doc
+      [
+        ( "$multiply",
+          V_list [ V_string "$views"; V_string "$metadata.priority" ] );
+      ]
+  in
+  query ()
+  |> order_by
+       [
+         Ent_ocaml_mongo.Order.expression ~name:"view_priority_score"
+           ~direction:Ent_ocaml.Desc ~as_:"score" score;
        ]
   |> limit 20
   |> Posts.values ctx

@@ -42,6 +42,11 @@ type collection_validator_check = {
 
 let create ~client config = { client; config; transaction = None }
 
+module Order = struct
+  let expression ?as_ ~name ~direction expression =
+    Ent_ocaml.Order.backend ?as_ ~backend:"mongo" ~name ~direction expression
+end
+
 let transaction_session ctx =
   match ctx.transaction with
   | None -> None
@@ -505,6 +510,7 @@ let sort_to_bson ?entity (orders : Ent_ocaml.order list) =
     | Ent_ocaml.Field_order field -> order_field ?entity field
     | Edge_field_order { edge; field; _ } -> edge ^ "." ^ field
     | Edge_count_order { edge; _ } -> edge ^ ".count"
+    | Backend_order { backend; name; _ } -> backend ^ "." ^ name
   in
   match orders with
   | [] -> None
@@ -518,17 +524,19 @@ let sort_to_bson ?entity (orders : Ent_ocaml.order list) =
 	      in
 	      Some (ordered_doc fields)
 
-let has_edge_field_order (query : Ent_ocaml.query) =
+let needs_aggregate_order (query : Ent_ocaml.query) =
   List.exists
     (fun (order : Ent_ocaml.order) ->
       let ({ Ent_ocaml.target = order_target; _ } : Ent_ocaml.order) = order in
       match order_target with
       | Ent_ocaml.Edge_field_order _ -> true
       | Ent_ocaml.Edge_count_order _ -> true
+      | Ent_ocaml.Backend_order _ -> true
       | Ent_ocaml.Field_order _ -> false)
     query.orders
 
 let edge_order_temp index = "__ent_edge_order_" ^ string_of_int index
+let backend_order_temp index = "__ent_backend_order_" ^ string_of_int index
 let edge_predicate_temp index = "__ent_edge_pred_" ^ string_of_int index
 let join_predicate_temp index = "__ent_join_pred_" ^ string_of_int index
 let join_target_temp index = "__ent_join_target_" ^ string_of_int index
@@ -888,6 +896,9 @@ let edge_order_field (query : Ent_ocaml.query) index (order : Ent_ocaml.order) =
                 (`Bad_query
                   ("edge " ^ edge_desc.name
                  ^ " does not have a stored foreign-key field"))))
+  | Backend_order { backend; _ } ->
+      if backend = "mongo" then Ok (backend_order_temp index)
+      else Error (`Bad_query ("unsupported backend order: " ^ backend))
 
 let sort_to_bson_result (query : Ent_ocaml.query) =
   let direction = function
@@ -924,7 +935,7 @@ let projection_to_bson (query : Ent_ocaml.query) =
         let field_key =
           match order_target with
           | Ent_ocaml.Field_order field -> order_storage_key query.entity field
-          | Edge_field_order _ | Edge_count_order _ -> Ok alias
+          | Edge_field_order _ | Edge_count_order _ | Backend_order _ -> Ok alias
         in
         match field_key with
         | Ok key -> add_order_values (add_projection acc key) rest
@@ -1642,6 +1653,27 @@ let edge_order_lookup_stages (query : Ent_ocaml.query) index
                 (`Bad_query
                   ("edge " ^ edge_desc.name
                  ^ " does not have a stored foreign-key field"))))
+  | Backend_order { backend; term; _ } ->
+      if backend <> "mongo" then
+        Error (`Bad_query ("unsupported backend order: " ^ backend))
+      else
+        let key = backend_order_temp index in
+        match value_to_bson term with
+        | Error _ as error -> error
+        | Ok bson ->
+            let fields =
+              match order.value_alias with
+              | None -> [ (key, bson) ]
+              | Some alias -> [ (key, bson); (alias, bson) ]
+            in
+            Ok
+              [
+                doc
+                  [
+                    ( "$addFields",
+                      Bson.create_doc_element (doc fields) );
+                  ];
+              ]
 
 let edge_order_lookup_pipeline query =
   let rec loop index acc = function
@@ -1732,7 +1764,7 @@ let find_with_aggregate ctx query =
 
 let find ctx (query : Ent_ocaml.query) =
   if
-    has_edge_field_order query || has_edge_target_predicate query
+    needs_aggregate_order query || has_edge_target_predicate query
     || has_join_edge_predicate query
   then
     find_with_aggregate ctx query
@@ -1857,7 +1889,8 @@ let selected_fields (query : Ent_ocaml.query) =
                    match order_target with
                    | Ent_ocaml.Field_order field ->
                        order_storage_key query.entity field
-                   | Edge_field_order _ | Edge_count_order _ -> Ok alias ))
+                   | Edge_field_order _ | Edge_count_order _ | Backend_order _ ->
+                       Ok alias ))
              value_alias)
   in
   match fields @ order_values with

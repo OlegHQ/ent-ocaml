@@ -112,6 +112,7 @@ type order_target =
   | Field_order of string
   | Edge_field_order of { edge : string; target : entity; field : string }
   | Edge_count_order of { edge : string; target : entity }
+  | Backend_order of { backend : string; name : string; term : value }
 
 type order = {
   target : order_target;
@@ -240,6 +241,14 @@ module Order : sig
     target:entity ->
     direction:order_direction ->
     unit ->
+    order
+
+  val backend :
+    ?as_:string ->
+    backend:string ->
+    name:string ->
+    direction:order_direction ->
+    value ->
     order
 
   val target_name : order_target -> string

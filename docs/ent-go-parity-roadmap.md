@@ -77,7 +77,8 @@ The initial package scaffold already provides:
   seek pagination, stored-FK edge predicates, join-backed edge existence,
   target-ID, and target-field predicates, stored-FK to-one and to-many traversal
   and eager loading, storage-key mapping for
-  filters/sorts/mutations/indexes, and basic value translation.
+  filters/sorts/mutations/indexes, typed Mongo custom expression ordering, and
+  basic value translation.
 - `[@@deriving ent]` generation for entity metadata, functional query helpers,
   typed field predicates, typed ordering helpers, typed `after_<field>` and
   `before_<field>` seek helpers, typed `<field>_cursor` terms plus
@@ -120,6 +121,8 @@ The initial package scaffold already provides:
   support stored-FK to-many ordering by related row counts, including aliased
   selected count values. The Mongo backend routes those queries through a
   `$lookup` plus `$size` aggregate sort path.
+  Typed Mongo custom expression order terms are exposed through
+  `Ent_ocaml_mongo.Order.expression`, including aliased selected order values.
   Generated `Store.With_policy` and `Client.With_policy` modules evaluate query
   and mutation privacy rule chains before delegating to the selected backend.
   Generated `Store.With_hooks` and `Client.With_hooks` modules wrap mutation
@@ -191,7 +194,7 @@ The initial package scaffold already provides:
 | Named edges | Generated `with_<edge> ~as_` alias metadata, single-edge named load results, and ordered same-shape multi-edge groups implemented; heterogeneous result maps pending | Map from edge name/alias to loaded rows |
 | Bidirectional edge refs | Optional generated in-memory backrefs | Set after eager load, avoid cycles by default |
 | Pagination | Limit/offset plus single-field and composite seek cursors implemented | `limit`, `skip`, sort, stable cursor keys |
-| Ordering | Field, JSON-path, stored-FK to-one edge-field, and stored-FK plus Mongo join-backed to-many edge-count ordering implemented, including aliased selected order values; custom backend terms pending | sort, aggregation for edge terms |
+| Ordering | Field, JSON-path, stored-FK to-one edge-field, stored-FK plus Mongo join-backed to-many edge-count ordering, and typed Mongo custom expression ordering implemented, including aliased selected order values | sort, aggregation for edge terms |
 | Aggregation | count, filtered/grouped min/max/sum/avg, and named scans implemented | aggregation pipeline |
 | Hooks | Generated mutation middleware via `Store.With_hooks`, `Client.With_hooks`, `Store.Schema_hooks`, and `Client.Schema_hooks` implemented; deterministic cross-source/global registration pending | Around generated mutators |
 | Interceptors | Generated query middleware via `Store.With_interceptors`, `Client.With_interceptors`, `Store.Schema_interceptors`, and `Client.Schema_interceptors` implemented; traversal/eager-load edge middleware via `Store.With_edge_interceptors`, `Client.With_edge_interceptors`, `Store.Schema_edge_interceptors`, and `Client.Schema_edge_interceptors` implemented | Around query execution and traversal construction |
@@ -276,8 +279,8 @@ The initial package scaffold already provides:
    and target collections.
    Stored-FK to-one/to-many and Mongo join-backed to-many `query_<edge>`
    traversal are implemented through generated Store executors; full traversal
-   chains, join-backed order terms, nested traversal filters, and
-   cross-collection predicate planning remain.
+   chains, nested traversal filters, and cross-collection predicate planning
+   remain.
 
 7. Eager loading and named edges:
    stored-FK to-one/to-many and Mongo join-backed to-many `with_<edge>` eager
@@ -309,8 +312,8 @@ The initial package scaffold already provides:
    edge-field ordering is implemented through generated `<edge>_field_order`
    helpers and Mongo `$lookup` sort pipelines. Aliased selected order values
    are implemented for field, JSON-path, edge-field, stored-FK to-many
-   edge-count sort terms, and Mongo join-backed to-many edge-count sort terms.
-   Custom backend terms are still pending.
+   edge-count sort terms, Mongo join-backed to-many edge-count sort terms, and
+   typed Mongo custom expression sort terms.
 
 10. Mongo schema/index checks:
    generated index descriptors and `ensure_indexes` are implemented for field,

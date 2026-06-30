@@ -29,6 +29,16 @@ type collection_validator_check = {
 }
 
 val create : client:Mongo_eio.direct_client -> config -> ctx
+
+module Order : sig
+  val expression :
+    ?as_:string ->
+    name:string ->
+    direction:Ent_ocaml.order_direction ->
+    Ent_ocaml.value ->
+    Ent_ocaml.order
+end
+
 val filter_to_bson : Ent_ocaml.query -> (Bson.t, Ent_ocaml.error) result
 val sort_to_bson : ?entity:Ent_ocaml.entity -> Ent_ocaml.order list -> Bson.t option
 val projection_to_bson : Ent_ocaml.query -> (Bson.t option, Ent_ocaml.error) result
