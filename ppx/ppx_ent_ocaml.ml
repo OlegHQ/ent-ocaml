@@ -19,6 +19,7 @@ let lid ~loc parts = { loc; txt = lid_of_parts parts }
 let ident ~loc parts = A.pexp_ident ~loc (lid ~loc parts)
 let constr ~loc parts = A.pexp_construct ~loc (lid ~loc parts) None
 let constr_arg ~loc parts arg = A.pexp_construct ~loc (lid ~loc parts) (Some arg)
+let unit_pat ~loc = A.ppat_construct ~loc (lid ~loc [ "()" ]) None
 
 let app ~loc fn args =
   A.pexp_apply ~loc fn (List.map (fun arg -> (Nolabel, arg)) args)
@@ -136,6 +137,169 @@ let is_option field =
       true
   | _ -> false
 
+let rec value_constructor field =
+  match Attribute.get ent_enum_attr field with
+  | Some _ -> Some [ "Ent_ocaml"; "V_string" ]
+  | None -> (
+      match field.pld_type.ptyp_desc with
+      | Ptyp_constr ({ txt = Longident.Lident "string"; _ }, []) ->
+          Some [ "Ent_ocaml"; "V_string" ]
+      | Ptyp_constr ({ txt = Longident.Lident "int"; _ }, []) ->
+          Some [ "Ent_ocaml"; "V_int" ]
+      | Ptyp_constr ({ txt = Longident.Lident "int32"; _ }, [])
+      | Ptyp_constr
+          ({ txt = Longident.Ldot (Longident.Lident "Int32", "t"); _ }, []) ->
+          Some [ "Ent_ocaml"; "V_int32" ]
+      | Ptyp_constr ({ txt = Longident.Lident "int64"; _ }, [])
+      | Ptyp_constr
+          ({ txt = Longident.Ldot (Longident.Lident "Int64", "t"); _ }, []) ->
+          Some [ "Ent_ocaml"; "V_int64" ]
+      | Ptyp_constr ({ txt = Longident.Lident "float"; _ }, []) ->
+          Some [ "Ent_ocaml"; "V_float" ]
+      | Ptyp_constr ({ txt = Longident.Lident "bool"; _ }, []) ->
+          Some [ "Ent_ocaml"; "V_bool" ]
+      | Ptyp_constr ({ txt = Longident.Lident "option"; _ }, [ inner ])
+      | Ptyp_constr
+          ({ txt = Longident.Ldot (Longident.Lident "Option", "t"); _ }, [ inner ])
+        ->
+          value_constructor { field with pld_type = inner }
+      | _ -> None)
+
+let predicate_function ~loc name constructor field_name value_path =
+  let value = evar ~loc "value" in
+  let body =
+    constr_arg ~loc constructor
+      (A.pexp_tuple ~loc
+         [
+           str ~loc field_name;
+           constr_arg ~loc value_path value;
+         ])
+  in
+  A.pstr_value ~loc Nonrecursive
+    [
+      A.value_binding ~loc
+        ~pat:(pvar ~loc name)
+        ~expr:(A.pexp_fun ~loc Nolabel None (pvar ~loc "value") body);
+    ]
+
+let list_predicate_function ~loc name constructor field_name value_path =
+  let values = evar ~loc "values" in
+  let mapper =
+    A.pexp_fun ~loc Nolabel None (pvar ~loc "value")
+      (constr_arg ~loc value_path (evar ~loc "value"))
+  in
+  let body =
+    constr_arg ~loc constructor
+      (A.pexp_tuple ~loc
+         [
+           str ~loc field_name;
+           app ~loc (ident ~loc [ "List"; "map" ]) [ mapper; values ];
+         ])
+  in
+  A.pstr_value ~loc Nonrecursive
+    [
+      A.value_binding ~loc
+        ~pat:(pvar ~loc name)
+        ~expr:(A.pexp_fun ~loc Nolabel None (pvar ~loc "values") body);
+    ]
+
+let string_predicate_function ~loc name constructor field_name =
+  let value = evar ~loc "value" in
+  let body =
+    constr_arg ~loc constructor (A.pexp_tuple ~loc [ str ~loc field_name; value ])
+  in
+  A.pstr_value ~loc Nonrecursive
+    [
+      A.value_binding ~loc
+        ~pat:(pvar ~loc name)
+        ~expr:(A.pexp_fun ~loc Nolabel None (pvar ~loc "value") body);
+    ]
+
+let nullary_predicate_function ~loc name constructor field_name =
+  A.pstr_value ~loc Nonrecursive
+    [
+      A.value_binding ~loc
+        ~pat:(pvar ~loc name)
+        ~expr:
+          (A.pexp_fun ~loc Nolabel None (unit_pat ~loc)
+             (constr_arg ~loc constructor (str ~loc field_name)));
+    ]
+
+let order_function ~loc field_name =
+  let direction =
+    A.pexp_match ~loc (evar ~loc "direction")
+      [
+        A.case ~lhs:(A.ppat_construct ~loc (lid ~loc [ "None" ]) None)
+          ~guard:None ~rhs:(constr ~loc [ "Ent_ocaml"; "Asc" ]);
+        A.case
+          ~lhs:
+            (A.ppat_construct ~loc (lid ~loc [ "Some" ])
+               (Some (pvar ~loc "direction")))
+          ~guard:None ~rhs:(evar ~loc "direction");
+      ]
+  in
+  let body =
+    A.pexp_record ~loc
+      [
+        (lid ~loc [ "Ent_ocaml"; "field" ], str ~loc field_name);
+        (lid ~loc [ "Ent_ocaml"; "direction" ], direction);
+      ]
+      None
+  in
+  A.pstr_value ~loc Nonrecursive
+    [
+      A.value_binding ~loc
+        ~pat:(pvar ~loc (field_name ^ "_order"))
+        ~expr:
+          (A.pexp_fun ~loc (Optional "direction") None (pvar ~loc "direction")
+             (A.pexp_fun ~loc Nolabel None (unit_pat ~loc) body));
+    ]
+
+let field_helper_items field =
+  let loc = field.pld_loc in
+  let field_name = field.pld_name.txt in
+  let order = order_function ~loc field_name in
+  match value_constructor field with
+  | None -> [ order ]
+  | Some value_path ->
+      let base =
+        [
+          predicate_function ~loc (field_name ^ "_eq") [ "Ent_ocaml"; "Eq" ]
+            field_name value_path;
+          predicate_function ~loc (field_name ^ "_neq") [ "Ent_ocaml"; "Neq" ]
+            field_name value_path;
+          list_predicate_function ~loc (field_name ^ "_in")
+            [ "Ent_ocaml"; "In" ] field_name value_path;
+          list_predicate_function ~loc (field_name ^ "_not_in")
+            [ "Ent_ocaml"; "Not_in" ] field_name value_path;
+          order;
+        ]
+      in
+      let nil_helpers =
+        if is_option field then
+          [
+            nullary_predicate_function ~loc (field_name ^ "_is_nil")
+              [ "Ent_ocaml"; "Is_nil" ] field_name;
+            nullary_predicate_function ~loc (field_name ^ "_not_nil")
+              [ "Ent_ocaml"; "Not_nil" ] field_name;
+          ]
+        else []
+      in
+      let string_helpers =
+        match value_path with
+        | [ "Ent_ocaml"; "V_string" ] ->
+            [
+              string_predicate_function ~loc (field_name ^ "_contains")
+                [ "Ent_ocaml"; "Contains" ] field_name;
+              string_predicate_function ~loc (field_name ^ "_has_prefix")
+                [ "Ent_ocaml"; "Has_prefix" ] field_name;
+              string_predicate_function ~loc (field_name ^ "_has_suffix")
+                [ "Ent_ocaml"; "Has_suffix" ] field_name;
+            ]
+        | _ -> []
+      in
+      base @ nil_helpers @ string_helpers
+
 let field_expr field =
   let loc = field.pld_loc in
   let name = field.pld_name.txt in
@@ -184,7 +348,45 @@ let gen_entity td =
   A.pstr_value ~loc Nonrecursive
     [ A.value_binding ~loc ~pat:(pvar ~loc (type_name ^ "_entity")) ~expr ]
 
-let generate_str ~loc:_ ~path:_ (_rec_flag, tds) = List.map gen_entity tds
+let gen_query_module td =
+  let loc = loc_of_type_decl td in
+  let fields = ensure_record td in
+  let type_name = td.ptype_name.txt in
+  let module_name = snake_to_pascal type_name in
+  let query_body =
+    A.pexp_record ~loc
+      [
+        (lid ~loc [ "Ent_ocaml"; "entity" ], evar ~loc (type_name ^ "_entity"));
+        (lid ~loc [ "Ent_ocaml"; "predicates" ], evar ~loc "where");
+        (lid ~loc [ "Ent_ocaml"; "orders" ], evar ~loc "order");
+        (lid ~loc [ "Ent_ocaml"; "limit" ], evar ~loc "limit");
+        (lid ~loc [ "Ent_ocaml"; "offset" ], evar ~loc "offset");
+      ]
+      None
+  in
+  let query =
+    A.pstr_value ~loc Nonrecursive
+      [
+        A.value_binding ~loc ~pat:(pvar ~loc "query")
+          ~expr:
+            (A.pexp_fun ~loc (Optional "where") (Some (list ~loc []))
+               (pvar ~loc "where")
+               (A.pexp_fun ~loc (Optional "order") (Some (list ~loc []))
+                  (pvar ~loc "order")
+                  (A.pexp_fun ~loc (Optional "limit") None (pvar ~loc "limit")
+                     (A.pexp_fun ~loc (Optional "offset") None
+                        (pvar ~loc "offset")
+                        (A.pexp_fun ~loc Nolabel None (unit_pat ~loc)
+                           query_body)))));
+      ]
+  in
+  let structure = query :: List.concat_map field_helper_items fields in
+  A.pstr_module ~loc
+    (A.module_binding ~loc ~name:{ loc; txt = Some module_name }
+       ~expr:(A.pmod_structure ~loc structure))
+
+let generate_str ~loc:_ ~path:_ (_rec_flag, tds) =
+  List.concat_map (fun td -> [ gen_entity td; gen_query_module td ]) tds
 
 let gen_sig_for_type td =
   let loc = loc_of_type_decl td in
