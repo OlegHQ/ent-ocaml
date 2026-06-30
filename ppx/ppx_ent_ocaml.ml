@@ -2341,6 +2341,147 @@ let gen_query_module td =
               (Named ({ loc; txt = Some "Backend" }, backend_type))
               (A.pmod_structure ~loc structure)))
   in
+  let client_module =
+    let backend_type =
+      A.pmty_ident ~loc (lid ~loc [ "Ent_ocaml"; "STORE_BACKEND" ])
+    in
+    let store_apply name args =
+      A.pexp_apply ~loc
+        (A.pexp_ident ~loc (lid ~loc [ "Entity_store"; name ]))
+        args
+    in
+    let value_fun name body =
+      A.pstr_value ~loc Nonrecursive
+        [ A.value_binding ~loc ~pat:(pvar ~loc name) ~expr:body ]
+    in
+    let client_call name =
+      A.pexp_fun ~loc Nolabel None (pvar ~loc "client")
+        (A.pexp_fun ~loc Nolabel None (pvar ~loc "value")
+           (store_apply name
+              [ (Nolabel, evar ~loc "client"); (Nolabel, evar ~loc "value") ]))
+    in
+    let client_decode_call name =
+      A.pexp_fun ~loc Nolabel None (pvar ~loc "client")
+        (A.pexp_fun ~loc (Labelled "decode") None (pvar ~loc "decode")
+           (A.pexp_fun ~loc Nolabel None (pvar ~loc "value")
+              (store_apply name
+                 [
+                   (Nolabel, evar ~loc "client");
+                   (Labelled "decode", evar ~loc "decode");
+                   (Nolabel, evar ~loc "value");
+                 ])))
+    in
+    let client_load_edge_call =
+      A.pexp_fun ~loc Nolabel None (pvar ~loc "client")
+        (A.pexp_fun ~loc (Labelled "decode_source") None
+           (pvar ~loc "decode_source")
+           (A.pexp_fun ~loc (Labelled "decode_target") None
+              (pvar ~loc "decode_target")
+              (A.pexp_fun ~loc Nolabel None (pvar ~loc "edge_query")
+                 (store_apply "load_edge"
+                    [
+                      (Nolabel, evar ~loc "client");
+                      (Labelled "decode_source", evar ~loc "decode_source");
+                      (Labelled "decode_target", evar ~loc "decode_target");
+                      (Nolabel, evar ~loc "edge_query");
+                    ]))))
+    in
+    let client_insert_many_call =
+      A.pexp_fun ~loc (Optional "ordered") None (pvar ~loc "ordered")
+        (A.pexp_fun ~loc Nolabel None (pvar ~loc "client")
+           (A.pexp_fun ~loc Nolabel None (pvar ~loc "mutations")
+              (store_apply "insert_many"
+                 [
+                   (Optional "ordered", evar ~loc "ordered");
+                   (Nolabel, evar ~loc "client");
+                   (Nolabel, evar ~loc "mutations");
+                 ])))
+    in
+    let client_values =
+      [
+        value_fun "all" (client_decode_call "all");
+        value_fun "one" (client_decode_call "one");
+        value_fun "traverse" (client_decode_call "traverse");
+        value_fun "load_edge" client_load_edge_call;
+        value_fun "count" (client_call "count");
+        value_fun "aggregate" (client_call "aggregate");
+        value_fun "aggregate_scan" (client_call "aggregate_scan");
+        value_fun "group" (client_call "group");
+        value_fun "insert" (client_call "insert");
+        value_fun "insert_many" client_insert_many_call;
+        value_fun "update_one" (client_call "update_one");
+        value_fun "update" (client_call "update");
+        value_fun "upsert_one" (client_call "upsert_one");
+        value_fun "delete" (client_call "delete");
+      ]
+    in
+    let tx_module =
+      A.pstr_module ~loc
+        (A.module_binding ~loc ~name:{ loc; txt = Some "Tx" }
+           ~expr:
+             (A.pmod_structure ~loc
+                ([
+                   A.pstr_type ~loc Recursive
+                     [
+                       A.type_declaration ~loc ~name:{ loc; txt = "t" }
+                         ~params:[] ~cstrs:[] ~kind:Ptype_abstract
+                         ~private_:Public
+                         ~manifest:
+                           (Some
+                              (A.ptyp_constr ~loc
+                                 (lid ~loc [ "Backend"; "ctx" ])
+                                 []));
+                     ];
+                   value_fun "ctx"
+                     (A.pexp_fun ~loc Nolabel None (pvar ~loc "client")
+                        (evar ~loc "client"));
+                 ]
+                @ client_values)))
+    in
+    let structure =
+      [
+        A.pstr_module ~loc
+          (A.module_binding ~loc ~name:{ loc; txt = Some "Entity_store" }
+             ~expr:
+               (A.pmod_apply ~loc
+                  (A.pmod_ident ~loc (lid ~loc [ "Store" ]))
+                  (A.pmod_ident ~loc (lid ~loc [ "Backend" ]))));
+        A.pstr_type ~loc Recursive
+          [
+            A.type_declaration ~loc ~name:{ loc; txt = "t" } ~params:[]
+              ~cstrs:[] ~kind:Ptype_abstract ~private_:Public
+              ~manifest:
+                (Some
+                   (A.ptyp_constr ~loc (lid ~loc [ "Backend"; "ctx" ]) []));
+          ];
+        value_fun "make"
+          (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx") (evar ~loc "ctx"));
+        value_fun "ctx"
+          (A.pexp_fun ~loc Nolabel None (pvar ~loc "client")
+             (evar ~loc "client"));
+        tx_module;
+        value_fun "with_transaction"
+          (A.pexp_fun ~loc Nolabel None (pvar ~loc "client")
+             (A.pexp_fun ~loc Nolabel None (pvar ~loc "f")
+                (A.pexp_apply ~loc
+                   (ident ~loc [ "Backend"; "transaction" ])
+                   [
+                     (Nolabel, evar ~loc "client");
+                     ( Nolabel,
+                       A.pexp_fun ~loc Nolabel None (pvar ~loc "tx_ctx")
+                         (A.pexp_apply ~loc (evar ~loc "f")
+                            [ (Nolabel, evar ~loc "tx_ctx") ]) );
+                   ])));
+      ]
+      @ client_values
+    in
+    A.pstr_module ~loc
+      (A.module_binding ~loc ~name:{ loc; txt = Some "Client" }
+         ~expr:
+           (A.pmod_functor ~loc
+              (Named ({ loc; txt = Some "Backend" }, backend_type))
+              (A.pmod_structure ~loc structure)))
+  in
   let structure =
     query :: boolean_predicates :: query_pipe_helpers :: aggregate_helpers
     :: create :: create_values
@@ -2356,6 +2497,7 @@ let gen_query_module td =
     :: delete_query_fn "delete_one_where" "Delete_one"
     :: delete_query_fn "delete_where" "Delete"
     :: store_module
+    :: client_module
     :: (List.concat_map edge_helper_items edges
        @ List.concat_map field_helper_items fields)
   in
@@ -2839,6 +2981,143 @@ let gen_sig_for_type td =
                      (lid ~loc [ "Ent_ocaml"; "STORE_BACKEND" ]) ))
               (A.pmty_signature ~loc store_items)))
   in
+  let client_sig =
+    let backend_ctx = A.ptyp_constr ~loc (lid ~loc [ "Backend"; "ctx" ]) [] in
+    let backend_doc = A.ptyp_constr ~loc (lid ~loc [ "Backend"; "doc" ]) [] in
+    let client_t = A.ptyp_constr ~loc (lid ~loc [ "t" ]) [] in
+    let tx_t = A.ptyp_constr ~loc (lid ~loc [ "Tx"; "t" ]) [] in
+    let decode_typ =
+      arrow Nolabel backend_doc
+        (result_typ (A.ptyp_var ~loc "a") string_typ)
+    in
+    let decode_source_typ =
+      arrow Nolabel backend_doc
+        (result_typ (A.ptyp_var ~loc "source") string_typ)
+    in
+    let decode_target_typ =
+      arrow Nolabel backend_doc
+        (result_typ (A.ptyp_var ~loc "target") string_typ)
+    in
+    let value_sig name type_ =
+      A.psig_value ~loc
+        (A.value_description ~loc ~name:{ loc; txt = name } ~type_ ~prim:[])
+    in
+    let doc_result = result_typ backend_doc error_typ in
+    let docs_result = result_typ (list_typ backend_doc) error_typ in
+    let int_result = result_typ int_typ error_typ in
+    let unit_result = result_typ unit_typ error_typ in
+    let value_option_result =
+      result_typ
+        (A.ptyp_constr ~loc (lid ~loc [ "option" ]) [ value_typ ])
+        error_typ
+    in
+    let group_result = result_typ (list_typ group_result_typ) error_typ in
+    let aggregate_scan_result =
+      result_typ
+        (list_typ
+           (pair_typ string_typ
+              (A.ptyp_constr ~loc (lid ~loc [ "option" ]) [ value_typ ])))
+        error_typ
+    in
+    let operation_items receiver_t =
+      [
+        value_sig "all"
+          (arrow Nolabel receiver_t
+             (arrow (Labelled "decode") decode_typ
+                (arrow Nolabel query_typ
+                   (result_typ (list_typ (A.ptyp_var ~loc "a")) error_typ))));
+        value_sig "one"
+          (arrow Nolabel receiver_t
+             (arrow (Labelled "decode") decode_typ
+                (arrow Nolabel query_typ
+                   (result_typ
+                      (A.ptyp_constr ~loc (lid ~loc [ "option" ])
+                         [ A.ptyp_var ~loc "a" ])
+                      error_typ))));
+        value_sig "traverse"
+          (arrow Nolabel receiver_t
+             (arrow (Labelled "decode") decode_typ
+                (arrow Nolabel edge_query_typ
+                   (result_typ (list_typ (A.ptyp_var ~loc "a")) error_typ))));
+        value_sig "load_edge"
+          (arrow Nolabel receiver_t
+             (arrow (Labelled "decode_source") decode_source_typ
+                (arrow (Labelled "decode_target") decode_target_typ
+                   (arrow Nolabel edge_query_typ
+                      (result_typ
+                         (list_typ
+                            (pair_typ (A.ptyp_var ~loc "source")
+                               (A.ptyp_constr ~loc (lid ~loc [ "option" ])
+                                  [ A.ptyp_var ~loc "target" ])))
+                         error_typ)))));
+        value_sig "count" (arrow Nolabel receiver_t (arrow Nolabel query_typ int_result));
+        value_sig "aggregate"
+          (arrow Nolabel receiver_t
+             (arrow Nolabel aggregate_typ value_option_result));
+        value_sig "aggregate_scan"
+          (arrow Nolabel receiver_t
+             (arrow Nolabel aggregate_scan_typ aggregate_scan_result));
+        value_sig "group"
+          (arrow Nolabel receiver_t
+             (arrow Nolabel group_aggregate_typ group_result));
+        value_sig "insert"
+          (arrow Nolabel receiver_t (arrow Nolabel mutation_typ doc_result));
+        value_sig "insert_many"
+          (arrow (Optional "ordered") bool_typ
+             (arrow Nolabel receiver_t
+                (arrow Nolabel (list_typ mutation_typ) docs_result)));
+        value_sig "update_one"
+          (arrow Nolabel receiver_t (arrow Nolabel mutation_typ unit_result));
+        value_sig "update"
+          (arrow Nolabel receiver_t (arrow Nolabel mutation_typ int_result));
+        value_sig "upsert_one"
+          (arrow Nolabel receiver_t (arrow Nolabel mutation_typ unit_result));
+        value_sig "delete"
+          (arrow Nolabel receiver_t (arrow Nolabel mutation_typ int_result));
+      ]
+    in
+    let tx_items =
+      [
+        A.psig_type ~loc Recursive
+          [
+            A.type_declaration ~loc ~name:{ loc; txt = "t" } ~params:[]
+              ~cstrs:[] ~kind:Ptype_abstract ~private_:Public ~manifest:None;
+          ];
+        value_sig "ctx" (arrow Nolabel client_t backend_ctx);
+      ]
+      @ operation_items client_t
+    in
+    let client_items =
+      [
+        A.psig_type ~loc Recursive
+          [
+            A.type_declaration ~loc ~name:{ loc; txt = "t" } ~params:[]
+              ~cstrs:[] ~kind:Ptype_abstract ~private_:Public ~manifest:None;
+          ];
+        value_sig "make" (arrow Nolabel backend_ctx client_t);
+        value_sig "ctx" (arrow Nolabel client_t backend_ctx);
+        A.psig_module ~loc
+          (A.module_declaration ~loc ~name:{ loc; txt = Some "Tx" }
+             ~type_:(A.pmty_signature ~loc tx_items));
+        value_sig "with_transaction"
+          (arrow Nolabel client_t
+             (arrow Nolabel
+                (arrow Nolabel tx_t
+                   (result_typ (A.ptyp_var ~loc "a") error_typ))
+                (result_typ (A.ptyp_var ~loc "a") error_typ)));
+      ]
+      @ operation_items client_t
+    in
+    A.psig_module ~loc
+      (A.module_declaration ~loc ~name:{ loc; txt = Some "Client" }
+         ~type_:
+           (A.pmty_functor ~loc
+              (Named
+                 ( { loc; txt = Some "Backend" },
+                   A.pmty_ident ~loc
+                     (lid ~loc [ "Ent_ocaml"; "STORE_BACKEND" ]) ))
+              (A.pmty_signature ~loc client_items)))
+  in
   let module_items =
     [ query_sig ]
     @ boolean_sig @ query_pipe_sig @ aggregate_sig
@@ -2862,6 +3141,7 @@ let gen_sig_for_type td =
         delete_query_sig "delete_one_where";
         delete_query_sig "delete_where";
         store_sig;
+        client_sig;
       ]
     @ List.concat_map edge_sig_items edges
     @ List.concat_map field_sig_items fields

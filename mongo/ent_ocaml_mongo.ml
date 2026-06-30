@@ -931,3 +931,5 @@ let delete ctx (mutation : Ent_ocaml.mutation) =
           match run with
           | Ok result -> Ok result.Mongo_crud.deleted_count
           | Error error -> Error (backend_error "delete" entity error))))
+
+let transaction ctx f = f ctx

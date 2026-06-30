@@ -90,6 +90,9 @@ The initial package scaffold already provides:
   descriptors generate FK edge metadata, clean edge predicate aliases such as
   `Post.user (User.id_eq id)`, bulk `has_<edge>_with` helpers, and
   `query_<edge>` traversal helpers plus `with_<edge>` eager-load helpers.
+  Generated `Client (Backend)` modules capture backend context for entity-local
+  reads and mutations and expose `with_transaction` plus `Tx` operation modules
+  through the backend transaction boundary.
   Generated `Store.With_policy` modules evaluate query and mutation privacy
   rule chains before delegating to the selected backend. Generated
   `Store.With_hooks` modules wrap mutation execution with typed middleware.
@@ -107,7 +110,7 @@ The initial package scaffold already provides:
 | --- | --- | --- |
 | Schema-as-code | OCaml schema declarations consumed by PPX | Entity descriptor per collection |
 | Generated entity structs | Generated records/modules with abstract IDs where requested | BSON DTO codecs remain explicit or derived |
-| Client and per-entity clients | Generated `Client`, `Tx`, and entity client modules | Client wraps Mongo client/database/session |
+| Client and per-entity clients | Generated entity-local `Store` and context-capturing `Client` modules implemented | Client wraps Mongo client/database/session |
 | Create builders | Generated create records/builders with required-field checks | `insertOne`, optional upsert later |
 | Create bulk | Generated bulk create with ordered/unordered option | `insertMany` |
 | Query builders | Generated typed query modules | Mongo find options and filters |
@@ -136,7 +139,7 @@ The initial package scaffold already provides:
 | Sensitive/deprecated/comments | Schema metadata and generated output controls | Hidden from display/debug helpers |
 | Indexes | Field, edge, compound, unique, partial/specialized annotations | Mongo indexes with options and partial filters |
 | Annotations | Backend/codegen metadata, only when needed by concrete backend features | OCaml attributes and typed metadata records |
-| Transactions | Tx client, with-tx helper, commit/rollback hooks | Mongo sessions/transactions where deployment supports them |
+| Transactions | Generated `with_transaction` and `Tx` clients implemented; commit/rollback hooks and session-backed Mongo transactions pending | Mongo sessions/transactions where deployment supports them |
 | Schema/index checks | Runtime schema/index verification | Index manifests and optional collection validators |
 | Global IDs | Optional globally unique ID configuration | App-generated IDs or ObjectId strategy |
 | Schema views | Read-only entity descriptors and generated query modules | Mongo views/aggregation-backed collections where useful |
@@ -179,8 +182,11 @@ The initial package scaffold already provides:
    helpers apply `[@ent.default expr]` for omitted fields and generated update
    helpers apply `[@ent.update_default expr]` unless the field is explicitly set
    or cleared. Generated validator wrappers support `[@ent.validate [fn1; fn2]]`
-   on primitive and enum fields. Defaults that return errors and validators for
-   custom/nested fields are still pending.
+   on primitive and enum fields. Generated context-capturing `Client (Backend)`
+   modules expose the same entity-local operations as `Store (Backend)` plus a
+   `with_transaction` boundary and `Tx` operation module. Defaults that return
+   errors, validators for custom/nested fields, commit/rollback hooks, and
+   session-backed Mongo transactions are still pending.
 
 5. Poster pilot:
    model `User`, `Session`, `Post`, `Media`, and `PublishAttempt`; replace the

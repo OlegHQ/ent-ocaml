@@ -97,6 +97,18 @@ let load_private ctx query =
   Private_posts.all ctx ~decode:post_of_bson_doc_result query
 ```
 
+Generated clients capture backend context when an app wants an Ent-style client
+value instead of passing `ctx` to every operation:
+
+```ocaml
+module Post_client = Post.Client (Ent_ocaml_mongo)
+
+let save_post ctx mutation =
+  let client = Post_client.make ctx in
+  Post_client.with_transaction client (fun tx ->
+      Post_client.Tx.insert tx mutation)
+```
+
 Mutation hooks wrap generated stores in the same module-first style:
 
 ```ocaml

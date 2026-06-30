@@ -382,4 +382,5 @@ module type STORE_BACKEND = sig
     ctx -> aggregate_scan -> ((string * value option) list, error) result
   val group : ctx -> group_aggregate -> (group_result list, error) result
   val count : ctx -> query -> (int, error) result
+  val transaction : ctx -> (ctx -> ('a, error) result) -> ('a, error) result
 end
