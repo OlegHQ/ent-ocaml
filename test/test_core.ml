@@ -32,7 +32,17 @@ let user_entity =
             comment = None;
           };
         ];
-      edges = [];
+      edges =
+        [
+          {
+            name = "posts";
+            target = "Post";
+            direction = To;
+            cardinality = Many;
+            required = false;
+            storage_key = Some "user_id";
+          };
+        ];
       indexes = [];
     }
 
@@ -803,6 +813,24 @@ let test_mongo_edge_order_planning () =
   | Ok _ -> ()
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
+let test_mongo_edge_count_order_planning () =
+  let query =
+    Ent_ocaml.Query.make user_entity
+    |> Ent_ocaml.Query.order_by
+         Ent_ocaml.
+           [
+             Order.edge_count ~edge:"posts" ~target:post_entity
+               ~direction:Desc ~as_:"post_count" ();
+           ]
+  in
+  match Ent_ocaml_mongo.projection_to_bson query with
+  | Ok (Some projection) ->
+      Alcotest.(check int32)
+        "edge count alias projected" 1l
+        (Bson.get_int32 (Bson.get_element "post_count" projection))
+  | Ok None -> Alcotest.fail "expected projection"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+
 let test_mongo_projection_planning () =
   let projection =
     match
@@ -1110,6 +1138,8 @@ let () =
           Alcotest.test_case "sort planning" `Quick test_mongo_sort_planning;
           Alcotest.test_case "edge order planning" `Quick
             test_mongo_edge_order_planning;
+          Alcotest.test_case "edge count order planning" `Quick
+            test_mongo_edge_count_order_planning;
           Alcotest.test_case "projection planning" `Quick
             test_mongo_projection_planning;
           Alcotest.test_case "projection missing field" `Quick

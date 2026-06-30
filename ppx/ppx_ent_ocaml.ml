@@ -1926,6 +1926,27 @@ let gen_query_module td =
                                   (Nolabel, evar ~loc "field");
                                 ]))))));
         ];
+      A.pstr_value ~loc Nonrecursive
+        [
+          A.value_binding ~loc ~pat:(pvar ~loc (edge_name ^ "_count_order"))
+            ~expr:
+              (A.pexp_fun ~loc (Optional "direction")
+                 (Some (constr ~loc [ "Ent_ocaml"; "Asc" ]))
+                 (pvar ~loc "direction")
+                 (A.pexp_fun ~loc (Optional "as_") None (pvar ~loc "as_")
+                    (A.pexp_fun ~loc (Labelled "target") None
+                       (pvar ~loc "target")
+                       (A.pexp_fun ~loc Nolabel None (unit_pat ~loc)
+                          (A.pexp_apply ~loc
+                             (ident ~loc [ "Ent_ocaml"; "Order"; "edge_count" ])
+                             [
+                               (Optional "as_", evar ~loc "as_");
+                               (Labelled "edge", str ~loc edge_name);
+                               (Labelled "target", evar ~loc "target");
+                               (Labelled "direction", evar ~loc "direction");
+                               (Nolabel, unit ~loc);
+                             ])))));
+        ];
     ]
   in
   let mutation_record ~op ~predicates ~set ~clear ~add ~on_insert =
@@ -4130,6 +4151,14 @@ let gen_sig_for_type td =
            (arrow (Optional "as_") string_typ
               (arrow (Labelled "target") entity_typ
                  (arrow Nolabel string_typ (arrow Nolabel unit_typ order_typ)))));
+      val_sig (edge_name ^ "_count_order")
+        (arrow (Optional "direction")
+           (A.ptyp_constr ~loc
+              (lid ~loc [ "Ent_ocaml"; "order_direction" ])
+              [])
+           (arrow (Optional "as_") string_typ
+              (arrow (Labelled "target") entity_typ
+                 (arrow Nolabel unit_typ order_typ))));
     ]
   in
   let update_sig name =

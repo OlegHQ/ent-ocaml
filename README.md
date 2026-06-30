@@ -224,6 +224,22 @@ let by_author ctx =
   |> Posts.values ctx
 ```
 
+Stored-FK to-many edges can order by related row count without writing raw
+aggregation terms:
+
+```ocaml
+let most_active_users ctx =
+  let open User in
+  query ()
+  |> order_by
+       [
+         posts_count_order ~target:Post.post_entity
+           ~direction:Ent_ocaml.Desc ~as_:"post_count" ();
+       ]
+  |> limit 20
+  |> Users.values ctx
+```
+
 Mutation hooks wrap generated stores in the same module-first style:
 
 ```ocaml

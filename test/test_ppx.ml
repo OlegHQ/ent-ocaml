@@ -466,6 +466,34 @@ let test_generated_edge_order_api () =
   | Ok _ -> Alcotest.fail "unexpected edge order value result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
+let test_generated_edge_count_order_api () =
+  let query =
+    let open Post in
+    query ()
+    |> order_by
+         [
+           user_count_order ~target:user_entity ~direction:Ent_ocaml.Desc
+             ~as_:"user_count" ();
+         ]
+  in
+  Alcotest.(check bool)
+    "edge count order target" true
+    (match query.orders with
+    | [
+        {
+          Ent_ocaml.target = Edge_count_order { edge = "user"; target };
+          direction = Desc;
+          value_alias = Some "user_count";
+        };
+      ] ->
+        target.name = "User"
+    | _ -> false);
+  let module Posts = Post.Store (Memory_backend) in
+  match Posts.value () query with
+  | Ok (Some (Ent_ocaml.V_string "user.count")) -> ()
+  | Ok _ -> Alcotest.fail "unexpected edge count order value result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+
 let test_generated_id_api () =
   let query =
     let open Post in
@@ -1651,6 +1679,8 @@ let () =
             test_generated_order_value_api;
           Alcotest.test_case "generated edge order api" `Quick
             test_generated_edge_order_api;
+          Alcotest.test_case "generated edge count order api" `Quick
+            test_generated_edge_count_order_api;
           Alcotest.test_case "generated id api" `Quick
             test_generated_id_api;
           Alcotest.test_case "generated cursor api" `Quick

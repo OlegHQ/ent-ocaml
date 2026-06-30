@@ -41,7 +41,17 @@ let user_entity =
             comment = None;
           };
         ];
-      edges = [];
+      edges =
+        [
+          {
+            name = "posts";
+            target = "Post";
+            direction = To;
+            cardinality = Many;
+            required = false;
+            storage_key = Some "user_id";
+          };
+        ];
       indexes =
         [
           {
@@ -585,6 +595,42 @@ let run_flow client =
   in
   assert_true "selected edge order value returns related field"
     (selected_edge_order_value = Some (Ent_ocaml.V_string "alice"));
+  let edge_count_order_query =
+    Ent_ocaml.
+      {
+        entity = user_entity;
+        predicates = [];
+        select = [];
+        orders =
+          [
+            Order.edge_count ~edge:"posts" ~target:post_entity
+              ~direction:Desc ();
+          ];
+        limit = Some 1;
+        offset = None;
+      }
+  in
+  let* edge_count_ordered_users =
+    Ent_ocaml_mongo.find ctx edge_count_order_query
+  in
+  assert_true "edge count order returns user with most posts"
+    (match edge_count_ordered_users with
+    | [ doc ] -> Bson.get_string (Bson.get_element "_id" doc) = "user_2"
+    | _ -> false);
+  let* selected_edge_count_order_value =
+    Ent_ocaml_mongo.value ctx
+      Ent_ocaml.
+        {
+          edge_count_order_query with
+          orders =
+            [
+              Order.edge_count ~edge:"posts" ~target:post_entity
+                ~direction:Desc ~as_:"post_count" ();
+            ];
+        }
+  in
+  assert_int64_value "selected edge count order value returns count" 2L
+    selected_edge_count_order_value;
   let* entql_user_posts =
     match
       Ent_ocaml.Query.make post_entity

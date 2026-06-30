@@ -386,6 +386,7 @@ let sort_to_bson ?entity (orders : Ent_ocaml.order list) =
     match order_target with
     | Ent_ocaml.Field_order field -> order_field ?entity field
     | Edge_field_order { edge; field; _ } -> edge ^ "." ^ field
+    | Edge_count_order { edge; _ } -> edge ^ ".count"
   in
   match orders with
   | [] -> None
@@ -405,6 +406,7 @@ let has_edge_field_order (query : Ent_ocaml.query) =
       let ({ Ent_ocaml.target = order_target; _ } : Ent_ocaml.order) = order in
       match order_target with
       | Ent_ocaml.Edge_field_order _ -> true
+      | Ent_ocaml.Edge_count_order _ -> true
       | Ent_ocaml.Field_order _ -> false)
     query.orders
 
@@ -436,6 +438,27 @@ let edge_order_field (query : Ent_ocaml.query) index (order : Ent_ocaml.order) =
                   ("edge " ^ edge_desc.name
                  ^ " does not have a stored foreign-key field"))
           | _, (Error _ as error) -> error))
+  | Edge_count_order { edge; target } -> (
+      match find_edge query.Ent_ocaml.entity edge with
+      | None -> Error (`Bad_query ("edge not found: " ^ edge))
+      | Some edge_desc when edge_desc.target <> target.name ->
+          Error
+            (`Bad_query
+              (Printf.sprintf "edge %s targets %s, not %s" edge_desc.name
+                 edge_desc.target target.name))
+      | Some { direction = From _; _ } ->
+          Error (`Bad_query "edge-count ordering currently supports to-edges")
+      | Some { cardinality = One; _ } ->
+          Error
+            (`Bad_query "edge-count ordering currently supports to-many edges")
+      | Some edge_desc -> (
+          match edge_desc.storage_key with
+          | Some _ -> Ok (edge_order_temp index ^ "_count")
+          | None ->
+              Error
+                (`Bad_query
+                  ("edge " ^ edge_desc.name
+                 ^ " does not have a stored foreign-key field"))))
 
 let sort_to_bson_result (query : Ent_ocaml.query) =
   let direction = function
@@ -472,7 +495,7 @@ let projection_to_bson (query : Ent_ocaml.query) =
         let field_key =
           match order_target with
           | Ent_ocaml.Field_order field -> order_storage_key query.entity field
-          | Edge_field_order _ -> Ok alias
+          | Edge_field_order _ | Edge_count_order _ -> Ok alias
         in
         match field_key with
         | Ok key -> add_order_values (add_projection acc key) rest
@@ -899,6 +922,57 @@ let edge_order_lookup_stages (query : Ent_ocaml.query) index
                   ("edge " ^ edge_desc.name
                  ^ " does not have a stored foreign-key field"))
           | _, (Error _ as error), _ | _, _, (Error _ as error) -> error))
+  | Edge_count_order { edge; target } -> (
+      match find_edge query.Ent_ocaml.entity edge with
+      | None -> Error (`Bad_query ("edge not found: " ^ edge))
+      | Some edge_desc when edge_desc.target <> target.name ->
+          Error
+            (`Bad_query
+              (Printf.sprintf "edge %s targets %s, not %s" edge_desc.name
+                 edge_desc.target target.name))
+      | Some { direction = From _; _ } ->
+          Error (`Bad_query "edge-count ordering currently supports to-edges")
+      | Some { cardinality = One; _ } ->
+          Error
+            (`Bad_query "edge-count ordering currently supports to-many edges")
+      | Some edge_desc -> (
+          match (field_storage_key query.Ent_ocaml.entity "id", edge_desc.storage_key) with
+          | Ok local_key, Some foreign_key ->
+              let temp = edge_order_temp index in
+              let count_key = temp ^ "_count" in
+              let count_expr =
+                Bson.create_doc_element
+                  (doc [ ("$size", Bson.create_string ("$" ^ temp)) ])
+              in
+              let lookup =
+                doc
+                  [
+                    ("from", Bson.create_string target.collection);
+                    ("localField", Bson.create_string local_key);
+                    ("foreignField", Bson.create_string foreign_key);
+                    ("as", Bson.create_string temp);
+                  ]
+              in
+              let fields =
+                match order.value_alias with
+                | None -> [ (count_key, count_expr) ]
+                | Some alias -> [ (count_key, count_expr); (alias, count_expr) ]
+              in
+              Ok
+                [
+                  doc [ ("$lookup", Bson.create_doc_element lookup) ];
+                  doc
+                    [
+                      ( "$addFields",
+                        Bson.create_doc_element (doc fields) );
+                    ];
+                ]
+          | Error _ as error, _ -> error
+          | _, None ->
+              Error
+                (`Bad_query
+                  ("edge " ^ edge_desc.name
+                 ^ " does not have a stored foreign-key field"))))
 
 let edge_order_lookup_pipeline query =
   let rec loop index acc = function
@@ -1091,7 +1165,7 @@ let selected_fields (query : Ent_ocaml.query) =
                    match order_target with
                    | Ent_ocaml.Field_order field ->
                        order_storage_key query.entity field
-                   | Edge_field_order _ -> Ok alias ))
+                   | Edge_field_order _ | Edge_count_order _ -> Ok alias ))
              value_alias)
   in
   match fields @ order_values with

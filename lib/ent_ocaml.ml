@@ -103,6 +103,7 @@ type order_direction = Asc | Desc
 type order_target =
   | Field_order of string
   | Edge_field_order of { edge : string; target : entity; field : string }
+  | Edge_count_order of { edge : string; target : entity }
 
 type order = {
   target : order_target;
@@ -466,9 +467,13 @@ module Order = struct
   let edge_field ?as_ ~edge ~target ~direction field =
     { target = Edge_field_order { edge; target; field }; direction; value_alias = as_ }
 
+  let edge_count ?as_ ~edge ~target ~direction () =
+    { target = Edge_count_order { edge; target }; direction; value_alias = as_ }
+
   let target_name = function
     | Field_order field -> field
     | Edge_field_order { edge; field; _ } -> edge ^ "." ^ field
+    | Edge_count_order { edge; _ } -> edge ^ ".count"
 
   let field_name (order : order) =
     let ({ target; _ } : order) = order in
