@@ -2533,6 +2533,114 @@ let load_edge_as ctx (edge_query : Ent_ocaml.edge_query) ~decode_source
                           in
                           pair_rows [] source_docs)))))
 
+let load_edge_docs ctx edge_query =
+  load_edge_as ctx edge_query ~decode_source:(fun doc -> Ok doc)
+    ~decode_target:(fun doc -> Ok doc)
+
+let document_id entity doc =
+  match field_storage_key entity "id" with
+  | Error _ as error -> error
+  | Ok id_key -> (
+      match document_value id_key doc with
+      | Error _ as error -> error
+      | Ok (Some value) -> Ok value
+      | Ok None -> Error (`Decode "document id field missing"))
+
+let add_assoc_value key value assoc =
+  let rec loop acc = function
+    | [] -> List.rev ((key, [ value ]) :: acc)
+    | (existing_key, values) :: rest when existing_key = key ->
+        List.rev_append acc ((existing_key, values @ [ value ]) :: rest)
+    | item :: rest -> loop (item :: acc) rest
+  in
+  loop [] assoc
+
+let target_docs_by_source_id source_entity rows =
+  let rec loop acc = function
+    | [] -> Ok acc
+    | (_source_doc, None) :: rest -> loop acc rest
+    | (source_doc, Some target_doc) :: rest -> (
+        match document_id source_entity source_doc with
+        | Error _ as error -> error
+        | Ok source_id -> loop (add_assoc_value source_id target_doc acc) rest)
+  in
+  loop [] rows
+
+let expand_edge_chain_rows current_entity rows hop_rows =
+  match target_docs_by_source_id current_entity hop_rows with
+  | Error _ as error -> error
+  | Ok targets_by_source ->
+      let append_targets source acc = function
+        | [] -> (source, None) :: acc
+        | targets ->
+            List.fold_left
+              (fun acc target_doc -> (source, Some target_doc) :: acc)
+              acc targets
+      in
+      let rec loop acc = function
+        | [] -> Ok (List.rev acc)
+        | (source_doc, None) :: rest -> loop ((source_doc, None) :: acc) rest
+        | (source_doc, Some current_doc) :: rest -> (
+            match document_id current_entity current_doc with
+            | Error _ as error -> error
+            | Ok current_id ->
+                let targets =
+                  Option.value
+                    (List.assoc_opt current_id targets_by_source)
+                    ~default:[]
+                in
+                loop (append_targets source_doc acc targets) rest)
+      in
+      loop [] rows
+
+let load_edge_chain_docs ctx (chain : Ent_ocaml.edge_chain) =
+  let rec loop current_entity rows = function
+    | [] -> Ok rows
+    | step :: rest ->
+        let current_docs =
+          List.filter_map (fun (_source, current) -> current) rows
+        in
+        if current_docs = [] then loop step.Ent_ocaml.chain_target rows rest
+        else
+          match source_query_from_docs current_entity current_docs with
+          | Error _ as error -> error
+          | Ok source ->
+              let edge_query =
+                Ent_ocaml.Edge_query.make ?as_:step.chain_edge_alias
+                  ~target_query:step.chain_target_query ~edge:step.chain_edge
+                  ~target:step.chain_target source
+              in
+              match load_edge_docs ctx edge_query with
+              | Error _ as error -> error
+              | Ok hop_rows -> (
+                  match expand_edge_chain_rows current_entity rows hop_rows with
+                  | Error _ as error -> error
+                  | Ok rows -> loop step.chain_target rows rest)
+  in
+  match load_edge_docs ctx chain.chain_first with
+  | Error _ as error -> error
+  | Ok rows -> loop chain.chain_first.target rows chain.chain_rest
+
+let load_edge_chain_as ctx chain ~decode_source ~decode_target =
+  match load_edge_chain_docs ctx chain with
+  | Error _ as error -> error
+  | Ok rows ->
+      let rec loop acc = function
+        | [] -> Ok (List.rev acc)
+        | (source_doc, target_doc) :: rest -> (
+            match
+              ( decode_document ~decode:decode_source source_doc,
+                match target_doc with
+                | None -> Ok None
+                | Some doc ->
+                    decode_document ~decode:decode_target doc
+                    |> Result.map Option.some )
+            with
+            | Error _ as error, _ | _, (Error _ as error) -> error
+            | Ok source, Ok target -> loop ((source, target) :: acc) rest)
+      in
+      loop [] rows
+
 let run_aggregate ctx (query : Ent_ocaml.query) pipeline =
   let session = transaction_session ctx in
   match

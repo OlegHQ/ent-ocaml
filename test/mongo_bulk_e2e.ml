@@ -1272,6 +1272,15 @@ let run_flow client =
   in
   assert_true "graph traversal chain returns tags through posts"
     (traversed_user_post_tags = [ "mongo"; "ocaml" ]);
+  let* loaded_user_post_tags =
+    Ent_ocaml_mongo.load_edge_chain_as ctx user_post_tags
+      ~decode_source:(fun doc ->
+        Ok (Bson.get_string (Bson.get_element "username" doc)))
+      ~decode_target:(fun doc ->
+        Ok (Bson.get_string (Bson.get_element "name" doc)))
+  in
+  assert_true "graph eager chain returns source and tags through posts"
+    (loaded_user_post_tags = [ ("bob", Some "mongo"); ("bob", Some "ocaml") ]);
   let editor_edge =
     Ent_ocaml.Edge_query.make ~as_:"editor" ~edge:"user" ~target:user_entity
       query_user_1

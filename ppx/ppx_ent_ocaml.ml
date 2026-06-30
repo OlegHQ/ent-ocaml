@@ -3124,6 +3124,25 @@ let gen_query_module td =
                                 (Labelled "decode_source", evar ~loc "decode_source");
                                 (Labelled "decode_target", evar ~loc "decode_target");
                               ]))))));
+          value_fun "load_edge_chain"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc (Labelled "decode_source") None
+                  (pvar ~loc "decode_source")
+                  (A.pexp_fun ~loc (Labelled "decode_target") None
+                     (pvar ~loc "decode_target")
+                     (A.pexp_fun ~loc Nolabel None edge_chain_pat
+                        (guarded `Query
+                           (A.pexp_apply ~loc
+                              (ident ~loc
+                                 [ "Ent_ocaml"; "Edge_chain"; "source" ])
+                              [ (Nolabel, evar ~loc "edge_chain") ])
+                           (backend_apply "load_edge_chain_as"
+                              [
+                                (Nolabel, evar ~loc "ctx");
+                                (Nolabel, evar ~loc "edge_chain");
+                                (Labelled "decode_source", evar ~loc "decode_source");
+                                (Labelled "decode_target", evar ~loc "decode_target");
+                              ]))))));
           value_fun "count"
             (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
                (A.pexp_fun ~loc Nolabel None query_pat
@@ -3338,6 +3357,20 @@ let gen_query_module td =
                            [
                              (Nolabel, evar ~loc "ctx");
                              (Nolabel, evar ~loc "edge_query");
+                             (Labelled "decode_source", evar ~loc "decode_source");
+                             (Labelled "decode_target", evar ~loc "decode_target");
+                           ])))));
+          value_fun "load_edge_chain"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc (Labelled "decode_source") None
+                  (pvar ~loc "decode_source")
+                  (A.pexp_fun ~loc (Labelled "decode_target") None
+                     (pvar ~loc "decode_target")
+                     (A.pexp_fun ~loc Nolabel None edge_chain_pat
+                        (backend_apply "load_edge_chain_as"
+                           [
+                             (Nolabel, evar ~loc "ctx");
+                             (Nolabel, evar ~loc "edge_chain");
                              (Labelled "decode_source", evar ~loc "decode_source");
                              (Labelled "decode_target", evar ~loc "decode_target");
                            ])))));
@@ -3560,6 +3593,25 @@ let gen_query_module td =
                                 (Labelled "decode_source", evar ~loc "decode_source");
                                 (Labelled "decode_target", evar ~loc "decode_target");
                               ]))))));
+          value_fun "load_edge_chain"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc (Labelled "decode_source") None
+                  (pvar ~loc "decode_source")
+                  (A.pexp_fun ~loc (Labelled "decode_target") None
+                     (pvar ~loc "decode_target")
+                     (A.pexp_fun ~loc Nolabel None edge_chain_pat
+                        (run_query
+                           (A.pexp_apply ~loc
+                              (ident ~loc
+                                 [ "Ent_ocaml"; "Edge_chain"; "source" ])
+                              [ (Nolabel, evar ~loc "edge_chain") ])
+                           (backend_apply "load_edge_chain_as"
+                              [
+                                (Nolabel, evar ~loc "ctx");
+                                (Nolabel, edge_chain_with_source);
+                                (Labelled "decode_source", evar ~loc "decode_source");
+                                (Labelled "decode_target", evar ~loc "decode_target");
+                              ]))))));
           value_fun "count"
             (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
                (A.pexp_fun ~loc Nolabel None query_pat
@@ -3773,6 +3825,20 @@ let gen_query_module td =
                            (Labelled "decode_source", evar ~loc "decode_source");
                            (Labelled "decode_target", evar ~loc "decode_target");
                          ])))));
+        value_fun "load_edge_chain"
+          (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+             (A.pexp_fun ~loc (Labelled "decode_source") None
+                (pvar ~loc "decode_source")
+                (A.pexp_fun ~loc (Labelled "decode_target") None
+                   (pvar ~loc "decode_target")
+                   (A.pexp_fun ~loc Nolabel None (pvar ~loc "edge_chain")
+                      (backend_apply "load_edge_chain_as"
+                         [
+                           (Nolabel, evar ~loc "ctx");
+                           (Nolabel, evar ~loc "edge_chain");
+                           (Labelled "decode_source", evar ~loc "decode_source");
+                           (Labelled "decode_target", evar ~loc "decode_target");
+                         ])))));
         value_fun "count"
           (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
              (A.pexp_fun ~loc Nolabel None query_pat
@@ -3916,6 +3982,29 @@ let gen_query_module td =
                               [
                                 (Nolabel, evar ~loc "ctx");
                                 (Nolabel, evar ~loc "edge_query");
+                                (Labelled "decode_source", evar ~loc "decode_source");
+                                (Labelled "decode_target", evar ~loc "decode_target");
+                              ]))))));
+          value_fun "load_edge_chain"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc (Labelled "decode_source") None
+                  (pvar ~loc "decode_source")
+                  (A.pexp_fun ~loc (Labelled "decode_target") None
+                     (pvar ~loc "decode_target")
+                     (A.pexp_fun ~loc Nolabel None edge_chain_pat
+                        (run_edge
+                           (A.pexp_field ~loc (evar ~loc "edge_chain")
+                              (lid ~loc [ "Ent_ocaml"; "chain_first" ]))
+                           (backend_apply "load_edge_chain_as"
+                              [
+                                (Nolabel, evar ~loc "ctx");
+                                ( Nolabel,
+                                  A.pexp_record ~loc
+                                    [
+                                      ( lid ~loc [ "Ent_ocaml"; "chain_first" ],
+                                        evar ~loc "edge_query" );
+                                    ]
+                                    (Some (evar ~loc "edge_chain")) );
                                 (Labelled "decode_source", evar ~loc "decode_source");
                                 (Labelled "decode_target", evar ~loc "decode_target");
                               ]))))));
@@ -4076,6 +4165,21 @@ let gen_query_module td =
                       (Nolabel, evar ~loc "edge_query");
                     ]))))
     in
+    let client_load_edge_chain_call_from store =
+      A.pexp_fun ~loc Nolabel None (pvar ~loc "client")
+        (A.pexp_fun ~loc (Labelled "decode_source") None
+           (pvar ~loc "decode_source")
+           (A.pexp_fun ~loc (Labelled "decode_target") None
+              (pvar ~loc "decode_target")
+              (A.pexp_fun ~loc Nolabel None (pvar ~loc "edge_chain")
+                 (store_apply_from store "load_edge_chain"
+                    [
+                      (Nolabel, evar ~loc "client");
+                      (Labelled "decode_source", evar ~loc "decode_source");
+                      (Labelled "decode_target", evar ~loc "decode_target");
+                      (Nolabel, evar ~loc "edge_chain");
+                    ]))))
+    in
     let client_load_edge_named_call_from store =
       A.pexp_fun ~loc Nolabel None (pvar ~loc "client")
         (A.pexp_fun ~loc (Labelled "decode_source") None
@@ -4139,6 +4243,7 @@ let gen_query_module td =
         value_fun "traverse_chain"
           (client_decode_call_from store "traverse_chain");
         value_fun "load_edge" (client_load_edge_call_from store);
+        value_fun "load_edge_chain" (client_load_edge_chain_call_from store);
         value_fun "load_edge_named" (client_load_edge_named_call_from store);
         value_fun "load_edges_named" (client_load_edges_named_call_from store);
         value_fun "load_edges_map" (client_load_edges_map_call_from store);
@@ -5029,11 +5134,30 @@ let gen_sig_for_type td =
                       (A.ptyp_constr ~loc (lid ~loc [ "list" ])
                          [ A.ptyp_var ~loc "a" ])
                       error_typ))));
+        value_sig "traverse_chain"
+          (arrow Nolabel backend_ctx
+             (arrow (Labelled "decode") decode_typ
+                (arrow Nolabel edge_chain_typ
+                   (result_typ
+                      (A.ptyp_constr ~loc (lid ~loc [ "list" ])
+                         [ A.ptyp_var ~loc "a" ])
+                      error_typ))));
         value_sig "load_edge"
           (arrow Nolabel backend_ctx
              (arrow (Labelled "decode_source") decode_source_typ
                 (arrow (Labelled "decode_target") decode_target_typ
                    (arrow Nolabel edge_query_typ
+                      (result_typ
+                         (list_typ
+                            (pair_typ (A.ptyp_var ~loc "source")
+                               (A.ptyp_constr ~loc (lid ~loc [ "option" ])
+                                  [ A.ptyp_var ~loc "target" ])))
+                         error_typ)))));
+        value_sig "load_edge_chain"
+          (arrow Nolabel backend_ctx
+             (arrow (Labelled "decode_source") decode_source_typ
+                (arrow (Labelled "decode_target") decode_target_typ
+                   (arrow Nolabel edge_chain_typ
                       (result_typ
                          (list_typ
                             (pair_typ (A.ptyp_var ~loc "source")

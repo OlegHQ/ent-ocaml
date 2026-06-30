@@ -354,6 +354,19 @@ module Memory_backend = struct
     | Ok source, Ok target -> Ok [ (source, Some target) ]
     | Error message, _ | _, Error message -> Error (`Decode message)
 
+  let load_edge_chain_as () (edge_chain : Ent_ocaml.edge_chain) ~decode_source
+      ~decode_target =
+    match
+      ( decode_source
+          (Ent_ocaml.V_string
+             (Ent_ocaml.Edge_chain.source edge_chain).Ent_ocaml.entity.name),
+        decode_target
+          (Ent_ocaml.V_string
+             (Ent_ocaml.Edge_chain.target edge_chain).Ent_ocaml.name) )
+    with
+    | Ok source, Ok target -> Ok [ (source, Some target) ]
+    | Error message, _ | _, Error message -> Error (`Decode message)
+
   let insert_values () (mutation : Ent_ocaml.mutation) =
     Ok (Ent_ocaml.V_doc mutation.set)
 
@@ -838,6 +851,13 @@ let test_generated_traversal_api () =
   | Ok _ -> Alcotest.fail "unexpected traverse_chain result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
   (match
+     Store.load_edge_chain () ~decode_source:decode ~decode_target:decode
+       edge_chain
+   with
+  | Ok [ ("Post", Some "Post") ] -> ()
+  | Ok _ -> Alcotest.fail "unexpected load_edge_chain result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  (match
      Store.load_edge () ~decode_source:decode ~decode_target:decode edge_query
    with
   | Ok [ ("Post", Some "User") ] -> ()
@@ -964,6 +984,13 @@ let test_generated_traversal_api () =
   (match Client.traverse_chain client ~decode edge_chain with
   | Ok [ "Post" ] -> ()
   | Ok _ -> Alcotest.fail "unexpected client traverse_chain result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  (match
+     Client.load_edge_chain client ~decode_source:decode ~decode_target:decode
+       edge_chain
+   with
+  | Ok [ ("Post", Some "Post") ] -> ()
+  | Ok _ -> Alcotest.fail "unexpected client load_edge_chain result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
   match
     Client.load_edges_named client ~decode_source:decode ~decode_target:decode
@@ -1610,18 +1637,34 @@ let test_generated_client_interceptor_api () =
       Alcotest.fail "unexpected edge-intercepted client traverse_chain result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
   (match
+     Edge_intercepted.load_edge_chain edge_client ~decode_source:decode
+       ~decode_target:decode edge_chain
+   with
+  | Ok [ ("Post", Some "Post") ] -> ()
+  | Ok _ ->
+      Alcotest.fail "unexpected edge-intercepted client load_edge_chain result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  (match
      Edge_intercepted.with_transaction edge_client (fun tx ->
          Edge_intercepted.Tx.traverse tx ~decode edge_query)
    with
   | Ok [ "Post" ] -> ()
   | Ok _ -> Alcotest.fail "unexpected edge-intercepted tx traverse result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
-  match
-    Edge_intercepted.with_transaction edge_client (fun tx ->
-        Edge_intercepted.Tx.traverse_chain tx ~decode edge_chain)
-  with
+  (match
+     Edge_intercepted.with_transaction edge_client (fun tx ->
+         Edge_intercepted.Tx.traverse_chain tx ~decode edge_chain)
+   with
   | Ok [ "Post" ] -> ()
   | Ok _ -> Alcotest.fail "unexpected edge-intercepted tx traverse_chain result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  match
+    Edge_intercepted.with_transaction edge_client (fun tx ->
+        Edge_intercepted.Tx.load_edge_chain tx ~decode_source:decode
+          ~decode_target:decode edge_chain)
+  with
+  | Ok [ ("Post", Some "Post") ] -> ()
+  | Ok _ -> Alcotest.fail "unexpected edge-intercepted tx load_edge_chain result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
 let test_generated_schema_client_api () =
@@ -1859,10 +1902,19 @@ let test_generated_interceptor_store_api () =
   | Ok [ "Post" ] -> ()
   | Ok _ -> Alcotest.fail "unexpected edge-intercepted traverse_chain result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
-  match Schema_edge_interceptors.load_edge () ~decode_source:decode
-          ~decode_target:decode edge_query with
+  (match
+     Schema_edge_interceptors.load_edge () ~decode_source:decode
+       ~decode_target:decode edge_query
+   with
   | Ok [ ("Post", Some "Post") ] -> ()
   | Ok _ -> Alcotest.fail "unexpected schema edge-intercepted load result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  match
+    Schema_edge_interceptors.load_edge_chain () ~decode_source:decode
+      ~decode_target:decode edge_chain
+  with
+  | Ok [ ("Post", Some "Post") ] -> ()
+  | Ok _ -> Alcotest.fail "unexpected schema edge-intercepted chain load result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
 let test_generated_schema_composed_store_api () =
@@ -2004,6 +2056,17 @@ let test_generated_schema_composed_store_api () =
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
   Alcotest.(check (list string))
     "composed edge chain interceptor order"
+    [ "mixin edge"; "schema edge"; "caller edge" ] !schema_order_events;
+  schema_order_events := [];
+  (match
+     Ordered_edge_interceptors.load_edge_chain () ~decode_source:decode
+       ~decode_target:decode edge_chain
+   with
+  | Ok [ ("Ordered", Some "User") ] -> ()
+  | Ok _ -> Alcotest.fail "unexpected composed edge load_edge_chain result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  Alcotest.(check (list string))
+    "composed edge load chain interceptor order"
     [ "mixin edge"; "schema edge"; "caller edge" ] !schema_order_events
 
 let test_generated_schema_composed_client_api () =

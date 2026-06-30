@@ -726,6 +726,21 @@ let user_post_tags ctx user_id =
   |> Users.traverse_chain ctx ~decode:tag_of_bson_doc_result
 ```
 
+The same chain value can eager-load the original source row with each final
+target row reached through the chain:
+
+```ocaml
+let users_with_post_tags ctx user_id =
+  let open User in
+  by_id user_id
+  |> query_posts ~target:Post.post_entity
+  |> Ent_ocaml.Edge_chain.start
+  |> Post.then_tags ~as_:"labels" ~target:Tag.tag_entity
+  |> Users.load_edge_chain ctx
+       ~decode_source:user_of_bson_doc_result
+       ~decode_target:tag_of_bson_doc_result
+```
+
 Mongo join-backed to-many edges use the same query and eager-load API. Declare
 the join collection and key fields on the edge metadata:
 
