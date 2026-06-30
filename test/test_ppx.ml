@@ -189,6 +189,25 @@ let test_generated_query_api () =
     "aggregate predicates" 1
     (List.length aggregate.query.predicates)
 
+let test_generated_cursor_api () =
+  let query =
+    let open Post in
+    query ()
+    |> after_created_at_ms ~direction:Ent_ocaml.Desc 1_700_000_100L
+    |> limit 20
+  in
+  Alcotest.(check (option int)) "limit" (Some 20) query.limit;
+  Alcotest.(check bool)
+    "cursor predicate" true
+    (match query.predicates with
+    | [ Ent_ocaml.Lt ("created_at_ms", V_int64 1_700_000_100L) ] -> true
+    | _ -> false);
+  Alcotest.(check bool)
+    "cursor order" true
+    (match query.orders with
+    | [ { Ent_ocaml.field = "created_at_ms"; direction = Desc } ] -> true
+    | _ -> false)
+
 let test_generated_mutation_api () =
   let open Post in
   let create_mutation =
@@ -469,6 +488,8 @@ let () =
           Alcotest.test_case "entity metadata" `Quick test_entity_metadata;
           Alcotest.test_case "generated query api" `Quick
             test_generated_query_api;
+          Alcotest.test_case "generated cursor api" `Quick
+            test_generated_cursor_api;
           Alcotest.test_case "generated mutation api" `Quick
             test_generated_mutation_api;
           Alcotest.test_case "generated store api" `Quick

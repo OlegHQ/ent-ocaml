@@ -692,6 +692,39 @@ let selector_function ~loc field_name =
         ~expr:(str ~loc field_name);
     ]
 
+let cursor_function ~loc name core_name field_name field =
+  let direction =
+    A.pexp_apply ~loc
+      (ident ~loc [ "Option"; "value" ])
+      [
+        (Nolabel, evar ~loc "direction");
+        (Labelled "default", constr ~loc [ "Ent_ocaml"; "Asc" ]);
+      ]
+  in
+  let body =
+    A.pexp_let ~loc Nonrecursive
+      [
+        A.value_binding ~loc ~pat:(pvar ~loc "direction")
+          ~expr:direction;
+      ]
+      (A.pexp_apply ~loc
+         (ident ~loc [ "Ent_ocaml"; "Query"; core_name ])
+         [
+           (Labelled "field", str ~loc field_name);
+           (Labelled "direction", evar ~loc "direction");
+           (Nolabel, value_expr ~loc field (evar ~loc "value"));
+           (Nolabel, evar ~loc "query");
+         ])
+  in
+  A.pstr_value ~loc Nonrecursive
+    [
+      A.value_binding ~loc ~pat:(pvar ~loc name)
+        ~expr:
+          (A.pexp_fun ~loc (Optional "direction") None (pvar ~loc "direction")
+             (A.pexp_fun ~loc Nolabel None (pvar ~loc "value")
+                (A.pexp_fun ~loc Nolabel None (pvar ~loc "query") body)));
+    ]
+
 let field_helper_items field =
   let loc = field.pld_loc in
   let field_name = field.pld_name.txt in
@@ -743,6 +776,8 @@ let field_helper_items field =
               [ "Ent_ocaml"; "Lt" ] field_name field;
             predicate_function ~loc (field_name ^ "_lte")
               [ "Ent_ocaml"; "Lte" ] field_name field;
+            cursor_function ~loc ("after_" ^ field_name) "after" field_name field;
+            cursor_function ~loc ("before_" ^ field_name) "before" field_name field;
           ]
         else []
       in
@@ -1732,6 +1767,14 @@ let gen_sig_for_type td =
                 (arrow Nolabel field_typ predicate_typ);
               val_sig (field_name ^ "_lte")
                 (arrow Nolabel field_typ predicate_typ);
+              val_sig ("after_" ^ field_name)
+                (arrow (Optional "direction") direction_typ
+                   (arrow Nolabel field_typ
+                      (arrow Nolabel query_typ query_typ)));
+              val_sig ("before_" ^ field_name)
+                (arrow (Optional "direction") direction_typ
+                   (arrow Nolabel field_typ
+                      (arrow Nolabel query_typ query_typ)));
             ]
           else []
         in

@@ -76,6 +76,7 @@ let load_drafts ctx user_id =
   query ()
   |> where (user (User.id_eq user_id))
   |> where (status_eq "draft")
+  |> after_created_at_ms ~direction:Ent_ocaml.Desc last_seen_created_at_ms
   |> Posts.all ctx ~decode:post_of_bson_doc_result
 ```
 

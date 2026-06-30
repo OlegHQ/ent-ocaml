@@ -71,18 +71,18 @@ The initial package scaffold already provides:
 - Mongo planning and CRUD execution for scalar filters, boolean predicates,
   field selection/projection, ordering, limit/offset, insert, bulk insert,
   update, upsert-one with `$setOnInsert`, delete, count, filtered and grouped
-  min/max/sum/avg aggregates, stored-FK edge predicates, and basic value
-  translation.
+  min/max/sum/avg aggregates, single-field seek pagination, stored-FK edge
+  predicates, and basic value translation.
 - `[@@deriving ent]` generation for entity metadata, functional query helpers,
-  typed field predicates, typed ordering helpers, create/update/delete mutation
-  values, functional upsert mutation helpers with insert-only field setters,
-  functional mutation pipeline helpers, aggregate and group-by constructors,
-  record create helpers, create-bulk helpers, field selector constants,
-  create-time and update-time default values, typed validator wrappers, and
-  matching `.mli` signatures for generated helper modules. Type-level
-  `[@@ent.edges ...]` descriptors generate FK edge metadata plus clean edge
-  predicate aliases such as `Post.user (User.id_eq id)` alongside bulk
-  `has_<edge>_with` helpers.
+  typed field predicates, typed ordering helpers, typed `after_<field>` and
+  `before_<field>` seek helpers, create/update/delete mutation values,
+  functional upsert mutation helpers with insert-only field setters, functional
+  mutation pipeline helpers, aggregate and group-by constructors, record create
+  helpers, create-bulk helpers, field selector constants, create-time and
+  update-time default values, typed validator wrappers, and matching `.mli`
+  signatures for generated helper modules. Type-level `[@@ent.edges ...]`
+  descriptors generate FK edge metadata plus clean edge predicate aliases such
+  as `Post.user (User.id_eq id)` alongside bulk `has_<edge>_with` helpers.
 - Poster pilot integration for `User`, `Session`, `Post`, `Media`,
   `PublishState`, and `PublishAttempt` DTO entities.
 
@@ -109,7 +109,7 @@ The initial package scaffold already provides:
 | Eager loading | Generated `with_<edge>` and nested loaders | Batch secondary queries; named loaders |
 | Named edges | Generated named edge storage | Map from edge name/alias to loaded rows |
 | Bidirectional edge refs | Optional generated in-memory backrefs | Set after eager load, avoid cycles by default |
-| Pagination | Limit, offset, cursor pagination | `limit`, `skip`, sort, stable cursor keys |
+| Pagination | Limit/offset and single-field seek cursors implemented; composite cursors pending | `limit`, `skip`, sort, stable cursor keys |
 | Ordering | Field and edge-count/edge-field ordering | sort, aggregation for edge terms |
 | Aggregation | count and filtered/grouped min/max/sum/avg implemented; scan pending | aggregation pipeline |
 | Hooks | Mutation middleware, global and entity-specific | Around generated mutators |
@@ -186,18 +186,20 @@ The initial package scaffold already provides:
    order.
 
 9. Aggregation, ordering, and pagination:
-   filtered and grouped count/min/max/sum/avg are implemented. Aggregate scan,
-   edge counts, edge-field ordering, cursor pagination, selected order values,
-   and custom backend terms are still pending.
+   filtered and grouped count/min/max/sum/avg plus single-field seek cursors
+   are implemented. Aggregate scan, edge counts, edge-field ordering, composite
+   cursor pagination, selected order values, and custom backend terms are still
+   pending.
 
 10. Mongo schema/index checks:
    generate index manifests, `ensure_indexes`, drift checks, collection
    validators where useful, and audit docs for production rollout.
 
-11. EntQL and annotations:
-   add runtime dynamic filters, schema snapshots, custom annotations, and
-   backend-specific escape hatches. Do not add a generator-template extension
-   system unless a concrete user need appears.
+11. EntQL and backend-specific metadata:
+   add runtime dynamic filters, schema snapshots, custom annotations when they
+   directly support a backend feature, and typed backend-specific escape
+   hatches. Do not add a generator-template extension system unless a concrete
+   user need appears.
 
 12. Poster cutover and e2e:
    run unit tests, PPX expansion tests, Mongo driver e2e, Poster HTTP e2e, and

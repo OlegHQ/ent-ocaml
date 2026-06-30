@@ -153,6 +153,12 @@ let query_user_1 =
       offset = None;
     }
 
+let query_after_post_1 =
+  Ent_ocaml.Query.make post_entity
+  |> Ent_ocaml.Query.after ~field:"id" ~direction:Ent_ocaml.Asc
+       (Ent_ocaml.V_string "post_1")
+  |> Ent_ocaml.Query.limit 1
+
 let assert_true label condition =
   if condition then Printf.printf "PASS %s\n%!" label
   else failwith ("FAIL " ^ label)
@@ -213,6 +219,11 @@ let run_flow client =
   assert_true "bulk insert returns docs" (List.length docs = 2);
   let* found = Ent_ocaml_mongo.find ctx query_all in
   assert_true "bulk insert persisted rows" (List.length found = 2);
+  let* page = Ent_ocaml_mongo.find ctx query_after_post_1 in
+  assert_true "seek pagination returns next row"
+    (match page with
+    | [ doc ] -> Bson.get_string (Bson.get_element "id" doc) = "post_2"
+    | _ -> false);
   let* user_posts = Ent_ocaml_mongo.find ctx query_user_1 in
   assert_true "edge predicate returns user posts" (List.length user_posts = 1);
   let* sum_value =

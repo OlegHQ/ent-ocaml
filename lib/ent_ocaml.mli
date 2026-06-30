@@ -133,6 +133,18 @@ module Query : sig
   val order_by : order list -> query -> query
   val limit : int -> query -> query
   val offset : int -> query -> query
+  val after :
+    field:string ->
+    direction:order_direction ->
+    value ->
+    query ->
+    query
+  val before :
+    field:string ->
+    direction:order_direction ->
+    value ->
+    query ->
+    query
 end
 
 module Aggregate : sig

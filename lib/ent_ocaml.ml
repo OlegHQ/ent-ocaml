@@ -131,6 +131,31 @@ module Query = struct
   let order_by orders query = { query with orders }
   let limit limit query = { query with limit = Some limit }
   let offset offset query = { query with offset = Some offset }
+
+  let ensure_order order query =
+    if List.exists (fun existing -> existing.field = order.field) query.orders
+    then query
+    else { query with orders = query.orders @ [ order ] }
+
+  let after ~field ~direction value query =
+    let predicate =
+      match direction with
+      | Asc -> Gt (field, value)
+      | Desc -> Lt (field, value)
+    in
+    query
+    |> where predicate
+    |> ensure_order { field; direction }
+
+  let before ~field ~direction value query =
+    let predicate =
+      match direction with
+      | Asc -> Lt (field, value)
+      | Desc -> Gt (field, value)
+    in
+    query
+    |> where predicate
+    |> ensure_order { field; direction }
 end
 
 module Aggregate = struct

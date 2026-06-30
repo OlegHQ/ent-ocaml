@@ -173,6 +173,36 @@ let test_query_pipeline_api () =
   Alcotest.(check (list string)) "select" [ "id"; "body" ] query.select;
   Alcotest.(check (option int)) "limit" (Some 5) query.limit
 
+let test_query_seek_pagination () =
+  let after_query =
+    Ent_ocaml.Query.make post_entity
+    |> Ent_ocaml.Query.after ~field:"id" ~direction:Ent_ocaml.Asc
+         (Ent_ocaml.V_string "post_1")
+  in
+  Alcotest.(check bool)
+    "after asc predicate" true
+    (match after_query.predicates with
+    | [ Ent_ocaml.Gt ("id", V_string "post_1") ] -> true
+    | _ -> false);
+  Alcotest.(check bool)
+    "after adds order" true
+    (match after_query.orders with
+    | [ { Ent_ocaml.field = "id"; direction = Asc } ] -> true
+    | _ -> false);
+  let before_query =
+    Ent_ocaml.Query.make post_entity
+    |> Ent_ocaml.Query.order_by Ent_ocaml.[ { field = "id"; direction = Desc } ]
+    |> Ent_ocaml.Query.before ~field:"id" ~direction:Ent_ocaml.Desc
+         (Ent_ocaml.V_string "post_2")
+  in
+  Alcotest.(check bool)
+    "before desc predicate" true
+    (match before_query.predicates with
+    | [ Ent_ocaml.Gt ("id", V_string "post_2") ] -> true
+    | _ -> false);
+  Alcotest.(check int) "existing order preserved once" 1
+    (List.length before_query.orders)
+
 let test_result_syntax () =
   let open Ent_ocaml.Result_syntax in
   let result =
@@ -453,6 +483,8 @@ let () =
             test_validate_update_rejects_on_insert;
           Alcotest.test_case "query pipeline api" `Quick
             test_query_pipeline_api;
+          Alcotest.test_case "query seek pagination" `Quick
+            test_query_seek_pagination;
           Alcotest.test_case "result syntax" `Quick test_result_syntax;
         ] );
       ( "mongo",
