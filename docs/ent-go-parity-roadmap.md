@@ -185,8 +185,8 @@ The initial package scaffold already provides:
 | JSON predicates | Generated nested path predicates and ordering implemented for `[@ent.json]` fields | Dotted paths and aggregation expressions |
 | Edge predicates | `has_edge`, `has_edge_with`, and target-aware generated edge aliases implemented for stored-FK to-one edges; join-backed predicates pending | FK fields, join collections, or `$lookup` depending edge |
 | Boolean predicates | `and_`, `or_`, `not_` combinators | `$and`, `$or`, `$nor` |
-| Graph traversals | Stored-FK to-one and to-many `query_<edge>` traversal implemented; full graph chains pending | Additional queries or aggregation `$lookup` |
-| Eager loading | Stored-FK to-one and to-many `with_<edge>` loading, alias metadata, named loaded-edge records, and same-shape grouped named loads implemented; nested and heterogeneous multi-edge loading pending | Batch secondary queries; named loaders |
+| Graph traversals | Stored-FK to-one and to-many `query_<edge>` traversal implemented, including target predicates, ordering, limits, and offsets; full graph chains pending | Additional queries or aggregation `$lookup` |
+| Eager loading | Stored-FK to-one and to-many `with_<edge>` loading, target predicates/order/limit/offset, alias metadata, named loaded-edge records, and same-shape grouped named loads implemented; nested and heterogeneous multi-edge loading pending | Batch secondary queries; named loaders |
 | Named edges | Generated `with_<edge> ~as_` alias metadata, single-edge named load results, and ordered same-shape multi-edge groups implemented; heterogeneous result maps pending | Map from edge name/alias to loaded rows |
 | Bidirectional edge refs | Optional generated in-memory backrefs | Set after eager load, avoid cycles by default |
 | Pagination | Limit/offset plus single-field and composite seek cursors implemented | `limit`, `skip`, sort, stable cursor keys |
