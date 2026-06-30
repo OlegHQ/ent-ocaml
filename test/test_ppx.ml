@@ -1,6 +1,6 @@
 type post = {
   id : string [@ent.key "_id"] [@ent.unique] [@ent.immutable];
-  user_id : string;
+  user_id : string [@ent.index "posts_by_user"];
   body : string;
   media_ids : string list;
   status : string [@ent.enum [ "draft"; "published" ]];
@@ -32,10 +32,25 @@ let test_entity_metadata () =
   Alcotest.(check string) "entity name" "Post" post_entity.name;
   Alcotest.(check string) "collection" "posts" post_entity.collection;
   Alcotest.(check int) "field count" 7 (List.length post_entity.fields);
+  Alcotest.(check int) "index count" 2 (List.length post_entity.indexes);
   let id = find_field "id" in
   Alcotest.(check string) "id storage key" "_id" id.storage_key;
   Alcotest.(check bool) "id unique" true id.unique;
   Alcotest.(check bool) "id immutable" true id.immutable;
+  Alcotest.(check bool)
+    "unique id index" true
+    (List.exists
+       (fun (index : Ent_ocaml.index) ->
+         index.name = Some "unique_posts_id" && index.fields = [ "id" ]
+         && index.unique)
+       post_entity.indexes);
+  Alcotest.(check bool)
+    "named user index" true
+    (List.exists
+       (fun (index : Ent_ocaml.index) ->
+         index.name = Some "posts_by_user" && index.fields = [ "user_id" ]
+         && not index.unique)
+       post_entity.indexes);
   let published_at = find_field "published_at_ms" in
   Alcotest.(check bool) "option is not required" false published_at.required;
   Alcotest.(check bool) "option is nillable" true published_at.nillable;

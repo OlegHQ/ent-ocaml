@@ -11,6 +11,9 @@ val document_to_bson : (string * Ent_ocaml.value) list -> (Bson.t, Ent_ocaml.err
 val update_to_bson : Ent_ocaml.mutation -> (Bson.t, Ent_ocaml.error) result
 val predicate_to_bson : Ent_ocaml.predicate -> (Bson.t, Ent_ocaml.error) result
 
+val index_storage_fields :
+  Ent_ocaml.entity -> Ent_ocaml.index -> (string list, Ent_ocaml.error) result
+
 val decode_document :
   decode:(Bson.t -> ('a, string) result) ->
   Bson.t ->
@@ -37,6 +40,7 @@ val find_one_as :
   ('a option, Ent_ocaml.error) result
 
 val count : ctx -> Ent_ocaml.query -> (int, Ent_ocaml.error) result
+val ensure_indexes : ctx -> Ent_ocaml.entity list -> (unit, Ent_ocaml.error) result
 val insert : ctx -> Ent_ocaml.entity -> Bson.t -> (Bson.t, Ent_ocaml.error) result
 val insert_values : ctx -> Ent_ocaml.mutation -> (Bson.t, Ent_ocaml.error) result
 val update_one : ctx -> Ent_ocaml.mutation -> (unit, Ent_ocaml.error) result

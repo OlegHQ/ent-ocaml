@@ -148,6 +148,56 @@ let find_options (query : Ent_ocaml.query) =
            limit = query.limit;
          })
 
+let index_storage_fields (entity : Ent_ocaml.entity) (index : Ent_ocaml.index) =
+  let storage_key name =
+    match List.find_opt (fun (field : Ent_ocaml.field) -> field.name = name) entity.fields with
+    | Some field -> Ok field.storage_key
+    | None -> Error (`Bad_schema ("index field not found: " ^ name))
+  in
+  let rec loop acc = function
+    | [] -> Ok (List.rev acc)
+    | field :: rest -> (
+        match storage_key field with
+        | Ok key -> loop (key :: acc) rest
+        | Error _ as error -> error)
+  in
+  loop [] index.fields
+
+let ensure_index ctx (entity : Ent_ocaml.entity) (index : Ent_ocaml.index) =
+  match index_storage_fields entity index with
+  | Error _ as error -> error
+  | Ok [ field ] ->
+      let options =
+        (if index.unique then [ Mongo_index.Unique true ] else [])
+        @
+        match index.name with
+        | None -> []
+        | Some name -> [ Mongo_index.Name name ]
+      in
+      (match
+         Mongo_eio.direct_ensure_simple_index ctx.client ~db:ctx.config.database
+           ~collection:entity.collection ~field options
+       with
+      | Ok () -> Ok ()
+      | Error error -> Error (backend_error "ensure_index" entity error))
+  | Ok [] -> Error (`Bad_schema "index has no fields")
+  | Ok _ -> Error (`Bad_schema "compound indexes are not implemented yet")
+
+let ensure_indexes ctx entities =
+  let rec entity_loop = function
+    | [] -> Ok ()
+    | entity :: rest -> (
+        let rec index_loop = function
+          | [] -> entity_loop rest
+          | index :: indexes -> (
+              match ensure_index ctx entity index with
+              | Ok () -> index_loop indexes
+              | Error _ as error -> error)
+        in
+        index_loop entity.Ent_ocaml.indexes)
+  in
+  entity_loop entities
+
 let document_to_bson fields =
   let rec loop doc = function
     | [] -> Ok doc

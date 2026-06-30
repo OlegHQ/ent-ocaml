@@ -3,7 +3,27 @@ let post_entity =
     {
       name = "Post";
       collection = "posts";
-      fields = [];
+      fields =
+        [
+          {
+            name = "id";
+            storage_key = "_id";
+            typ = String;
+            required = true;
+            unique = true;
+            immutable = true;
+            nillable = false;
+          };
+          {
+            name = "user_id";
+            storage_key = "user_id";
+            typ = String;
+            required = true;
+            unique = false;
+            immutable = false;
+            nillable = false;
+          };
+        ];
       edges = [];
       indexes = [];
     }
@@ -119,6 +139,26 @@ let test_mongo_decode_error () =
       Alcotest.(check string) "decode message" "bad document" message
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
+let test_mongo_index_storage_fields () =
+  let index =
+    Ent_ocaml.
+      { name = Some "unique_posts_id"; fields = [ "id" ]; edges = []; unique = true }
+  in
+  match Ent_ocaml_mongo.index_storage_fields post_entity index with
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+  | Ok fields -> Alcotest.(check (list string)) "storage fields" [ "_id" ] fields
+
+let test_mongo_index_missing_field () =
+  let index =
+    Ent_ocaml.
+      { name = Some "bad"; fields = [ "missing" ]; edges = []; unique = false }
+  in
+  match Ent_ocaml_mongo.index_storage_fields post_entity index with
+  | Ok _ -> Alcotest.fail "expected missing field error"
+  | Error (`Bad_schema message) ->
+      Alcotest.(check string) "message" "index field not found: missing" message
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+
 let () =
   Alcotest.run "ent-ocaml"
     [
@@ -134,6 +174,10 @@ let () =
           Alcotest.test_case "decode documents" `Quick
             test_mongo_decode_documents;
           Alcotest.test_case "decode error" `Quick test_mongo_decode_error;
+          Alcotest.test_case "index storage fields" `Quick
+            test_mongo_index_storage_fields;
+          Alcotest.test_case "index missing field" `Quick
+            test_mongo_index_missing_field;
         ]
       );
     ]

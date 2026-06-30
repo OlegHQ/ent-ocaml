@@ -50,6 +50,11 @@ let ent_unique_attr =
     Ast_pattern.(pstr nil)
     ()
 
+let ent_index_attr =
+  Attribute.declare "ent.index" Attribute.Context.label_declaration
+    Ast_pattern.(single_expr_payload (estring __))
+    (fun name -> name)
+
 let ent_optional_attr =
   Attribute.declare "ent.optional" Attribute.Context.label_declaration
     Ast_pattern.(pstr nil)
@@ -450,6 +455,29 @@ let field_expr field =
     ]
     None
 
+let index_expr ~loc ~collection field =
+  let field_name = field.pld_name.txt in
+  let unique = has_attr ent_unique_attr field in
+  let indexed = Attribute.get ent_index_attr field in
+  let name =
+    match indexed with
+    | Some name -> Some name
+    | None when unique -> Some ("unique_" ^ collection ^ "_" ^ field_name)
+    | None -> None
+  in
+  match (unique, indexed) with
+  | false, None -> None
+  | unique, _ ->
+      Some
+        (A.pexp_record ~loc
+           [
+             (lid ~loc [ "Ent_ocaml"; "name" ], option ~loc (Option.map (str ~loc) name));
+             (lid ~loc [ "Ent_ocaml"; "fields" ], list ~loc [ str ~loc field_name ]);
+             (lid ~loc [ "Ent_ocaml"; "edges" ], list ~loc []);
+             (lid ~loc [ "Ent_ocaml"; "unique" ], bool ~loc unique);
+           ]
+           None)
+
 let ensure_record td =
   if td.ptype_params <> [] then
     Location.raise_errorf ~loc:td.ptype_loc "ent deriving does not support parameterized entity records";
@@ -467,6 +495,9 @@ let gen_entity td =
   let collection =
     Option.value (Attribute.get ent_collection_attr td) ~default:(pluralize type_name)
   in
+  let indexes =
+    fields |> List.filter_map (index_expr ~loc ~collection)
+  in
   let expr =
     A.pexp_record ~loc
       [
@@ -474,7 +505,7 @@ let gen_entity td =
         (lid ~loc [ "Ent_ocaml"; "collection" ], str ~loc collection);
         (lid ~loc [ "Ent_ocaml"; "fields" ], list ~loc (List.map field_expr fields));
         (lid ~loc [ "Ent_ocaml"; "edges" ], list ~loc []);
-        (lid ~loc [ "Ent_ocaml"; "indexes" ], list ~loc []);
+        (lid ~loc [ "Ent_ocaml"; "indexes" ], list ~loc indexes);
       ]
       None
   in
