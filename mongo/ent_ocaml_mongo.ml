@@ -73,6 +73,11 @@ let predicate_field ?entity field =
       | Error (`Bad_schema _) -> Ok field
       | Error _ as error -> error)
 
+let split_dotted_field field =
+  match String.split_on_char '.' field with
+  | [] -> None
+  | root :: path -> Some (root, path)
+
 let json_path_field ?entity field path =
   let validate_path = function
     | [] -> Error (`Bad_query "json predicate path must not be empty")
@@ -99,6 +104,20 @@ let json_path_field ?entity field path =
       | Some { typ = Ent_ocaml.Json; storage_key; _ } ->
           Ok (storage_key ^ "." ^ path)
       | Some _ -> Error (`Bad_query ("json predicate field is not json: " ^ field)))
+
+let order_field ?entity field =
+  match entity with
+  | None -> field
+  | Some entity -> (
+      match field_storage_key entity field with
+      | Ok key -> key
+      | Error _ -> (
+          match split_dotted_field field with
+          | Some (root, (_ :: _ as path)) -> (
+              match json_path_field ~entity root path with
+              | Ok key -> key
+              | Error _ -> field)
+          | Some _ | None -> field))
 
 let edge_storage_key (entity : Ent_ocaml.entity) name =
   match find_edge entity name with
@@ -332,11 +351,7 @@ let sort_to_bson ?entity (orders : Ent_ocaml.order list) =
       let fields =
         List.map
           (fun (order : Ent_ocaml.order) ->
-            let field =
-              match predicate_field ?entity order.Ent_ocaml.field with
-              | Ok field -> field
-              | Error _ -> order.field
-            in
+            let field = order_field ?entity order.Ent_ocaml.field in
             (field, direction order.direction))
           orders
       in

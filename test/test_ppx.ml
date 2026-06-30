@@ -753,8 +753,12 @@ let test_generated_json_predicate_api () =
     |> where
          (metadata_path_eq [ "flags"; "pinned" ] (Ent_ocaml.V_bool true))
     |> where (metadata_path_not_nil [ "author"; "id" ])
+    |> order_by [ metadata_path_order ~direction:Ent_ocaml.Desc [ "priority" ] ]
   in
   Alcotest.(check int) "json predicates" 2 (List.length query.predicates);
+  Alcotest.(check (list string))
+    "json order" [ "metadata.priority" ]
+    (List.map (fun (order : Ent_ocaml.order) -> order.field) query.orders);
   let record =
     {
       id = "event_1";

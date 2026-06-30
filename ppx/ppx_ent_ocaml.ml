@@ -805,6 +805,41 @@ let json_nullary_predicate_function ~loc name constructor field_name =
                 (A.pexp_tuple ~loc [ str ~loc field_name; evar ~loc "path" ])));
     ]
 
+let json_order_function ~loc field_name =
+  let direction =
+    A.pexp_apply ~loc
+      (ident ~loc [ "Option"; "value" ])
+      [
+        (Nolabel, evar ~loc "direction");
+        (Labelled "default", constr ~loc [ "Ent_ocaml"; "Asc" ]);
+      ]
+  in
+  let field =
+    app ~loc (ident ~loc [ "String"; "concat" ])
+      [
+        str ~loc ".";
+        A.pexp_construct ~loc (lid ~loc [ "::" ])
+          (Some (A.pexp_tuple ~loc [ str ~loc field_name; evar ~loc "path" ]));
+      ]
+  in
+  let body =
+    A.pexp_let ~loc Nonrecursive
+      [ A.value_binding ~loc ~pat:(pvar ~loc "direction") ~expr:direction ]
+      (A.pexp_record ~loc
+         [
+           (lid ~loc [ "Ent_ocaml"; "field" ], field);
+           (lid ~loc [ "Ent_ocaml"; "direction" ], evar ~loc "direction");
+         ]
+         None)
+  in
+  A.pstr_value ~loc Nonrecursive
+    [
+      A.value_binding ~loc ~pat:(pvar ~loc (field_name ^ "_path_order"))
+        ~expr:
+          (A.pexp_fun ~loc (Optional "direction") None (pvar ~loc "direction")
+             (A.pexp_fun ~loc Nolabel None (pvar ~loc "path") body));
+    ]
+
 let field_helper_items field =
   let loc = field.pld_loc in
   let field_name = field.pld_name.txt in
@@ -851,6 +886,7 @@ let field_helper_items field =
           [ "Ent_ocaml"; "Json_is_nil" ] field_name;
         json_nullary_predicate_function ~loc (field_name ^ "_path_not_nil")
           [ "Ent_ocaml"; "Json_not_nil" ] field_name;
+        json_order_function ~loc field_name;
       ]
     else []
   in
@@ -2856,6 +2892,9 @@ let gen_sig_for_type td =
             (arrow Nolabel (list_typ string_typ) predicate_typ);
           val_sig (field_name ^ "_path_not_nil")
             (arrow Nolabel (list_typ string_typ) predicate_typ);
+          val_sig (field_name ^ "_path_order")
+            (arrow (Optional "direction") direction_typ
+               (arrow Nolabel (list_typ string_typ) order_typ));
         ]
       else []
     in

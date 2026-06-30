@@ -481,6 +481,14 @@ let test_mongo_json_path_planning () =
   Alcotest.(check bool)
     "json bool" true
     (Bson.get_boolean (Bson.get_element "meta.flags.pinned" filter));
+  let sort =
+    Ent_ocaml_mongo.sort_to_bson ~entity:post_entity
+      Ent_ocaml.[ { field = "metadata.priority"; direction = Desc } ]
+    |> Option.get
+  in
+  Alcotest.(check int32)
+    "json sort" (-1l)
+    (Bson.get_int32 (Bson.get_element "meta.priority" sort));
   match
     Ent_ocaml_mongo.filter_to_bson
       (query

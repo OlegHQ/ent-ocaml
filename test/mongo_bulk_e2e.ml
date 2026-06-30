@@ -141,6 +141,7 @@ let create_user id username =
 
 let create id user_id body views =
   let pinned = id = "post_2" in
+  let priority = if id = "post_2b" then 30 else if id = "post_2" then 20 else 10 in
   Ent_ocaml.
     {
       entity = post_entity;
@@ -152,7 +153,12 @@ let create id user_id body views =
           ("user_id", V_string user_id);
           ("body", V_string body);
           ("views", V_int64 views);
-          ("metadata", V_doc [ ("flags", V_doc [ ("pinned", V_bool pinned) ]) ]);
+          ( "metadata",
+            V_doc
+              [
+                ("flags", V_doc [ ("pinned", V_bool pinned) ]);
+                ("priority", V_int priority);
+              ] );
         ];
       clear = [];
       add = [];
@@ -323,6 +329,24 @@ let run_flow client =
   assert_true "json path predicate returns pinned post"
     (match pinned_posts with
     | [ doc ] -> Bson.get_string (Bson.get_element "_id" doc) = "post_2"
+    | _ -> false);
+  let* priority_posts =
+    Ent_ocaml_mongo.find ctx
+      Ent_ocaml.
+        {
+          entity = post_entity;
+          predicates = [];
+          select = [];
+          orders = [ { field = "metadata.priority"; direction = Desc } ];
+          limit = Some 2;
+          offset = None;
+        }
+  in
+  assert_true "json path order returns high priority first"
+    (match priority_posts with
+    | first :: second :: _ ->
+        Bson.get_string (Bson.get_element "_id" first) = "post_2b"
+        && Bson.get_string (Bson.get_element "_id" second) = "post_2"
     | _ -> false);
   let* page = Ent_ocaml_mongo.find ctx query_after_post_1 in
   assert_true "seek pagination returns next row"

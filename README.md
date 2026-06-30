@@ -164,6 +164,7 @@ let pinned =
   let open Event in
   query ()
   |> where (metadata_path_eq [ "flags"; "pinned" ] (Ent_ocaml.V_bool true))
+  |> order_by [ metadata_path_order ~direction:Ent_ocaml.Desc [ "priority" ] ]
 ```
 
 Generated schema snapshots provide stable metadata for drift/debug tooling:
