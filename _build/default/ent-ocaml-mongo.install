@@ -1,0 +1,20 @@
+lib: [
+  "_build/install/default/lib/ent-ocaml-mongo/META"
+  "_build/install/default/lib/ent-ocaml-mongo/dune-package"
+  "_build/install/default/lib/ent-ocaml-mongo/ent_ocaml_mongo.a"
+  "_build/install/default/lib/ent-ocaml-mongo/ent_ocaml_mongo.cma"
+  "_build/install/default/lib/ent-ocaml-mongo/ent_ocaml_mongo.cmi"
+  "_build/install/default/lib/ent-ocaml-mongo/ent_ocaml_mongo.cmt"
+  "_build/install/default/lib/ent-ocaml-mongo/ent_ocaml_mongo.cmti"
+  "_build/install/default/lib/ent-ocaml-mongo/ent_ocaml_mongo.cmx"
+  "_build/install/default/lib/ent-ocaml-mongo/ent_ocaml_mongo.cmxa"
+  "_build/install/default/lib/ent-ocaml-mongo/ent_ocaml_mongo.ml"
+  "_build/install/default/lib/ent-ocaml-mongo/ent_ocaml_mongo.mli"
+  "_build/install/default/lib/ent-ocaml-mongo/opam"
+]
+libexec: [
+  "_build/install/default/lib/ent-ocaml-mongo/ent_ocaml_mongo.cmxs"
+]
+doc: [
+  "_build/install/default/doc/ent-ocaml-mongo/README.md"
+]

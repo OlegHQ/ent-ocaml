@@ -1,0 +1,5 @@
+(library
+ (name ent_ocaml_ppx)
+ (public_name ent-ocaml-ppx)
+ (kind ppx_rewriter)
+ (libraries ppxlib ent-ocaml))

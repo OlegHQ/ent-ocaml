@@ -1,0 +1,36 @@
+(lang dune 3.23)
+(name ent-ocaml-mongo)
+(sections (lib .) (libexec .) (doc ../../doc/ent-ocaml-mongo))
+(files
+ (lib
+  (META
+   dune-package
+   ent_ocaml_mongo.a
+   ent_ocaml_mongo.cma
+   ent_ocaml_mongo.cmi
+   ent_ocaml_mongo.cmt
+   ent_ocaml_mongo.cmti
+   ent_ocaml_mongo.cmx
+   ent_ocaml_mongo.cmxa
+   ent_ocaml_mongo.ml
+   ent_ocaml_mongo.mli
+   opam))
+ (libexec (ent_ocaml_mongo.cmxs))
+ (doc (README.md)))
+(library
+ (name ent-ocaml-mongo)
+ (kind normal)
+ (archives (byte ent_ocaml_mongo.cma) (native ent_ocaml_mongo.cmxa))
+ (plugins (byte ent_ocaml_mongo.cma) (native ent_ocaml_mongo.cmxs))
+ (native_archives ent_ocaml_mongo.a)
+ (requires ent-ocaml eio bson mongo)
+ (main_module_name Ent_ocaml_mongo)
+ (modes byte native)
+ (modules
+  (singleton
+   (obj_name ent_ocaml_mongo)
+   (visibility public)
+   (source
+    (path Ent_ocaml_mongo)
+    (intf (path ent_ocaml_mongo.mli))
+    (impl (path ent_ocaml_mongo.ml))))))

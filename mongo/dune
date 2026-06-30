@@ -1,0 +1,4 @@
+(library
+ (name ent_ocaml_mongo)
+ (public_name ent-ocaml-mongo)
+ (libraries ent-ocaml eio bson mongo))

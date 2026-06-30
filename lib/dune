@@ -1,0 +1,3 @@
+(library
+ (name ent_ocaml)
+ (public_name ent-ocaml))

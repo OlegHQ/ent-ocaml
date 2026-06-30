@@ -1,0 +1,20 @@
+lib: [
+  "_build/install/default/lib/ent-ocaml/META"
+  "_build/install/default/lib/ent-ocaml/dune-package"
+  "_build/install/default/lib/ent-ocaml/ent_ocaml.a"
+  "_build/install/default/lib/ent-ocaml/ent_ocaml.cma"
+  "_build/install/default/lib/ent-ocaml/ent_ocaml.cmi"
+  "_build/install/default/lib/ent-ocaml/ent_ocaml.cmt"
+  "_build/install/default/lib/ent-ocaml/ent_ocaml.cmti"
+  "_build/install/default/lib/ent-ocaml/ent_ocaml.cmx"
+  "_build/install/default/lib/ent-ocaml/ent_ocaml.cmxa"
+  "_build/install/default/lib/ent-ocaml/ent_ocaml.ml"
+  "_build/install/default/lib/ent-ocaml/ent_ocaml.mli"
+  "_build/install/default/lib/ent-ocaml/opam"
+]
+libexec: [
+  "_build/install/default/lib/ent-ocaml/ent_ocaml.cmxs"
+]
+doc: [
+  "_build/install/default/doc/ent-ocaml/README.md"
+]

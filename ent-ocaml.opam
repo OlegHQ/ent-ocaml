@@ -1,0 +1,16 @@
+opam-version: "2.0"
+synopsis: "Typed entity schema and query runtime for OCaml"
+description: "ent-ocaml provides the core schema, query, mutation, hook, privacy, and backend interfaces for generated type-safe entity clients."
+maintainer: "OlegHQ"
+authors: "OlegHQ"
+license: "Apache-2.0"
+homepage: "https://github.com/OlegHQ/ent-ocaml"
+bug-reports: "https://github.com/OlegHQ/ent-ocaml/issues"
+depends: [
+  "ocaml" {>= "5.2.0"}
+  "dune" {>= "3.22"}
+]
+build: [
+  ["dune" "subst"] {dev}
+  ["dune" "build" "-p" name "-j" jobs]
+]
