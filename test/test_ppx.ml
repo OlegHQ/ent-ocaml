@@ -12,7 +12,16 @@ type post = {
   updated_at_ms : int64 [@ent.update_default 42L];
   published_at_ms : int64 option;
 }
-[@@ent.entity "Post"] [@@ent.collection "posts"] [@@deriving ent]
+[@@ent.entity "Post"] [@@ent.collection "posts"]
+[@@ent.indexes
+  [
+    {
+      name = "posts_by_user_created";
+      fields = [ "user_id"; "created_at_ms" ];
+      unique = false;
+    };
+  ]]
+[@@deriving ent]
 
 type publish_state = {
   kind : string;
@@ -37,7 +46,7 @@ let test_entity_metadata () =
   Alcotest.(check string) "entity name" "Post" post_entity.name;
   Alcotest.(check string) "collection" "posts" post_entity.collection;
   Alcotest.(check int) "field count" 8 (List.length post_entity.fields);
-  Alcotest.(check int) "index count" 2 (List.length post_entity.indexes);
+  Alcotest.(check int) "index count" 3 (List.length post_entity.indexes);
   let id = find_field "id" in
   Alcotest.(check string) "id storage key" "_id" id.storage_key;
   Alcotest.(check bool) "id unique" true id.unique;
@@ -54,6 +63,14 @@ let test_entity_metadata () =
     (List.exists
        (fun (index : Ent_ocaml.index) ->
          index.name = Some "posts_by_user" && index.fields = [ "user_id" ]
+         && not index.unique)
+       post_entity.indexes);
+  Alcotest.(check bool)
+    "compound user created index" true
+    (List.exists
+       (fun (index : Ent_ocaml.index) ->
+         index.name = Some "posts_by_user_created"
+         && index.fields = [ "user_id"; "created_at_ms" ]
          && not index.unique)
        post_entity.indexes);
   let published_at = find_field "published_at_ms" in

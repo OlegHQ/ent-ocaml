@@ -180,10 +180,19 @@ let index_storage_fields (entity : Ent_ocaml.entity) (index : Ent_ocaml.index) =
   in
   loop [] index.fields
 
+let index_key_bson fields =
+  let key =
+    List.fold_right
+      (fun field acc -> Bson.add_element field (Bson.create_int32 1l) acc)
+      fields Bson.empty
+  in
+  Bson.add_element "key" (Bson.create_doc_element key) Bson.empty
+
 let ensure_index ctx (entity : Ent_ocaml.entity) (index : Ent_ocaml.index) =
   match index_storage_fields entity index with
   | Error _ as error -> error
-  | Ok [ field ] ->
+  | Ok [] -> Error (`Bad_schema "index has no fields")
+  | Ok fields ->
       let options =
         (if index.unique then [ Mongo_index.Unique true ] else [])
         @
@@ -192,13 +201,11 @@ let ensure_index ctx (entity : Ent_ocaml.entity) (index : Ent_ocaml.index) =
         | Some name -> [ Mongo_index.Name name ]
       in
       (match
-         Mongo_eio.direct_ensure_simple_index ctx.client ~db:ctx.config.database
-           ~collection:entity.collection ~field options
+         Mongo_eio.direct_ensure_index ctx.client ~db:ctx.config.database
+           ~collection:entity.collection (index_key_bson fields) options
        with
       | Ok () -> Ok ()
       | Error error -> Error (backend_error "ensure_index" entity error))
-  | Ok [] -> Error (`Bad_schema "index has no fields")
-  | Ok _ -> Error (`Bad_schema "compound indexes are not implemented yet")
 
 let ensure_indexes ctx entities =
   let rec entity_loop = function

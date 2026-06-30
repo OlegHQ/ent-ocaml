@@ -55,6 +55,11 @@ let ent_index_attr =
     Ast_pattern.(single_expr_payload (estring __))
     (fun name -> name)
 
+let ent_indexes_attr =
+  Attribute.declare "ent.indexes" Attribute.Context.type_declaration
+    Ast_pattern.(single_expr_payload (elist __))
+    (fun indexes -> indexes)
+
 let ent_optional_attr =
   Attribute.declare "ent.optional" Attribute.Context.label_declaration
     Ast_pattern.(pstr nil)
@@ -107,6 +112,112 @@ let type_path_parts path =
         Location.raise_errorf "ent deriving does not support applicative paths"
   in
   loop [] path
+
+let label_name = function
+  | Longident.Lident name -> name
+  | Ldot (_, name) -> name
+  | Lapply _ -> Location.raise_errorf "ent index record labels cannot be applicative paths"
+
+let parse_bool_expr expr =
+  match expr.pexp_desc with
+  | Pexp_construct ({ txt = Lident "true"; _ }, None) -> true
+  | Pexp_construct ({ txt = Lident "false"; _ }, None) -> false
+  | _ -> Location.raise_errorf ~loc:expr.pexp_loc "ent index unique must be true or false"
+
+let parse_name_expr expr =
+  match expr.pexp_desc with
+  | Pexp_constant (Pconst_string (name, _, _)) -> Some name
+  | Pexp_construct ({ txt = Lident "None"; _ }, None) -> None
+  | Pexp_construct
+      ({ txt = Lident "Some"; _ }, Some { pexp_desc = Pexp_constant (Pconst_string (name, _, _)); _ }) ->
+      Some name
+  | _ ->
+      Location.raise_errorf ~loc:expr.pexp_loc
+        "ent index name must be a string, None, or Some string"
+
+let parse_string_list_expr ~what expr =
+  match expr.pexp_desc with
+  | Pexp_construct ({ txt = Lident "[]"; _ }, None) -> []
+  | Pexp_array _ ->
+      Location.raise_errorf ~loc:expr.pexp_loc
+        "ent %s must use list syntax, not array syntax" what
+  | _ ->
+      let rec loop acc expr =
+        match expr.pexp_desc with
+        | Pexp_construct ({ txt = Lident "[]"; _ }, None) -> List.rev acc
+        | Pexp_construct
+            ( { txt = Lident "::"; _ },
+              Some
+                {
+                  pexp_desc =
+                    Pexp_tuple
+                      [
+                        { pexp_desc = Pexp_constant (Pconst_string (value, _, _)); _ };
+                        rest;
+                      ];
+                  _;
+                } ) ->
+            loop (value :: acc) rest
+        | _ ->
+            Location.raise_errorf ~loc:expr.pexp_loc
+              "ent %s must be a string list" what
+      in
+      loop [] expr
+
+let parse_index_spec expr =
+  match expr.pexp_desc with
+  | Pexp_record (fields, None) ->
+      let name = ref None in
+      let index_fields = ref None in
+      let edges = ref (Some []) in
+      let unique = ref None in
+      List.iter
+        (fun (label, value) ->
+          match label_name label.txt with
+          | "name" -> name := Some (parse_name_expr value)
+          | "fields" ->
+              index_fields :=
+                Some (parse_string_list_expr ~what:"index fields" value)
+          | "edges" ->
+              edges := Some (parse_string_list_expr ~what:"index edges" value)
+          | "unique" -> unique := Some (parse_bool_expr value)
+          | field ->
+              Location.raise_errorf ~loc:value.pexp_loc
+                "unknown ent index option: %s" field)
+        fields;
+      let index_fields =
+        match !index_fields with
+        | Some fields -> fields
+        | None ->
+            Location.raise_errorf ~loc:expr.pexp_loc
+              "ent index record requires fields"
+      in
+      let unique =
+        match !unique with
+        | Some unique -> unique
+        | None ->
+            Location.raise_errorf ~loc:expr.pexp_loc
+              "ent index record requires unique"
+      in
+      A.pexp_record ~loc:expr.pexp_loc
+        [
+          ( lid ~loc:expr.pexp_loc [ "Ent_ocaml"; "name" ],
+            option ~loc:expr.pexp_loc
+              (match !name with
+              | None -> None
+              | Some name -> Option.map (str ~loc:expr.pexp_loc) name) );
+          ( lid ~loc:expr.pexp_loc [ "Ent_ocaml"; "fields" ],
+            list ~loc:expr.pexp_loc
+              (List.map (str ~loc:expr.pexp_loc) index_fields) );
+          ( lid ~loc:expr.pexp_loc [ "Ent_ocaml"; "edges" ],
+            list ~loc:expr.pexp_loc
+              (List.map (str ~loc:expr.pexp_loc) (Option.value !edges ~default:[])) );
+          (lid ~loc:expr.pexp_loc [ "Ent_ocaml"; "unique" ], bool ~loc:expr.pexp_loc unique);
+        ]
+        None
+  | _ ->
+      Location.raise_errorf ~loc:expr.pexp_loc
+        "ent index must be a record: { name = \"...\"; fields = [ ... ]; unique = false }"
 
 let type_path_name path =
   match List.rev (type_path_parts path) with
@@ -661,7 +772,10 @@ let gen_entity td =
     Option.value (Attribute.get ent_collection_attr td) ~default:(pluralize type_name)
   in
   let indexes =
-    fields |> List.filter_map (index_expr ~loc ~collection)
+    (fields |> List.filter_map (index_expr ~loc ~collection))
+    @ (Attribute.get ent_indexes_attr td
+      |> Option.value ~default:[]
+      |> List.map parse_index_spec)
   in
   let expr =
     A.pexp_record ~loc

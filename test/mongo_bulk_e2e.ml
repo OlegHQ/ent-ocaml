@@ -44,6 +44,12 @@ let post_entity =
             edges = [];
             unique = true;
           };
+          {
+            name = Some "posts_by_id_body";
+            fields = [ "id"; "body" ];
+            edges = [];
+            unique = false;
+          };
         ];
     }
 
