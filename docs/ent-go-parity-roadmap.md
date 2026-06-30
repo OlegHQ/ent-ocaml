@@ -110,8 +110,9 @@ The initial package scaffold already provides:
   wrap read-path query execution.
   Type-level `[@@ent.query_rules ...]`, `[@@ent.mutation_rules ...]`,
   `[@@ent.mutation_hooks ...]`, and `[@@ent.query_interceptors ...]`
-  attributes generate `Store.Schema_policy`, `Store.Schema_hooks`, and
-  `Store.Schema_interceptors` modules.
+  attributes generate `Store.Schema_policy`, `Store.Schema_hooks`,
+  `Store.Schema_interceptors`, `Client.Schema_policy`, `Client.Schema_hooks`,
+  and `Client.Schema_interceptors` modules.
   Entities with a supported `id` field also generate entity-local `by_id`,
   `update_id`, and `delete_id` helpers for clean primary-key query and mutation
   paths.
@@ -164,9 +165,9 @@ The initial package scaffold already provides:
 | Pagination | Limit/offset plus single-field and composite seek cursors implemented | `limit`, `skip`, sort, stable cursor keys |
 | Ordering | Field and JSON-path ordering implemented, including aliased selected order values; edge-count/edge-field ordering pending | sort, aggregation for edge terms |
 | Aggregation | count, filtered/grouped min/max/sum/avg, and named scans implemented | aggregation pipeline |
-| Hooks | Generated mutation middleware via `Store.With_hooks`, `Client.With_hooks`, and schema `Store.Schema_hooks` implemented; deterministic cross-source/global registration pending | Around generated mutators |
-| Interceptors | Generated query middleware via `Store.With_interceptors`, `Client.With_interceptors`, and schema `Store.Schema_interceptors` implemented; traversal-specific interceptors pending | Around query execution and traversal construction |
-| Privacy | Query/mutation rule-chain evaluation, generated policy-aware Store/Client modules, and schema `Store.Schema_policy` implemented; mixin registration pending | Evaluated before backend execution |
+| Hooks | Generated mutation middleware via `Store.With_hooks`, `Client.With_hooks`, `Store.Schema_hooks`, and `Client.Schema_hooks` implemented; deterministic cross-source/global registration pending | Around generated mutators |
+| Interceptors | Generated query middleware via `Store.With_interceptors`, `Client.With_interceptors`, `Store.Schema_interceptors`, and `Client.Schema_interceptors` implemented; traversal-specific interceptors pending | Around query execution and traversal construction |
+| Privacy | Query/mutation rule-chain evaluation, generated policy-aware Store/Client modules, and schema `Store.Schema_policy`/`Client.Schema_policy` implemented; mixin registration pending | Evaluated before backend execution |
 | Mixins | Reusable fields, edges, indexes, hooks, policies | PPX composition step |
 | Field defaults | Generated `[@ent.default expr]`, `[@ent.update_default expr]`, `[@ent.default_result expr]`, and `[@ent.update_default_result expr]` | OCaml expressions evaluated in create/update APIs |
 | Field validators | Generated `[@ent.validate [fn1; fn2]]` wrappers for primitive, enum, option, list, JSON, and nested custom record fields | Checked before backend mutation |
@@ -254,8 +255,8 @@ The initial package scaffold already provides:
    `Client.With_policy` modules evaluate query and mutation privacy rule chains
    before backend execution. Generated `Store.With_interceptors` and
    `Client.With_interceptors` modules wrap read-path query execution. Schema
-   attributes generate `Store.Schema_policy`, `Store.Schema_hooks`, and
-   `Store.Schema_interceptors`. Traversal-specific interceptors,
+   attributes generate Store and Client `Schema_policy`, `Schema_hooks`, and
+   `Schema_interceptors` modules. Traversal-specific interceptors,
    mixin-provided rules, and deterministic cross-source/global registration
    order remain.
 

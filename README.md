@@ -273,9 +273,14 @@ type post = {
 [@@deriving ent]
 
 module Posts = Post.Store (Ent_ocaml_mongo)
+module Post_client = Post.Client (Ent_ocaml_mongo)
 
 let load_scoped ctx query =
   Posts.Schema_interceptors.all ctx ~decode:post_of_bson_doc_result query
+
+let save_audited ctx mutation =
+  let client = Post_client.Schema_hooks.make ctx in
+  Post_client.Schema_hooks.insert client mutation
 ```
 
 Runtime dynamic filters validate against entity metadata and then become normal

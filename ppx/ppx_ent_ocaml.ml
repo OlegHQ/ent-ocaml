@@ -3466,6 +3466,37 @@ let gen_query_module td =
         ~store_functor:"With_interceptors"
         ~store_module_name:"Intercepted_store"
     in
+    let schema_module name functor_name bindings =
+      A.pstr_module ~loc
+        (A.module_binding ~loc ~name:{ loc; txt = Some name }
+           ~expr:
+             (A.pmod_apply ~loc
+                (A.pmod_ident ~loc (lid ~loc [ functor_name ]))
+                (A.pmod_structure ~loc
+                   (List.map
+                      (fun (name, expr) ->
+                        A.pstr_value ~loc Nonrecursive
+                          [
+                            A.value_binding ~loc ~pat:(pvar ~loc name)
+                              ~expr;
+                          ])
+                      bindings))))
+    in
+    let schema_policy_module =
+      schema_module "Schema_policy" "With_policy"
+        [
+          ("query_rules", list ~loc schema_query_rules);
+          ("mutation_rules", list ~loc schema_mutation_rules);
+        ]
+    in
+    let schema_hooks_module =
+      schema_module "Schema_hooks" "With_hooks"
+        [ ("mutation_hooks", list ~loc schema_mutation_hooks) ]
+    in
+    let schema_interceptors_module =
+      schema_module "Schema_interceptors" "With_interceptors"
+        [ ("query_interceptors", list ~loc schema_query_interceptors) ]
+    in
     let structure =
       [
         A.pstr_module ~loc
@@ -3492,6 +3523,9 @@ let gen_query_module td =
         with_policy_module;
         with_hooks_module;
         with_interceptors_module;
+        schema_policy_module;
+        schema_hooks_module;
+        schema_interceptors_module;
       ]
       @ client_values "Entity_store"
     in
@@ -4337,6 +4371,16 @@ let gen_sig_for_type td =
                        ( { loc; txt = Some "Interceptors" },
                          interceptors_type ))
                     (A.pmty_signature ~loc client_base_items)));
+          A.psig_module ~loc
+            (A.module_declaration ~loc ~name:{ loc; txt = Some "Schema_policy" }
+               ~type_:(A.pmty_signature ~loc client_base_items));
+          A.psig_module ~loc
+            (A.module_declaration ~loc ~name:{ loc; txt = Some "Schema_hooks" }
+               ~type_:(A.pmty_signature ~loc client_base_items));
+          A.psig_module ~loc
+            (A.module_declaration ~loc
+               ~name:{ loc; txt = Some "Schema_interceptors" }
+               ~type_:(A.pmty_signature ~loc client_base_items));
         ]
     in
     A.psig_module ~loc
