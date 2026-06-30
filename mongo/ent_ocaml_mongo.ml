@@ -381,17 +381,76 @@ let sort_to_bson ?entity (orders : Ent_ocaml.order list) =
     | Ent_ocaml.Asc -> Bson.create_int32 1l
     | Desc -> Bson.create_int32 (-1l)
   in
+  let order_field_for_sort order =
+    let ({ Ent_ocaml.target = order_target; _ } : Ent_ocaml.order) = order in
+    match order_target with
+    | Ent_ocaml.Field_order field -> order_field ?entity field
+    | Edge_field_order { edge; field; _ } -> edge ^ "." ^ field
+  in
   match orders with
   | [] -> None
   | orders ->
       let fields =
         List.map
           (fun (order : Ent_ocaml.order) ->
-            let field = order_field ?entity order.Ent_ocaml.field in
+            let field = order_field_for_sort order in
             (field, direction order.direction))
           orders
       in
       Some (doc fields)
+
+let has_edge_field_order (query : Ent_ocaml.query) =
+  List.exists
+    (fun (order : Ent_ocaml.order) ->
+      let ({ Ent_ocaml.target = order_target; _ } : Ent_ocaml.order) = order in
+      match order_target with
+      | Ent_ocaml.Edge_field_order _ -> true
+      | Ent_ocaml.Field_order _ -> false)
+    query.orders
+
+let edge_order_temp index = "__ent_edge_order_" ^ string_of_int index
+
+let edge_order_field (query : Ent_ocaml.query) index (order : Ent_ocaml.order) =
+  let ({ Ent_ocaml.target = order_target; _ } : Ent_ocaml.order) = order in
+  match order_target with
+  | Ent_ocaml.Field_order field -> order_storage_key query.Ent_ocaml.entity field
+  | Edge_field_order { edge; target; field } -> (
+      match find_edge query.Ent_ocaml.entity edge with
+      | None -> Error (`Bad_query ("edge not found: " ^ edge))
+      | Some edge_desc when edge_desc.target <> target.name ->
+          Error
+            (`Bad_query
+              (Printf.sprintf "edge %s targets %s, not %s" edge_desc.name
+                 edge_desc.target target.name))
+      | Some { direction = From _; _ } ->
+          Error (`Bad_query "edge-field ordering currently supports to-edges")
+      | Some { cardinality = Many; _ } ->
+          Error (`Bad_query "edge-field ordering currently supports to-one edges")
+      | Some edge_desc -> (
+          match (edge_desc.storage_key, field_storage_key target field) with
+          | Some _, Ok target_field_key ->
+              Ok (edge_order_temp index ^ "." ^ target_field_key)
+          | None, _ ->
+              Error
+                (`Bad_query
+                  ("edge " ^ edge_desc.name
+                 ^ " does not have a stored foreign-key field"))
+          | _, (Error _ as error) -> error))
+
+let sort_to_bson_result (query : Ent_ocaml.query) =
+  let direction = function
+    | Ent_ocaml.Asc -> Bson.create_int32 1l
+    | Desc -> Bson.create_int32 (-1l)
+  in
+  let rec loop index acc = function
+    | [] -> Ok (if acc = [] then None else Some (doc (List.rev acc)))
+    | (order : Ent_ocaml.order) :: rest -> (
+        match edge_order_field query index order with
+        | Ok field ->
+            loop (index + 1) ((field, direction order.direction) :: acc) rest
+        | Error _ as error -> error)
+  in
+  loop 0 [] query.orders
 
 let projection_to_bson (query : Ent_ocaml.query) =
   let add_projection acc key =
@@ -409,8 +468,13 @@ let projection_to_bson (query : Ent_ocaml.query) =
     | [] -> Ok acc
     | ({ value_alias = None; _ } : Ent_ocaml.order) :: rest ->
         add_order_values acc rest
-    | { field; value_alias = Some _; _ } :: rest -> (
-        match order_storage_key query.entity field with
+    | ({ target = order_target; value_alias = Some alias; _ } : Ent_ocaml.order) :: rest -> (
+        let field_key =
+          match order_target with
+          | Ent_ocaml.Field_order field -> order_storage_key query.entity field
+          | Edge_field_order _ -> Ok alias
+        in
+        match field_key with
         | Ok key -> add_order_values (add_projection acc key) rest
         | Error _ as error -> error)
   in
@@ -764,17 +828,159 @@ let selector (mutation : Ent_ocaml.mutation) =
   | [ predicate ] -> predicate_to_bson ~entity:mutation.entity predicate
   | predicates -> predicate_to_bson ~entity:mutation.entity (And predicates)
 
-let find ctx (query : Ent_ocaml.query) =
-  match find_options query with
+let edge_order_lookup_stages (query : Ent_ocaml.query) index
+    (order : Ent_ocaml.order) =
+  let ({ Ent_ocaml.target = order_target; _ } : Ent_ocaml.order) = order in
+  match order_target with
+  | Ent_ocaml.Field_order _ -> Ok []
+  | Edge_field_order { edge; target; field } -> (
+      match find_edge query.Ent_ocaml.entity edge with
+      | None -> Error (`Bad_query ("edge not found: " ^ edge))
+      | Some edge_desc when edge_desc.target <> target.name ->
+          Error
+            (`Bad_query
+              (Printf.sprintf "edge %s targets %s, not %s" edge_desc.name
+                 edge_desc.target target.name))
+      | Some { direction = From _; _ } ->
+          Error (`Bad_query "edge-field ordering currently supports to-edges")
+      | Some { cardinality = Many; _ } ->
+          Error (`Bad_query "edge-field ordering currently supports to-one edges")
+      | Some edge_desc -> (
+          match
+            ( edge_desc.storage_key,
+              field_storage_key target "id",
+              field_storage_key target field )
+          with
+          | Some local_key, Ok foreign_key, Ok target_field_key ->
+              let temp = edge_order_temp index in
+              let lookup =
+                doc
+                  [
+                    ("from", Bson.create_string target.collection);
+                    ("localField", Bson.create_string local_key);
+                    ("foreignField", Bson.create_string foreign_key);
+                    ("as", Bson.create_string temp);
+                  ]
+              in
+              let unwind =
+                doc
+                  [
+                    ("path", Bson.create_string ("$" ^ temp));
+                    ("preserveNullAndEmptyArrays", Bson.create_boolean true);
+                  ]
+              in
+              let alias_stage =
+                match order.value_alias with
+                | None -> []
+                | Some alias ->
+                    [
+                      doc
+                        [
+                          ( "$addFields",
+                            Bson.create_doc_element
+                              (doc
+                                 [
+                                   ( alias,
+                                     Bson.create_string
+                                       ("$" ^ temp ^ "." ^ target_field_key) );
+                                 ]) );
+                        ];
+                    ]
+              in
+              Ok
+                ([
+                   doc [ ("$lookup", Bson.create_doc_element lookup) ];
+                   doc [ ("$unwind", Bson.create_doc_element unwind) ];
+                 ]
+                @ alias_stage)
+          | None, _, _ ->
+              Error
+                (`Bad_query
+                  ("edge " ^ edge_desc.name
+                 ^ " does not have a stored foreign-key field"))
+          | _, (Error _ as error), _ | _, _, (Error _ as error) -> error))
+
+let edge_order_lookup_pipeline query =
+  let rec loop index acc = function
+    | [] -> Ok (List.rev acc)
+    | order :: rest -> (
+        match edge_order_lookup_stages query index order with
+        | Ok stages -> loop (index + 1) (List.rev_append stages acc) rest
+        | Error _ as error -> error)
+  in
+  loop 0 [] query.Ent_ocaml.orders
+
+let find_aggregate_pipeline query =
+  match
+    ( filter_to_bson query,
+      edge_order_lookup_pipeline query,
+      sort_to_bson_result query,
+      projection_to_bson query )
+  with
+  | Error _ as error, _, _, _
+  | _, (Error _ as error), _, _
+  | _, _, (Error _ as error), _
+  | _, _, _, (Error _ as error) ->
+      error
+  | Ok filter, Ok lookup_stages, Ok sort, Ok projection ->
+      let match_stage =
+        if filter = Bson.empty then []
+        else [ doc [ ("$match", Bson.create_doc_element filter) ] ]
+      in
+      let sort_stage =
+        match sort with
+        | None -> []
+        | Some sort -> [ doc [ ("$sort", Bson.create_doc_element sort) ] ]
+      in
+      let skip_stage =
+        match query.offset with
+        | None -> []
+        | Some offset -> [ doc [ ("$skip", Bson.create_int64 (Int64.of_int offset)) ] ]
+      in
+      let limit_stage =
+        match query.limit with
+        | None -> []
+        | Some limit -> [ doc [ ("$limit", Bson.create_int64 (Int64.of_int limit)) ] ]
+      in
+      let project_stage =
+        match projection with
+        | None -> []
+        | Some projection ->
+            [ doc [ ("$project", Bson.create_doc_element projection) ] ]
+      in
+      Ok
+        (match_stage @ lookup_stages @ sort_stage @ skip_stage @ limit_stage
+       @ project_stage)
+
+let find_with_aggregate ctx query =
+  match find_aggregate_pipeline query with
   | Error _ as error -> error
-  | Ok options -> (
+  | Ok pipeline -> (
       let session = transaction_session ctx in
       match
-        Mongo_eio.direct_find ?session ctx.client ~db:ctx.config.database
-          ~collection:query.Ent_ocaml.entity.collection options
+        Mongo_eio.direct_run_command ?session ctx.client ctx.config.database
+          [
+            ("aggregate", Bson.create_string query.Ent_ocaml.entity.collection);
+            ("pipeline", Bson.create_doc_element_list pipeline);
+            ("cursor", Bson.create_doc_element Bson.empty);
+          ]
       with
-      | Ok docs -> Ok docs
-      | Error error -> Error (backend_error "find" query.entity error))
+      | Error error -> Error (backend_error "aggregate find" query.entity error)
+      | Ok response -> Ok (Mongo_command.cursor_batch response.Mongo_command.body))
+
+let find ctx (query : Ent_ocaml.query) =
+  if has_edge_field_order query then find_with_aggregate ctx query
+  else
+    match find_options query with
+    | Error _ as error -> error
+    | Ok options -> (
+        let session = transaction_session ctx in
+        match
+          Mongo_eio.direct_find ?session ctx.client ~db:ctx.config.database
+            ~collection:query.Ent_ocaml.entity.collection options
+        with
+        | Ok docs -> Ok docs
+        | Error error -> Error (backend_error "find" query.entity error))
 
 let decode_document ~decode doc =
   decode doc |> Result.map_error (fun message -> `Decode message)
@@ -877,9 +1083,15 @@ let selected_fields (query : Ent_ocaml.query) =
   in
   let order_values =
     query.orders
-    |> List.filter_map (fun ({ field; value_alias; _ } : Ent_ocaml.order) ->
+    |> List.filter_map (fun ({ target = order_target; value_alias; _ } : Ent_ocaml.order) ->
            Option.map
-             (fun alias -> (alias, fun () -> order_storage_key query.entity field))
+             (fun alias ->
+               ( alias,
+                 fun () ->
+                   match order_target with
+                   | Ent_ocaml.Field_order field ->
+                       order_storage_key query.entity field
+                   | Edge_field_order _ -> Ok alias ))
              value_alias)
   in
   match fields @ order_values with

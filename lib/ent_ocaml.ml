@@ -100,8 +100,12 @@ type entity = {
 
 type order_direction = Asc | Desc
 
+type order_target =
+  | Field_order of string
+  | Edge_field_order of { edge : string; target : entity; field : string }
+
 type order = {
-  field : string;
+  target : order_target;
   direction : order_direction;
   value_alias : string option;
 }
@@ -385,7 +389,13 @@ module Query = struct
   let offset offset query = { query with offset = Some offset }
 
   let ensure_order (order : order) (query : query) =
-    if List.exists (fun (existing : order) -> existing.field = order.field) query.orders
+    let ({ target = new_target; _ } : order) = order in
+    if
+      List.exists
+        (fun (existing : order) ->
+          let ({ target = existing_target; _ } : order) = existing in
+          existing_target = new_target)
+        query.orders
     then query
     else { query with orders = query.orders @ [ order ] }
 
@@ -393,7 +403,7 @@ module Query = struct
     List.fold_left
       (fun query term ->
         ensure_order
-          ({ field = term.field; direction = term.direction; value_alias = None } : order)
+          ({ target = Field_order term.field; direction = term.direction; value_alias = None } : order)
           query)
       query terms
 
@@ -433,7 +443,7 @@ module Query = struct
     in
     query
     |> where predicate
-    |> ensure_order { field; direction; value_alias = None }
+    |> ensure_order { target = Field_order field; direction; value_alias = None }
 
   let before ~field ~direction value query =
     let predicate =
@@ -443,10 +453,26 @@ module Query = struct
     in
     query
     |> where predicate
-    |> ensure_order { field; direction; value_alias = None }
+    |> ensure_order { target = Field_order field; direction; value_alias = None }
 
   let after_cursor terms query = seek ~after:true terms query
   let before_cursor terms query = seek ~after:false terms query
+end
+
+module Order = struct
+  let field ?as_ ~direction field =
+    { target = Field_order field; direction; value_alias = as_ }
+
+  let edge_field ?as_ ~edge ~target ~direction field =
+    { target = Edge_field_order { edge; target; field }; direction; value_alias = as_ }
+
+  let target_name = function
+    | Field_order field -> field
+    | Edge_field_order { edge; field; _ } -> edge ^ "." ^ field
+
+  let field_name (order : order) =
+    let ({ target; _ } : order) = order in
+    target_name target
 end
 
 module Edge_query = struct

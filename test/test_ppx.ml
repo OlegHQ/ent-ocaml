@@ -154,9 +154,9 @@ module Memory_backend = struct
   let values () (query : Ent_ocaml.query) =
     let order_values =
       query.Ent_ocaml.orders
-      |> List.filter_map (fun ({ field; value_alias; _ } : Ent_ocaml.order) ->
+      |> List.filter_map (fun ({ value_alias; _ } as order : Ent_ocaml.order) ->
              Option.map
-               (fun alias -> (alias, Ent_ocaml.V_string field))
+               (fun alias -> (alias, Ent_ocaml.V_string (Ent_ocaml.Order.field_name order)))
                value_alias)
     in
     Ok
@@ -171,8 +171,10 @@ module Memory_backend = struct
   let value () (query : Ent_ocaml.query) =
     let order_values =
       query.Ent_ocaml.orders
-      |> List.filter_map (fun ({ field; value_alias; _ } : Ent_ocaml.order) ->
-             Option.map (fun _alias -> field) value_alias)
+      |> List.filter_map (fun ({ value_alias; _ } as order : Ent_ocaml.order) ->
+             Option.map
+               (fun _alias -> Ent_ocaml.Order.field_name order)
+               value_alias)
     in
     match query.Ent_ocaml.select @ order_values with
     | [ field ] -> Ok (Some (Ent_ocaml.V_string field))
@@ -381,7 +383,14 @@ let test_generated_query_api () =
   Alcotest.(check bool)
     "order value alias" true
     (match query.orders with
-    | [ { Ent_ocaml.field = "published_at_ms"; value_alias = None; _ } ] -> true
+    | [
+        {
+          Ent_ocaml.target = Field_order "published_at_ms";
+          value_alias = None;
+          _;
+        };
+      ] ->
+        true
     | _ -> false);
   Alcotest.(check (option int)) "limit" (Some 10) query.limit;
   Alcotest.(check bool)
@@ -414,7 +423,7 @@ let test_generated_order_value_api () =
     (match query.orders with
     | [
         {
-          Ent_ocaml.field = "created_at_ms";
+          Ent_ocaml.target = Field_order "created_at_ms";
           direction = Desc;
           value_alias = Some "created";
         };
@@ -426,6 +435,35 @@ let test_generated_order_value_api () =
   | Ok [ Ent_ocaml.V_doc [ ("created", Ent_ocaml.V_string "created_at_ms") ] ] ->
       ()
   | Ok _ -> Alcotest.fail "unexpected order value result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+
+let test_generated_edge_order_api () =
+  let query =
+    let open Post in
+    query ()
+    |> order_by
+         [
+           user_field_order ~target:user_entity ~direction:Ent_ocaml.Asc
+             ~as_:"author_name" "username" ();
+         ]
+  in
+  Alcotest.(check bool)
+    "edge order target" true
+    (match query.orders with
+    | [
+        {
+          Ent_ocaml.target =
+            Edge_field_order { edge = "user"; target; field = "username" };
+          direction = Asc;
+          value_alias = Some "author_name";
+        };
+      ] ->
+        target.name = "User"
+    | _ -> false);
+  let module Posts = Post.Store (Memory_backend) in
+  match Posts.value () query with
+  | Ok (Some (Ent_ocaml.V_string "user.username")) -> ()
+  | Ok _ -> Alcotest.fail "unexpected edge order value result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
 let test_generated_id_api () =
@@ -473,7 +511,8 @@ let test_generated_cursor_api () =
   Alcotest.(check bool)
     "cursor order" true
     (match query.orders with
-    | [ { Ent_ocaml.field = "created_at_ms"; direction = Desc } ] -> true
+    | [ { Ent_ocaml.target = Field_order "created_at_ms"; direction = Desc } ] ->
+        true
     | _ -> false)
 
 let test_generated_composite_cursor_api () =
@@ -1534,7 +1573,7 @@ let test_generated_json_predicate_api () =
   Alcotest.(check int) "json predicates" 2 (List.length query.predicates);
   Alcotest.(check (list string))
     "json order" [ "metadata.priority" ]
-    (List.map (fun (order : Ent_ocaml.order) -> order.field) query.orders);
+    (List.map Ent_ocaml.Order.field_name query.orders);
   let record =
     {
       id = "event_1";
@@ -1610,6 +1649,8 @@ let () =
             test_generated_query_api;
           Alcotest.test_case "generated order value api" `Quick
             test_generated_order_value_api;
+          Alcotest.test_case "generated edge order api" `Quick
+            test_generated_edge_order_api;
           Alcotest.test_case "generated id api" `Quick
             test_generated_id_api;
           Alcotest.test_case "generated cursor api" `Quick

@@ -927,13 +927,13 @@ let order_function ~loc field_name =
       ]
   in
   let body =
-    A.pexp_record ~loc
+    A.pexp_apply ~loc
+      (ident ~loc [ "Ent_ocaml"; "Order"; "field" ])
       [
-        (lid ~loc [ "Ent_ocaml"; "field" ], str ~loc field_name);
-        (lid ~loc [ "Ent_ocaml"; "direction" ], direction);
-        (lid ~loc [ "Ent_ocaml"; "value_alias" ], evar ~loc "as_");
+        (Optional "as_", evar ~loc "as_");
+        (Labelled "direction", direction);
+        (Nolabel, str ~loc field_name);
       ]
-      None
   in
   A.pstr_value ~loc Nonrecursive
     [
@@ -1068,13 +1068,13 @@ let json_order_function ~loc field_name =
   let body =
     A.pexp_let ~loc Nonrecursive
       [ A.value_binding ~loc ~pat:(pvar ~loc "direction") ~expr:direction ]
-      (A.pexp_record ~loc
+      (A.pexp_apply ~loc
+         (ident ~loc [ "Ent_ocaml"; "Order"; "field" ])
          [
-           (lid ~loc [ "Ent_ocaml"; "field" ], field);
-           (lid ~loc [ "Ent_ocaml"; "direction" ], evar ~loc "direction");
-           (lid ~loc [ "Ent_ocaml"; "value_alias" ], evar ~loc "as_");
-         ]
-         None)
+           (Optional "as_", evar ~loc "as_");
+           (Labelled "direction", evar ~loc "direction");
+           (Nolabel, field);
+         ])
   in
   A.pstr_value ~loc Nonrecursive
     [
@@ -1903,6 +1903,28 @@ let gen_query_module td =
         [
           A.value_binding ~loc ~pat:(pvar ~loc ("with_" ^ edge_name))
             ~expr:(evar ~loc ("query_" ^ edge_name));
+        ];
+      A.pstr_value ~loc Nonrecursive
+        [
+          A.value_binding ~loc ~pat:(pvar ~loc (edge_name ^ "_field_order"))
+            ~expr:
+              (A.pexp_fun ~loc (Optional "direction")
+                 (Some (constr ~loc [ "Ent_ocaml"; "Asc" ]))
+                 (pvar ~loc "direction")
+                 (A.pexp_fun ~loc (Optional "as_") None (pvar ~loc "as_")
+                    (A.pexp_fun ~loc (Labelled "target") None
+                       (pvar ~loc "target")
+                       (A.pexp_fun ~loc Nolabel None (pvar ~loc "field")
+                          (A.pexp_fun ~loc Nolabel None (unit_pat ~loc)
+                             (A.pexp_apply ~loc
+                                (ident ~loc [ "Ent_ocaml"; "Order"; "edge_field" ])
+                                [
+                                  (Optional "as_", evar ~loc "as_");
+                                  (Labelled "edge", str ~loc edge_name);
+                                  (Labelled "target", evar ~loc "target");
+                                  (Labelled "direction", evar ~loc "direction");
+                                  (Nolabel, evar ~loc "field");
+                                ]))))));
         ];
     ]
   in
@@ -4100,6 +4122,14 @@ let gen_sig_for_type td =
            (arrow (Optional "target_query") query_typ
               (arrow (Labelled "target") entity_typ
                  (arrow Nolabel query_typ edge_query_typ))));
+      val_sig (edge_name ^ "_field_order")
+        (arrow (Optional "direction")
+           (A.ptyp_constr ~loc
+              (lid ~loc [ "Ent_ocaml"; "order_direction" ])
+              [])
+           (arrow (Optional "as_") string_typ
+              (arrow (Labelled "target") entity_typ
+                 (arrow Nolabel string_typ (arrow Nolabel unit_typ order_typ)))));
     ]
   in
   let update_sig name =

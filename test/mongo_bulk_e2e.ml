@@ -231,7 +231,7 @@ let query_all =
       entity = post_entity;
       predicates = [];
       select = [];
-      orders = [ { field = "id"; direction = Asc; value_alias = None } ];
+      orders = [ Order.field ~direction:Asc "id" ];
       limit = None;
       offset = None;
     }
@@ -242,7 +242,7 @@ let query_user_1 =
       entity = post_entity;
       predicates = [ Has_edge_with ("user", [ Eq ("id", V_string "user_1") ]) ];
       select = [];
-      orders = [ { field = "id"; direction = Asc; value_alias = None } ];
+      orders = [ Order.field ~direction:Asc "id" ];
       limit = None;
       offset = None;
     }
@@ -478,11 +478,7 @@ let run_flow client =
           query_all with
           orders =
             [
-              {
-                field = "views";
-                direction = Desc;
-                value_alias = Some "ordered_views";
-              };
+              Order.field ~as_:"ordered_views" ~direction:Desc "views";
             ];
           limit = Some 1;
         }
@@ -520,7 +516,7 @@ let run_flow client =
           entity = post_entity;
           predicates = [];
           select = [];
-          orders = [ { field = "metadata.priority"; direction = Desc; value_alias = None } ];
+          orders = [ Order.field ~direction:Desc "metadata.priority" ];
           limit = Some 2;
           offset = None;
         }
@@ -538,11 +534,7 @@ let run_flow client =
           query_all with
           orders =
             [
-              {
-                field = "metadata.priority";
-                direction = Desc;
-                value_alias = Some "priority";
-              };
+              Order.field ~as_:"priority" ~direction:Desc "metadata.priority";
             ];
           limit = Some 1;
         }
@@ -561,6 +553,38 @@ let run_flow client =
     | _ -> false);
   let* user_posts = Ent_ocaml_mongo.find ctx query_user_1 in
   assert_true "edge predicate returns user posts" (List.length user_posts = 1);
+  let edge_order_query =
+    Ent_ocaml.
+      {
+        query_all with
+        orders =
+          [
+            Order.edge_field ~edge:"user" ~target:user_entity
+              ~direction:Desc "username";
+          ];
+        limit = Some 1;
+      }
+  in
+  let* edge_ordered_posts = Ent_ocaml_mongo.find ctx edge_order_query in
+  assert_true "edge field order returns bob post first"
+    (match edge_ordered_posts with
+    | [ doc ] -> Bson.get_string (Bson.get_element "user_id" doc) = "user_2"
+    | _ -> false);
+  let* selected_edge_order_value =
+    Ent_ocaml_mongo.value ctx
+      Ent_ocaml.
+        {
+          query_all with
+          orders =
+            [
+              Order.edge_field ~edge:"user" ~target:user_entity
+                ~direction:Asc ~as_:"author_username" "username";
+            ];
+          limit = Some 1;
+        }
+  in
+  assert_true "selected edge order value returns related field"
+    (selected_edge_order_value = Some (Ent_ocaml.V_string "alice"));
   let* entql_user_posts =
     match
       Ent_ocaml.Query.make post_entity

@@ -1,3 +1,41 @@
+let user_entity =
+  Ent_ocaml.
+    {
+      name = "User";
+      collection = "users";
+      fields =
+        [
+          {
+            name = "id";
+            storage_key = "_id";
+            typ = String;
+            required = true;
+            unique = true;
+            immutable = true;
+            nillable = false;
+            validators = [];
+            sensitive = false;
+            deprecated = None;
+            comment = None;
+          };
+          {
+            name = "username";
+            storage_key = "username";
+            typ = String;
+            required = true;
+            unique = true;
+            immutable = false;
+            nillable = false;
+            validators = [];
+            sensitive = false;
+            deprecated = None;
+            comment = None;
+          };
+        ];
+      edges = [];
+      indexes = [];
+    }
+
 let post_entity =
   Ent_ocaml.
     {
@@ -204,7 +242,7 @@ let test_query_pipeline_api () =
     |> Ent_ocaml.Query.order_by
          Ent_ocaml.
            [
-             { field = "id"; direction = Asc; value_alias = None }
+             Order.field ~direction:Asc "id"
              |> Query.order_value "ordered_id";
            ]
     |> Ent_ocaml.Query.limit 5
@@ -230,11 +268,12 @@ let test_query_seek_pagination () =
   Alcotest.(check bool)
     "after adds order" true
     (match after_query.orders with
-    | [ { Ent_ocaml.field = "id"; direction = Asc } ] -> true
+    | [ { Ent_ocaml.target = Field_order "id"; direction = Asc } ] -> true
     | _ -> false);
   let before_query =
     Ent_ocaml.Query.make post_entity
-    |> Ent_ocaml.Query.order_by Ent_ocaml.[ { field = "id"; direction = Desc; value_alias = None } ]
+    |> Ent_ocaml.Query.order_by
+         Ent_ocaml.[ Order.field ~direction:Desc "id" ]
     |> Ent_ocaml.Query.before ~field:"id" ~direction:Ent_ocaml.Desc
          (Ent_ocaml.V_string "post_2")
   in
@@ -657,7 +696,7 @@ let test_mongo_storage_key_planning () =
     (Bson.get_string (Bson.get_element "_id" filter));
   let sort =
     Ent_ocaml_mongo.sort_to_bson ~entity:post_entity
-      Ent_ocaml.[ { field = "id"; direction = Asc; value_alias = None } ]
+      Ent_ocaml.[ Order.field ~direction:Asc "id" ]
     |> Option.get
   in
   Alcotest.(check int32)
@@ -692,7 +731,7 @@ let test_mongo_json_path_planning () =
     (Bson.get_boolean (Bson.get_element "meta.flags.pinned" filter));
   let sort =
     Ent_ocaml_mongo.sort_to_bson ~entity:post_entity
-      Ent_ocaml.[ { field = "metadata.priority"; direction = Desc; value_alias = None } ]
+      Ent_ocaml.[ Order.field ~direction:Desc "metadata.priority" ]
     |> Option.get
   in
   Alcotest.(check int32)
@@ -743,12 +782,26 @@ let test_mongo_has_edge_with_id_planning () =
 let test_mongo_sort_planning () =
   let sort =
     Ent_ocaml_mongo.sort_to_bson
-      Ent_ocaml.[ { field = "created_at_ms"; direction = Desc; value_alias = None } ]
+      Ent_ocaml.[ Order.field ~direction:Desc "created_at_ms" ]
     |> Option.get
   in
   Alcotest.(check int32)
     "descending sort" (-1l)
     (Bson.get_int32 (Bson.get_element "created_at_ms" sort))
+
+let test_mongo_edge_order_planning () =
+  let query =
+    Ent_ocaml.Query.make post_entity
+    |> Ent_ocaml.Query.order_by
+         Ent_ocaml.
+           [
+             Order.edge_field ~edge:"user" ~target:user_entity
+               ~direction:Asc "username";
+           ]
+  in
+  match Ent_ocaml_mongo.projection_to_bson query with
+  | Ok _ -> ()
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
 let test_mongo_projection_planning () =
   let projection =
@@ -758,11 +811,7 @@ let test_mongo_projection_planning () =
            ~orders:
              Ent_ocaml.
                [
-                 {
-                   field = "body";
-                   direction = Desc;
-                   value_alias = Some "ordered_body";
-                 };
+                 Order.field ~as_:"ordered_body" ~direction:Desc "body";
                ]
            ())
     with
@@ -1059,6 +1108,8 @@ let () =
           Alcotest.test_case "has edge with id planning" `Quick
             test_mongo_has_edge_with_id_planning;
           Alcotest.test_case "sort planning" `Quick test_mongo_sort_planning;
+          Alcotest.test_case "edge order planning" `Quick
+            test_mongo_edge_order_planning;
           Alcotest.test_case "projection planning" `Quick
             test_mongo_projection_planning;
           Alcotest.test_case "projection missing field" `Quick

@@ -207,6 +207,23 @@ let recent_order_values ctx =
   |> Posts.values ctx
 ```
 
+Stored-FK to-one edges can also order by a field on the related entity. The
+target entity is passed explicitly so the Mongo backend can use the target
+collection and storage keys without global schema state:
+
+```ocaml
+let by_author ctx =
+  let open Post in
+  query ()
+  |> order_by
+       [
+         user_field_order ~target:User.user_entity
+           ~direction:Ent_ocaml.Asc ~as_:"author" "username" ();
+       ]
+  |> limit 20
+  |> Posts.values ctx
+```
+
 Mutation hooks wrap generated stores in the same module-first style:
 
 ```ocaml

@@ -100,8 +100,12 @@ type entity = {
 
 type order_direction = Asc | Desc
 
+type order_target =
+  | Field_order of string
+  | Edge_field_order of { edge : string; target : entity; field : string }
+
 type order = {
-  field : string;
+  target : order_target;
   direction : order_direction;
   value_alias : string option;
 }
@@ -208,6 +212,21 @@ module Query : sig
     query
   val after_cursor : cursor_term list -> query -> query
   val before_cursor : cursor_term list -> query -> query
+end
+
+module Order : sig
+  val field : ?as_:string -> direction:order_direction -> string -> order
+
+  val edge_field :
+    ?as_:string ->
+    edge:string ->
+    target:entity ->
+    direction:order_direction ->
+    string ->
+    order
+
+  val target_name : order_target -> string
+  val field_name : order -> string
 end
 
 module Edge_query : sig
