@@ -27,6 +27,17 @@ let query =
   |> limit 20
 ```
 
+Edge predicates should stay typed and entity-local. Stored-FK ID predicates can
+use the compact edge alias, and target-field predicates pass the target entity
+descriptor explicitly so the backend can plan the lookup:
+
+```ocaml
+let by_author_name =
+  let open Post in
+  query ()
+  |> where (user ~target:User.user_entity (User.username_eq "alice"))
+```
+
 The same composed query value can feed mutations:
 
 ```ocaml

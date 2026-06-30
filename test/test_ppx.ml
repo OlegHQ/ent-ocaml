@@ -579,6 +579,21 @@ let test_generated_traversal_api () =
   Alcotest.(check int)
     "source predicates" 1
     (List.length edge_query.source.predicates);
+  let target_predicate =
+    let open Post in
+    user ~target:user_entity (User.username_eq "alice")
+  in
+  Alcotest.(check bool)
+    "target edge predicate" true
+    (match target_predicate with
+    | Ent_ocaml.Has_edge_with_target
+        {
+          edge = "user";
+          target;
+          predicates = [ Ent_ocaml.Eq ("username", Ent_ocaml.V_string "alice") ];
+        } ->
+        target.name = "User"
+    | _ -> false);
   let module Store = Post.Store (Memory_backend) in
   let decode = function
     | Ent_ocaml.V_string value -> Ok value

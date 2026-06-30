@@ -1874,10 +1874,38 @@ let gen_query_module td =
         [
           A.value_binding ~loc ~pat:(pvar ~loc edge_name)
             ~expr:
-              (A.pexp_fun ~loc Nolabel None (pvar ~loc "predicate")
-                 (constr_arg ~loc [ "Ent_ocaml"; "Has_edge_with" ]
-                    (A.pexp_tuple ~loc
-                       [ str ~loc edge_name; list ~loc [ evar ~loc "predicate" ] ])));
+              (A.pexp_fun ~loc (Optional "target") None (pvar ~loc "target")
+                 (A.pexp_fun ~loc Nolabel None (pvar ~loc "predicate")
+                    (A.pexp_match ~loc (evar ~loc "target")
+                       [
+                         A.case
+                           ~lhs:(A.ppat_construct ~loc (lid ~loc [ "None" ]) None)
+                           ~guard:None
+                           ~rhs:
+                             (constr_arg ~loc [ "Ent_ocaml"; "Has_edge_with" ]
+                                (A.pexp_tuple ~loc
+                                   [
+                                     str ~loc edge_name;
+                                     list ~loc [ evar ~loc "predicate" ];
+                                   ]));
+                         A.case
+                           ~lhs:
+                             (A.ppat_construct ~loc
+                                (lid ~loc [ "Some" ])
+                                (Some (pvar ~loc "target")))
+                           ~guard:None
+                           ~rhs:
+                             (constr_arg ~loc
+                                [ "Ent_ocaml"; "Has_edge_with_target" ]
+                                (A.pexp_record ~loc
+                                   [
+                                     (lid ~loc [ "edge" ], str ~loc edge_name);
+                                     (lid ~loc [ "target" ], evar ~loc "target");
+                                     ( lid ~loc [ "predicates" ],
+                                       list ~loc [ evar ~loc "predicate" ] );
+                                   ]
+                                   None));
+                       ])));
         ];
       A.pstr_value ~loc Nonrecursive
         [
@@ -4132,7 +4160,9 @@ let gen_sig_for_type td =
       val_sig ("has_" ^ edge_name) (arrow Nolabel unit_typ predicate_typ);
       val_sig ("has_" ^ edge_name ^ "_with")
         (arrow Nolabel predicates_typ predicate_typ);
-      val_sig edge_name (arrow Nolabel predicate_typ predicate_typ);
+      val_sig edge_name
+        (arrow (Optional "target") entity_typ
+           (arrow Nolabel predicate_typ predicate_typ));
       val_sig ("query_" ^ edge_name)
         (arrow (Optional "as_") string_typ
            (arrow (Optional "target_query") query_typ

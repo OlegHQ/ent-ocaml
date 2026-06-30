@@ -80,9 +80,10 @@ type predicate =
   | Not of predicate
   | Has_edge of string
   | Has_edge_with of string * predicate list
+  | Has_edge_with_target of { edge : string; target : entity; predicates : predicate list }
   | Backend of string * value
 
-type index = {
+and index = {
   name : string option;
   fields : string list;
   edges : string list;
@@ -90,7 +91,7 @@ type index = {
   partial_filter : predicate list;
 }
 
-type entity = {
+and entity = {
   name : string;
   collection : string;
   fields : field list;
@@ -262,6 +263,19 @@ module Schema_snapshot = struct
           [
             ("kind", V_string "has_edge_with");
             ("edge", V_string edge);
+            ("predicates", V_list (List.map predicate predicates));
+          ]
+    | Has_edge_with_target { edge; target; predicates } ->
+        V_doc
+          [
+            ("kind", V_string "has_edge_with_target");
+            ("edge", V_string edge);
+            ( "target",
+              V_doc
+                [
+                  ("name", V_string target.name);
+                  ("collection", V_string target.collection);
+                ] );
             ("predicates", V_list (List.map predicate predicates));
           ]
     | Backend (backend, value) ->
@@ -672,7 +686,7 @@ module Dynamic_filter = struct
     | Custom _ ->
         false
 
-  let field_error entity field =
+  let field_error (entity : entity) field =
     `Bad_query ("dynamic filter field not found on " ^ entity.name ^ ": " ^ field)
 
   let value_error (field : field) =
@@ -951,17 +965,17 @@ module Entql = struct
         in
         loop [] values
 
-  let field entity name =
+  let field (entity : entity) name =
     match find_field entity name with
     | Some field -> Ok field
     | None -> bad ("field not found on " ^ entity.name ^ ": " ^ name)
 
-  let edge entity name =
+  let edge (entity : entity) name =
     match List.find_opt (fun (edge : edge) -> edge.name = name) entity.edges with
     | Some edge -> Ok edge
     | None -> bad ("edge not found on " ^ entity.name ^ ": " ^ name)
 
-  let edge_id_type entity edge_name =
+  let edge_id_type (entity : entity) edge_name =
     let open Result_syntax in
     let* edge = edge entity edge_name in
     match edge.storage_key with

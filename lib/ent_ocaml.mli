@@ -80,9 +80,10 @@ type predicate =
   | Not of predicate
   | Has_edge of string
   | Has_edge_with of string * predicate list
+  | Has_edge_with_target of { edge : string; target : entity; predicates : predicate list }
   | Backend of string * value
 
-type index = {
+and index = {
   name : string option;
   fields : string list;
   edges : string list;
@@ -90,7 +91,7 @@ type index = {
   partial_filter : predicate list;
 }
 
-type entity = {
+and entity = {
   name : string;
   collection : string;
   fields : field list;

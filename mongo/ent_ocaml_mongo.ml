@@ -191,6 +191,103 @@ and remap_id_predicates storage_key predicates =
   in
   loop [] predicates
 
+let target_field_path (entity : Ent_ocaml.entity) field =
+  match order_storage_key entity field with
+  | Ok key -> Ok key
+  | Error _ as error -> error
+
+let rec prefix_target_predicate (target : Ent_ocaml.entity) ~prefix = function
+  | Ent_ocaml.Eq (field, value) ->
+      target_field_path target field
+      |> Result.map (fun field -> Ent_ocaml.Eq (prefix ^ "." ^ field, value))
+  | Neq (field, value) ->
+      target_field_path target field
+      |> Result.map (fun field -> Ent_ocaml.Neq (prefix ^ "." ^ field, value))
+  | Gt (field, value) ->
+      target_field_path target field
+      |> Result.map (fun field -> Ent_ocaml.Gt (prefix ^ "." ^ field, value))
+  | Gte (field, value) ->
+      target_field_path target field
+      |> Result.map (fun field -> Ent_ocaml.Gte (prefix ^ "." ^ field, value))
+  | Lt (field, value) ->
+      target_field_path target field
+      |> Result.map (fun field -> Ent_ocaml.Lt (prefix ^ "." ^ field, value))
+  | Lte (field, value) ->
+      target_field_path target field
+      |> Result.map (fun field -> Ent_ocaml.Lte (prefix ^ "." ^ field, value))
+  | In (field, values) ->
+      target_field_path target field
+      |> Result.map (fun field -> Ent_ocaml.In (prefix ^ "." ^ field, values))
+  | Not_in (field, values) ->
+      target_field_path target field
+      |> Result.map (fun field -> Ent_ocaml.Not_in (prefix ^ "." ^ field, values))
+  | Is_nil field ->
+      target_field_path target field
+      |> Result.map (fun field -> Ent_ocaml.Is_nil (prefix ^ "." ^ field))
+  | Not_nil field ->
+      target_field_path target field
+      |> Result.map (fun field -> Ent_ocaml.Not_nil (prefix ^ "." ^ field))
+  | Contains (field, value) ->
+      target_field_path target field
+      |> Result.map (fun field -> Ent_ocaml.Contains (prefix ^ "." ^ field, value))
+  | Has_prefix (field, value) ->
+      target_field_path target field
+      |> Result.map (fun field -> Ent_ocaml.Has_prefix (prefix ^ "." ^ field, value))
+  | Has_suffix (field, value) ->
+      target_field_path target field
+      |> Result.map (fun field -> Ent_ocaml.Has_suffix (prefix ^ "." ^ field, value))
+  | Json_eq (field, path, value) ->
+      json_path_field ~entity:target field path
+      |> Result.map (fun field -> Ent_ocaml.Eq (prefix ^ "." ^ field, value))
+  | Json_neq (field, path, value) ->
+      json_path_field ~entity:target field path
+      |> Result.map (fun field -> Ent_ocaml.Neq (prefix ^ "." ^ field, value))
+  | Json_gt (field, path, value) ->
+      json_path_field ~entity:target field path
+      |> Result.map (fun field -> Ent_ocaml.Gt (prefix ^ "." ^ field, value))
+  | Json_gte (field, path, value) ->
+      json_path_field ~entity:target field path
+      |> Result.map (fun field -> Ent_ocaml.Gte (prefix ^ "." ^ field, value))
+  | Json_lt (field, path, value) ->
+      json_path_field ~entity:target field path
+      |> Result.map (fun field -> Ent_ocaml.Lt (prefix ^ "." ^ field, value))
+  | Json_lte (field, path, value) ->
+      json_path_field ~entity:target field path
+      |> Result.map (fun field -> Ent_ocaml.Lte (prefix ^ "." ^ field, value))
+  | Json_in (field, path, values) ->
+      json_path_field ~entity:target field path
+      |> Result.map (fun field -> Ent_ocaml.In (prefix ^ "." ^ field, values))
+  | Json_not_in (field, path, values) ->
+      json_path_field ~entity:target field path
+      |> Result.map (fun field -> Ent_ocaml.Not_in (prefix ^ "." ^ field, values))
+  | Json_is_nil (field, path) ->
+      json_path_field ~entity:target field path
+      |> Result.map (fun field -> Ent_ocaml.Is_nil (prefix ^ "." ^ field))
+  | Json_not_nil (field, path) ->
+      json_path_field ~entity:target field path
+      |> Result.map (fun field -> Ent_ocaml.Not_nil (prefix ^ "." ^ field))
+  | And predicates ->
+      prefix_target_predicates target ~prefix predicates
+      |> Result.map (fun predicates -> Ent_ocaml.And predicates)
+  | Or predicates ->
+      prefix_target_predicates target ~prefix predicates
+      |> Result.map (fun predicates -> Ent_ocaml.Or predicates)
+  | Not predicate ->
+      prefix_target_predicate target ~prefix predicate
+      |> Result.map (fun predicate -> Ent_ocaml.Not predicate)
+  | Has_edge _ | Has_edge_with _ | Has_edge_with_target _ | Backend _ ->
+      Error (`Bad_query "nested edge predicates are not supported in edge filters")
+
+and prefix_target_predicates target ~prefix predicates =
+  let rec loop acc = function
+    | [] -> Ok (List.rev acc)
+    | predicate :: rest -> (
+        match prefix_target_predicate target ~prefix predicate with
+        | Ok predicate -> loop (predicate :: acc) rest
+        | Error _ as error -> error)
+  in
+  loop [] predicates
+
 let rec predicate_to_bson ?entity predicate =
   match predicate with
   | Ent_ocaml.Eq (field, value) -> (
@@ -357,6 +454,10 @@ let rec predicate_to_bson ?entity predicate =
               | Ok [] -> predicate_to_bson ~entity (Has_edge edge_name)
               | Ok [ predicate ] -> predicate_to_bson ~entity predicate
               | Ok predicates -> predicate_to_bson ~entity (And predicates))))
+  | Has_edge_with_target _ ->
+      Error
+        (`Bad_query
+          "target edge predicates require aggregate find planning")
   | Backend (_, _) ->
       Error (`Bad_query "backend predicates need typed backend-specific support")
 
@@ -411,6 +512,103 @@ let has_edge_field_order (query : Ent_ocaml.query) =
     query.orders
 
 let edge_order_temp index = "__ent_edge_order_" ^ string_of_int index
+let edge_predicate_temp index = "__ent_edge_pred_" ^ string_of_int index
+
+let edge_target_predicate_lookup_stage (query : Ent_ocaml.query) index ~edge
+    ~target ~predicates =
+  match find_edge query.Ent_ocaml.entity edge with
+  | None -> Error (`Bad_query ("edge not found: " ^ edge))
+  | Some edge_desc when edge_desc.target <> target.Ent_ocaml.name ->
+      Error
+        (`Bad_query
+          (Printf.sprintf "edge %s targets %s, not %s" edge_desc.name
+             edge_desc.target target.name))
+  | Some { direction = From _; _ } ->
+      Error (`Bad_query "target edge predicates currently support to-edges")
+  | Some { cardinality = Many; _ } ->
+      Error (`Bad_query "target edge predicates currently support to-one edges")
+  | Some edge_desc -> (
+      match (edge_desc.storage_key, field_storage_key target "id") with
+      | Some local_key, Ok foreign_key -> (
+          let temp = edge_predicate_temp index in
+          let lookup =
+            doc
+              [
+                ("from", Bson.create_string target.collection);
+                ("localField", Bson.create_string local_key);
+                ("foreignField", Bson.create_string foreign_key);
+                ("as", Bson.create_string temp);
+              ]
+          in
+          let unwind = doc [ ("path", Bson.create_string ("$" ^ temp)) ] in
+          match prefix_target_predicates target ~prefix:temp predicates with
+          | Error _ as error -> error
+          | Ok [] -> Ok [ doc [ ("$lookup", Bson.create_doc_element lookup) ] ]
+          | Ok [ predicate ] -> (
+              match predicate_to_bson predicate with
+              | Error _ as error -> error
+              | Ok filter ->
+                  Ok
+                    [
+                      doc [ ("$lookup", Bson.create_doc_element lookup) ];
+                      doc [ ("$unwind", Bson.create_doc_element unwind) ];
+                      doc [ ("$match", Bson.create_doc_element filter) ];
+                    ])
+          | Ok predicates -> (
+              match predicate_to_bson (Ent_ocaml.And predicates) with
+              | Error _ as error -> error
+              | Ok filter ->
+                  Ok
+                    [
+                      doc [ ("$lookup", Bson.create_doc_element lookup) ];
+                      doc [ ("$unwind", Bson.create_doc_element unwind) ];
+                      doc [ ("$match", Bson.create_doc_element filter) ];
+                    ]))
+      | None, _ ->
+          Error
+            (`Bad_query
+              ("edge " ^ edge_desc.name
+             ^ " does not have a stored foreign-key field"))
+      | _, (Error _ as error) -> error)
+
+let rec predicate_has_edge_target = function
+  | Ent_ocaml.Has_edge_with_target _ -> true
+  | And predicates | Or predicates -> List.exists predicate_has_edge_target predicates
+  | Not predicate -> predicate_has_edge_target predicate
+  | Eq _ | Neq _ | Gt _ | Gte _ | Lt _ | Lte _ | In _ | Not_in _ | Is_nil _
+  | Not_nil _ | Contains _ | Has_prefix _ | Has_suffix _ | Json_eq _ | Json_neq _
+  | Json_gt _ | Json_gte _ | Json_lt _ | Json_lte _ | Json_in _ | Json_not_in _
+  | Json_is_nil _ | Json_not_nil _ | Has_edge _ | Has_edge_with _ | Backend _ ->
+      false
+
+let partition_edge_target_predicates (predicates : Ent_ocaml.predicate list) =
+  let rec loop edge_target normal = function
+    | [] -> Ok (List.rev edge_target, List.rev normal)
+    | Ent_ocaml.Has_edge_with_target { edge; target; predicates } :: rest ->
+        loop ((edge, target, predicates) :: edge_target) normal rest
+    | predicate :: rest when predicate_has_edge_target predicate ->
+        Error
+          (`Bad_query
+            "target edge predicates must be top-level query predicates")
+    | predicate :: rest -> loop edge_target (predicate :: normal) rest
+  in
+  loop [] [] predicates
+
+let edge_target_predicate_lookup_pipeline query edge_predicates =
+  let rec loop index acc = function
+    | [] -> Ok (List.rev acc)
+    | (edge, target, predicates) :: rest -> (
+        match
+          edge_target_predicate_lookup_stage query index ~edge ~target
+            ~predicates
+        with
+        | Ok stages -> loop (index + 1) (List.rev_append stages acc) rest
+        | Error _ as error -> error)
+  in
+  loop 0 [] edge_predicates
+
+let has_edge_target_predicate (query : Ent_ocaml.query) =
+  List.exists predicate_has_edge_target query.Ent_ocaml.predicates
 
 let edge_order_field (query : Ent_ocaml.query) index (order : Ent_ocaml.order) =
   let ({ Ent_ocaml.target = order_target; _ } : Ent_ocaml.order) = order in
@@ -984,9 +1182,12 @@ let edge_order_lookup_pipeline query =
   in
   loop 0 [] query.Ent_ocaml.orders
 
-let find_aggregate_pipeline query =
+let find_aggregate_pipeline (query : Ent_ocaml.query) =
+  let split_predicates =
+    partition_edge_target_predicates query.Ent_ocaml.predicates
+  in
   match
-    ( filter_to_bson query,
+    ( split_predicates,
       edge_order_lookup_pipeline query,
       sort_to_bson_result query,
       projection_to_bson query )
@@ -996,7 +1197,13 @@ let find_aggregate_pipeline query =
   | _, _, (Error _ as error), _
   | _, _, _, (Error _ as error) ->
       error
-  | Ok filter, Ok lookup_stages, Ok sort, Ok projection ->
+  | Ok (edge_predicates, normal_predicates), Ok lookup_stages, Ok sort, Ok projection -> (
+      match
+        ( filter_to_bson { query with predicates = normal_predicates },
+          edge_target_predicate_lookup_pipeline query edge_predicates )
+      with
+      | Error _ as error, _ | _, (Error _ as error) -> error
+      | Ok filter, Ok edge_predicate_stages ->
       let match_stage =
         if filter = Bson.empty then []
         else [ doc [ ("$match", Bson.create_doc_element filter) ] ]
@@ -1023,8 +1230,8 @@ let find_aggregate_pipeline query =
             [ doc [ ("$project", Bson.create_doc_element projection) ] ]
       in
       Ok
-        (match_stage @ lookup_stages @ sort_stage @ skip_stage @ limit_stage
-       @ project_stage)
+        (match_stage @ edge_predicate_stages @ lookup_stages @ sort_stage
+       @ skip_stage @ limit_stage @ project_stage))
 
 let find_with_aggregate ctx query =
   match find_aggregate_pipeline query with
@@ -1043,7 +1250,8 @@ let find_with_aggregate ctx query =
       | Ok response -> Ok (Mongo_command.cursor_batch response.Mongo_command.body))
 
 let find ctx (query : Ent_ocaml.query) =
-  if has_edge_field_order query then find_with_aggregate ctx query
+  if has_edge_field_order query || has_edge_target_predicate query then
+    find_with_aggregate ctx query
   else
     match find_options query with
     | Error _ as error -> error

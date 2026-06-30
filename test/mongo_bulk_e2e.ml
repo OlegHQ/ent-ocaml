@@ -659,6 +659,24 @@ let run_flow client =
   in
   assert_true "entql edge path returns user posts"
     (List.length entql_user_posts = 1);
+  let* alice_posts =
+    Ent_ocaml_mongo.find ctx
+      (Ent_ocaml.Query.make post_entity
+         ~where:
+           Ent_ocaml.
+             [
+               Has_edge_with_target
+                 {
+                   edge = "user";
+                   target = user_entity;
+                   predicates = [ Eq ("username", V_string "alice") ];
+                 };
+             ])
+  in
+  assert_true "target edge predicate returns alice posts"
+    (match alice_posts with
+    | [ doc ] -> Bson.get_string (Bson.get_element "_id" doc) = "post_1"
+    | _ -> false);
   assert_true "named edge alias preserved"
     (query_user_from_posts.Ent_ocaml.edge_alias = Some "author");
   let* traversed_users =
