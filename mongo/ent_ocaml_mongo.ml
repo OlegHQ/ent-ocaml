@@ -506,23 +506,61 @@ let index_key_bson fields =
   in
   Bson.add_element "key" (Bson.create_doc_element key) Bson.empty
 
-let ensure_index ctx (entity : Ent_ocaml.entity) (index : Ent_ocaml.index) =
+let default_index_name key_bson =
+  Bson.get_element "key" key_bson |> Bson.get_doc_element |> Bson.all_elements
+  |> List.fold_left
+       (fun name (key, element) ->
+         let direction = Bson.get_int32 element in
+         if name = "" then Printf.sprintf "%s_%ld" key direction
+         else Printf.sprintf "%s_%s_%ld" name key direction)
+       ""
+
+let index_to_bson (entity : Ent_ocaml.entity) (index : Ent_ocaml.index) =
   match index_storage_fields entity index with
   | Error _ as error -> error
   | Ok [] -> Error (`Bad_schema "index has no fields")
-  | Ok fields ->
-      let options =
-        (if index.unique then [ Mongo_index.Unique true ] else [])
-        @
-        match index.name with
-        | None -> []
-        | Some name -> [ Mongo_index.Name name ]
+  | Ok fields -> (
+      let key_bson = index_key_bson fields in
+      let name = Option.value index.name ~default:(default_index_name key_bson) in
+      let base =
+        key_bson
+        |> Bson.add_element "name" (Bson.create_string name)
+        |> Bson.add_element "v" (Bson.create_int32 1l)
       in
+      let base =
+        if index.unique then
+          Bson.add_element "unique" (Bson.create_boolean true) base
+        else base
+      in
+      match index.partial_filter with
+      | [] -> Ok base
+      | [ predicate ] -> (
+          match predicate_to_bson ~entity predicate with
+          | Ok filter ->
+              Ok
+                (Bson.add_element "partialFilterExpression"
+                   (Bson.create_doc_element filter) base)
+          | Error _ as error -> error)
+      | predicates -> (
+          match predicate_to_bson ~entity (Ent_ocaml.And predicates) with
+          | Ok filter ->
+              Ok
+                (Bson.add_element "partialFilterExpression"
+                   (Bson.create_doc_element filter) base)
+          | Error _ as error -> error))
+
+let ensure_index ctx (entity : Ent_ocaml.entity) (index : Ent_ocaml.index) =
+  match index_to_bson entity index with
+  | Error _ as error -> error
+  | Ok index_bson ->
       (match
-         Mongo_eio.direct_ensure_index ctx.client ~db:ctx.config.database
-           ~collection:entity.collection (index_key_bson fields) options
+         Mongo_eio.direct_run_command ctx.client ctx.config.database
+           [
+             ("createIndexes", Bson.create_string entity.collection);
+             ("indexes", Bson.create_doc_element_list [ index_bson ]);
+           ]
        with
-      | Ok () -> Ok ()
+      | Ok _ -> Ok ()
       | Error error -> Error (backend_error "ensure_index" entity error))
 
 let ensure_indexes ctx entities =

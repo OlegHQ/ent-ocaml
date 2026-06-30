@@ -785,7 +785,13 @@ let test_mongo_decode_error () =
 let test_mongo_index_storage_fields () =
   let index =
     Ent_ocaml.
-      { name = Some "unique_posts_id"; fields = [ "id" ]; edges = []; unique = true }
+      {
+        name = Some "unique_posts_id";
+        fields = [ "id" ];
+        edges = [];
+        unique = true;
+        partial_filter = [];
+      }
   in
   match Ent_ocaml_mongo.index_storage_fields post_entity index with
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
@@ -799,6 +805,7 @@ let test_mongo_compound_index_storage_fields () =
         fields = [ "id"; "body" ];
         edges = [];
         unique = false;
+        partial_filter = [];
       }
   in
   match Ent_ocaml_mongo.index_storage_fields post_entity index with
@@ -806,10 +813,40 @@ let test_mongo_compound_index_storage_fields () =
   | Ok fields ->
       Alcotest.(check (list string)) "storage fields" [ "_id"; "body" ] fields
 
+let test_mongo_partial_index_bson () =
+  let index =
+    Ent_ocaml.
+      {
+        name = Some "published_body";
+        fields = [ "body" ];
+        edges = [];
+        unique = false;
+        partial_filter = [ Not_nil "published_at_ms" ];
+      }
+  in
+  match Ent_ocaml_mongo.index_to_bson post_entity index with
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+  | Ok bson ->
+      let partial =
+        Bson.get_doc_element (Bson.get_element "partialFilterExpression" bson)
+      in
+      let published_at =
+        Bson.get_doc_element (Bson.get_element "published_at_ms" partial)
+      in
+      ignore (Bson.get_null (Bson.get_element "$ne" published_at));
+      Alcotest.(check string)
+        "name" "published_body" (Bson.get_string (Bson.get_element "name" bson))
+
 let test_mongo_index_missing_field () =
   let index =
     Ent_ocaml.
-      { name = Some "bad"; fields = [ "missing" ]; edges = []; unique = false }
+      {
+        name = Some "bad";
+        fields = [ "missing" ];
+        edges = [];
+        unique = false;
+        partial_filter = [];
+      }
   in
   match Ent_ocaml_mongo.index_storage_fields post_entity index with
   | Ok _ -> Alcotest.fail "expected missing field error"
@@ -885,6 +922,8 @@ let () =
             test_mongo_index_storage_fields;
           Alcotest.test_case "compound index storage fields" `Quick
             test_mongo_compound_index_storage_fields;
+          Alcotest.test_case "partial index bson" `Quick
+            test_mongo_partial_index_bson;
           Alcotest.test_case "index missing field" `Quick
             test_mongo_index_missing_field;
         ]

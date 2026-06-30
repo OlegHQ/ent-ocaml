@@ -51,21 +51,6 @@ type edge = {
   storage_key : string option;
 }
 
-type index = {
-  name : string option;
-  fields : string list;
-  edges : string list;
-  unique : bool;
-}
-
-type entity = {
-  name : string;
-  collection : string;
-  fields : field list;
-  edges : edge list;
-  indexes : index list;
-}
-
 type predicate =
   | Eq of string * value
   | Neq of string * value
@@ -96,6 +81,22 @@ type predicate =
   | Has_edge of string
   | Has_edge_with of string * predicate list
   | Backend of string * value
+
+type index = {
+  name : string option;
+  fields : string list;
+  edges : string list;
+  unique : bool;
+  partial_filter : predicate list;
+}
+
+type entity = {
+  name : string;
+  collection : string;
+  fields : field list;
+  edges : edge list;
+  indexes : index list;
+}
 
 type order_direction = Asc | Desc
 
@@ -196,6 +197,113 @@ module Schema_snapshot = struct
     | One -> V_string "one"
     | Many -> V_string "many"
 
+  let rec predicate = function
+    | Eq (field, value) -> predicate_field_value "eq" field value
+    | Neq (field, value) -> predicate_field_value "neq" field value
+    | Gt (field, value) -> predicate_field_value "gt" field value
+    | Gte (field, value) -> predicate_field_value "gte" field value
+    | Lt (field, value) -> predicate_field_value "lt" field value
+    | Lte (field, value) -> predicate_field_value "lte" field value
+    | In (field, values) -> predicate_field_values "in" field values
+    | Not_in (field, values) -> predicate_field_values "not_in" field values
+    | Contains (field, value) -> predicate_field_string "contains" field value
+    | Has_prefix (field, value) -> predicate_field_string "has_prefix" field value
+    | Has_suffix (field, value) -> predicate_field_string "has_suffix" field value
+    | Is_nil field -> predicate_field "is_nil" field
+    | Not_nil field -> predicate_field "not_nil" field
+    | Json_eq (field, path, value) -> predicate_json_value "json_eq" field path value
+    | Json_neq (field, path, value) -> predicate_json_value "json_neq" field path value
+    | Json_gt (field, path, value) -> predicate_json_value "json_gt" field path value
+    | Json_gte (field, path, value) -> predicate_json_value "json_gte" field path value
+    | Json_lt (field, path, value) -> predicate_json_value "json_lt" field path value
+    | Json_lte (field, path, value) -> predicate_json_value "json_lte" field path value
+    | Json_in (field, path, values) -> predicate_json_values "json_in" field path values
+    | Json_not_in (field, path, values) -> predicate_json_values "json_not_in" field path values
+    | Json_is_nil (field, path) -> predicate_json "json_is_nil" field path
+    | Json_not_nil (field, path) -> predicate_json "json_not_nil" field path
+    | And predicates ->
+        V_doc
+          [
+            ("kind", V_string "and");
+            ("predicates", V_list (List.map predicate predicates));
+          ]
+    | Or predicates ->
+        V_doc
+          [
+            ("kind", V_string "or");
+            ("predicates", V_list (List.map predicate predicates));
+          ]
+    | Not inner ->
+        V_doc [ ("kind", V_string "not"); ("predicate", predicate inner) ]
+    | Has_edge edge -> V_doc [ ("kind", V_string "has_edge"); ("edge", V_string edge) ]
+    | Has_edge_with (edge, predicates) ->
+        V_doc
+          [
+            ("kind", V_string "has_edge_with");
+            ("edge", V_string edge);
+            ("predicates", V_list (List.map predicate predicates));
+          ]
+    | Backend (backend, value) ->
+        V_doc
+          [
+            ("kind", V_string "backend");
+            ("backend", V_string backend);
+            ("value", value);
+          ]
+
+  and predicate_field kind field =
+    V_doc [ ("kind", V_string kind); ("field", V_string field) ]
+
+  and predicate_field_value kind field value =
+    V_doc
+      [
+        ("kind", V_string kind);
+        ("field", V_string field);
+        ("value", value);
+      ]
+
+  and predicate_field_values kind field values =
+    V_doc
+      [
+        ("kind", V_string kind);
+        ("field", V_string field);
+        ("values", V_list values);
+      ]
+
+  and predicate_field_string kind field value =
+    V_doc
+      [
+        ("kind", V_string kind);
+        ("field", V_string field);
+        ("value", V_string value);
+      ]
+
+  and predicate_json kind field path =
+    V_doc
+      [
+        ("kind", V_string kind);
+        ("field", V_string field);
+        ("path", V_list (List.map (fun segment -> V_string segment) path));
+      ]
+
+  and predicate_json_value kind field path value =
+    V_doc
+      [
+        ("kind", V_string kind);
+        ("field", V_string field);
+        ("path", V_list (List.map (fun segment -> V_string segment) path));
+        ("value", value);
+      ]
+
+  and predicate_json_values kind field path values =
+    V_doc
+      [
+        ("kind", V_string kind);
+        ("field", V_string field);
+        ("path", V_list (List.map (fun segment -> V_string segment) path));
+        ("values", V_list values);
+      ]
+
   let edge (edge : edge) =
     V_doc
       [
@@ -214,6 +322,7 @@ module Schema_snapshot = struct
         ("fields", V_list (List.map (fun field -> V_string field) index.fields));
         ("edges", V_list (List.map (fun edge -> V_string edge) index.edges));
         bool "unique" index.unique;
+        ("partial_filter", V_list (List.map predicate index.partial_filter));
       ]
 
   let entity (entity : entity) =

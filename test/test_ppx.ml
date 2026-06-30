@@ -29,6 +29,8 @@ type post = {
       name = "posts_by_user_created";
       fields = [ "user_id"; "created_at_ms" ];
       unique = false;
+      partial_filter =
+        [ Ent_ocaml.Eq ("status", Ent_ocaml.V_string "published") ];
     };
   ]]
 [@@ent.edges
@@ -223,7 +225,9 @@ let test_entity_metadata () =
        (fun (index : Ent_ocaml.index) ->
          index.name = Some "posts_by_user_created"
          && index.fields = [ "user_id"; "created_at_ms" ]
-         && not index.unique)
+         && not index.unique
+         && index.partial_filter
+            = [ Ent_ocaml.Eq ("status", Ent_ocaml.V_string "published") ])
        post_entity.indexes);
   Alcotest.(check bool)
     "user edge" true

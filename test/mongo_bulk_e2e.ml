@@ -49,6 +49,7 @@ let user_entity =
             fields = [ "username" ];
             edges = [];
             unique = true;
+            partial_filter = [];
           };
         ];
     }
@@ -144,6 +145,14 @@ let post_entity =
             fields = [ "id"; "body" ];
             edges = [];
             unique = false;
+            partial_filter = [];
+          };
+          {
+            name = Some "posts_with_metadata_by_body";
+            fields = [ "body" ];
+            edges = [];
+            unique = false;
+            partial_filter = [ Eq ("user_id", V_string "user_1") ];
           };
         ];
     }
@@ -308,10 +317,36 @@ let cleanup client =
   Mongo_eio.direct_run_command client db [ ("dropDatabase", Bson.create_int32 1l) ]
   |> Result.map (fun _ -> ())
 
+let check_partial_index client =
+  match
+    Mongo_eio.direct_run_command client db
+      [ ("listIndexes", Bson.create_string post_entity.collection) ]
+  with
+  | Error error -> Error (`Backend (Mongo_error.to_string error))
+  | Ok response ->
+      let indexes = Mongo_command.cursor_batch response.Mongo_command.body in
+      let has_partial =
+        List.exists
+          (fun index ->
+            match
+              ( Bson.get_string (Bson.get_element "name" index),
+                Bson.get_doc_element
+                  (Bson.get_element "partialFilterExpression" index) )
+            with
+            | "posts_with_metadata_by_body", partial ->
+                Bson.get_string (Bson.get_element "user_id" partial) = "user_1"
+            | _ -> false
+            | exception _ -> false)
+          indexes
+      in
+      assert_true "partial index created" has_partial;
+      Ok ()
+
 let run_flow client =
   let open Ent_ocaml.Result_syntax in
   let ctx = Ent_ocaml_mongo.create ~client { database = db } in
   let* () = Ent_ocaml_mongo.ensure_indexes ctx [ user_entity; post_entity ] in
+  let* () = check_partial_index client in
   let* _users =
     Ent_ocaml_mongo.insert_many_values ctx
       [ create_user "user_1" "alice"; create_user "user_2" "bob" ]

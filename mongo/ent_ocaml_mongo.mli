@@ -26,6 +26,9 @@ val predicate_to_bson :
 val index_storage_fields :
   Ent_ocaml.entity -> Ent_ocaml.index -> (string list, Ent_ocaml.error) result
 
+val index_to_bson :
+  Ent_ocaml.entity -> Ent_ocaml.index -> (Bson.t, Ent_ocaml.error) result
+
 val decode_document :
   decode:(Bson.t -> ('a, string) result) ->
   Bson.t ->

@@ -221,6 +221,7 @@ let parse_index_spec expr =
       let index_fields = ref None in
       let edges = ref (Some []) in
       let unique = ref None in
+      let partial_filter = ref (list ~loc:expr.pexp_loc []) in
       List.iter
         (fun (label, value) ->
           match label_name label.txt with
@@ -231,6 +232,7 @@ let parse_index_spec expr =
           | "edges" ->
               edges := Some (parse_string_list_expr ~what:"index edges" value)
           | "unique" -> unique := Some (parse_bool_expr value)
+          | "partial_filter" -> partial_filter := value
           | field ->
               Location.raise_errorf ~loc:value.pexp_loc
                 "unknown ent index option: %s" field)
@@ -263,6 +265,7 @@ let parse_index_spec expr =
             list ~loc:expr.pexp_loc
               (List.map (str ~loc:expr.pexp_loc) (Option.value !edges ~default:[])) );
           (lid ~loc:expr.pexp_loc [ "Ent_ocaml"; "unique" ], bool ~loc:expr.pexp_loc unique);
+          (lid ~loc:expr.pexp_loc [ "Ent_ocaml"; "partial_filter" ], !partial_filter);
         ]
         None
   | _ ->
@@ -1036,6 +1039,7 @@ let index_expr ~loc ~collection field =
              (lid ~loc [ "Ent_ocaml"; "fields" ], list ~loc [ str ~loc field_name ]);
              (lid ~loc [ "Ent_ocaml"; "edges" ], list ~loc []);
              (lid ~loc [ "Ent_ocaml"; "unique" ], bool ~loc unique);
+             (lid ~loc [ "Ent_ocaml"; "partial_filter" ], list ~loc []);
            ]
            None)
 

@@ -113,6 +113,10 @@ The initial package scaffold already provides:
   `[@ent.deprecated "..."]`, and `[@ent.comment "..."]` field metadata.
   Repository-wide schema manifests are supported with
   `Ent_ocaml.Schema_snapshot.manifest ~name entities`.
+  Type-level `[@@ent.indexes ...]` descriptors support compound, unique, and
+  typed partial-filter indexes using ordinary `Ent_ocaml.predicate` values; the
+  Mongo backend maps logical fields through storage keys and emits
+  `partialFilterExpression`.
 - Poster pilot integration for `User`, `Session`, `Post`, `Media`,
   `PublishState`, and `PublishAttempt` DTO entities.
 
@@ -149,7 +153,7 @@ The initial package scaffold already provides:
 | Field defaults | Generated `[@ent.default expr]` and `[@ent.update_default expr]`; error-returning default funcs pending | OCaml expressions evaluated in create/update APIs |
 | Field validators | Generated `[@ent.validate [fn1; fn2]]` wrappers for primitive/enum fields | Checked before backend mutation |
 | Sensitive/deprecated/comments | Generated schema metadata implemented with `[@ent.sensitive]`, `[@ent.deprecated "..."]`, and `[@ent.comment "..."]` | Snapshot/display metadata |
-| Indexes | Field, edge, compound, unique, partial/specialized annotations | Mongo indexes with options and partial filters |
+| Indexes | Field, edge, compound, unique, and typed partial-filter index descriptors implemented | Mongo indexes with options and `partialFilterExpression` |
 | Annotations | Backend/codegen metadata, only when needed by concrete backend features | OCaml attributes and typed metadata records |
 | Transactions | Generated `with_transaction` and `Tx` clients implemented; commit/rollback hooks and session-backed Mongo transactions pending | Mongo sessions/transactions where deployment supports them |
 | Schema/index checks | Runtime schema/index verification | Index manifests and optional collection validators |
@@ -237,8 +241,9 @@ The initial package scaffold already provides:
    edge-field ordering, and custom backend terms are still pending.
 
 10. Mongo schema/index checks:
-   generate index manifests, `ensure_indexes`, drift checks, collection
-   validators where useful, and audit docs for production rollout.
+   generated index descriptors and `ensure_indexes` are implemented for field,
+   compound, unique, and typed partial-filter indexes. Drift checks, collection
+   validators where useful, and audit docs for production rollout remain.
 
 11. EntQL and backend-specific metadata:
    metadata-validated runtime dynamic filters are implemented for field
@@ -246,8 +251,9 @@ The initial package scaffold already provides:
    and generated per-entity schema snapshots plus repository-wide snapshot
    manifests are implemented. String parsing/expression syntax, custom
    annotations when they directly support a backend feature, and typed
-   backend-specific escape hatches remain. Do not add generator plugins unless a
-   concrete user need appears.
+   backend-specific escape hatches remain. Migrations and extension/plugin
+   systems are not on the Poster roadmap; add typed backend metadata only when a
+   concrete backend feature requires it.
 
 12. Poster cutover and e2e:
    run unit tests, PPX expansion tests, Mongo driver e2e, Poster HTTP e2e, and

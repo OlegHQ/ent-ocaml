@@ -235,6 +235,33 @@ type post = {
 [@@deriving ent]
 ```
 
+Indexes are schema metadata, and partial indexes reuse normal typed predicates:
+
+```ocaml
+type post = {
+  id : string [@ent.key "_id"] [@ent.unique];
+  user_id : string [@ent.index "posts_by_user"];
+  body : string;
+  status : string;
+}
+[@@ent.indexes
+  [
+    {
+      name = "published_posts_by_user";
+      fields = [ "user_id"; "body" ];
+      unique = false;
+      partial_filter =
+        (let open Ent_ocaml in
+         [ Eq ("status", V_string "published") ]);
+    };
+  ]]
+[@@deriving ent]
+```
+
+The Mongo backend creates those indexes through `ensure_indexes` and maps
+logical field names through storage keys before sending `partialFilterExpression`.
+Use predicates that the target MongoDB server accepts for partial indexes.
+
 Aggregates compose from queries too:
 
 ```ocaml

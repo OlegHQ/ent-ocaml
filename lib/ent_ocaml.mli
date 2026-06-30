@@ -51,21 +51,6 @@ type edge = {
   storage_key : string option;
 }
 
-type index = {
-  name : string option;
-  fields : string list;
-  edges : string list;
-  unique : bool;
-}
-
-type entity = {
-  name : string;
-  collection : string;
-  fields : field list;
-  edges : edge list;
-  indexes : index list;
-}
-
 type predicate =
   | Eq of string * value
   | Neq of string * value
@@ -96,6 +81,22 @@ type predicate =
   | Has_edge of string
   | Has_edge_with of string * predicate list
   | Backend of string * value
+
+type index = {
+  name : string option;
+  fields : string list;
+  edges : string list;
+  unique : bool;
+  partial_filter : predicate list;
+}
+
+type entity = {
+  name : string;
+  collection : string;
+  fields : field list;
+  edges : edge list;
+  indexes : index list;
+}
 
 type order_direction = Asc | Desc
 
@@ -153,6 +154,7 @@ module Schema_snapshot : sig
   val field_type : field_type -> value
   val field : field -> value
   val edge : edge -> value
+  val predicate : predicate -> value
   val index : index -> value
   val entity : entity -> value
   val entities : entity list -> value
