@@ -694,6 +694,255 @@ module Dynamic_filter = struct
     loop query filters
 end
 
+module Entql = struct
+  let trim = String.trim
+
+  let bad message = Error (`Bad_query ("entql: " ^ message))
+
+  let rec unwrap_option = function
+    | Option typ -> unwrap_option typ
+    | typ -> typ
+
+  let starts_with s prefix =
+    let len = String.length prefix in
+    String.length s >= len && String.sub s 0 len = prefix
+
+  let ends_with s suffix =
+    let len = String.length suffix in
+    let s_len = String.length s in
+    s_len >= len && String.sub s (s_len - len) len = suffix
+
+  let unquote s =
+    let len = String.length s in
+    if len >= 2 && s.[0] = '"' && s.[len - 1] = '"' then
+      let buffer = Buffer.create len in
+      let rec loop index =
+        if index >= len - 1 then Ok (Buffer.contents buffer)
+        else if s.[index] = '\\' && index + 1 < len - 1 then (
+          let c =
+            match s.[index + 1] with
+            | '"' -> '"'
+            | '\\' -> '\\'
+            | 'n' -> '\n'
+            | 't' -> '\t'
+            | c -> c
+          in
+          Buffer.add_char buffer c;
+          loop (index + 2))
+        else (
+          Buffer.add_char buffer s.[index];
+          loop (index + 1))
+      in
+      loop 1
+    else Ok s
+
+  let split_top_level ~sep s =
+    let sep_len = String.length sep in
+    let len = String.length s in
+    let rec loop acc start index in_string depth =
+      if index >= len then
+        List.rev (String.sub s start (len - start) :: acc)
+      else
+        let in_string =
+          if s.[index] = '"' && (index = 0 || s.[index - 1] <> '\\') then
+            not in_string
+          else in_string
+        in
+        let depth =
+          if in_string then depth
+          else
+            match s.[index] with
+            | '[' -> depth + 1
+            | ']' -> max 0 (depth - 1)
+            | _ -> depth
+        in
+        if
+          (not in_string) && depth = 0 && index + sep_len <= len
+          && String.sub s index sep_len = sep
+        then
+          loop (String.sub s start (index - start) :: acc) (index + sep_len)
+            (index + sep_len) in_string depth
+        else loop acc start (index + 1) in_string depth
+    in
+    loop [] 0 0 false 0 |> List.map trim |> List.filter (( <> ) "")
+
+  let find_outside needle s =
+    let needle_len = String.length needle in
+    let len = String.length s in
+    let rec loop index in_string depth =
+      if index + needle_len > len then None
+      else
+        let in_string =
+          if s.[index] = '"' && (index = 0 || s.[index - 1] <> '\\') then
+            not in_string
+          else in_string
+        in
+        let depth =
+          if in_string then depth
+          else
+            match s.[index] with
+            | '[' -> depth + 1
+            | ']' -> max 0 (depth - 1)
+            | _ -> depth
+        in
+        if
+          (not in_string) && depth = 0
+          && String.sub s index needle_len = needle
+        then Some index
+        else loop (index + 1) in_string depth
+    in
+    loop 0 false 0
+
+  let parse_list s =
+    let s = trim s in
+    if starts_with s "[" && ends_with s "]" then
+      let inner = String.sub s 1 (String.length s - 2) in
+      Ok (split_top_level ~sep:"," inner)
+    else bad "expected list value"
+
+  let value_of_literal typ literal =
+    let literal = trim literal in
+    let typ = unwrap_option typ in
+    match typ with
+    | String | Uuid | Bytes | Enum _ ->
+        Result.map (fun value -> V_string value) (unquote literal)
+    | Int -> (
+        match int_of_string_opt literal with
+        | Some value -> Ok (V_int value)
+        | None -> bad ("expected int value: " ^ literal))
+    | Int32 -> (
+        match Int32.of_string_opt literal with
+        | Some value -> Ok (V_int32 value)
+        | None -> bad ("expected int32 value: " ^ literal))
+    | Int64 | Time_ms -> (
+        match Int64.of_string_opt literal with
+        | Some value -> Ok (V_int64 value)
+        | None -> bad ("expected int64 value: " ^ literal))
+    | Float -> (
+        match float_of_string_opt literal with
+        | Some value -> Ok (V_float value)
+        | None -> bad ("expected float value: " ^ literal))
+    | Bool -> (
+        match String.lowercase_ascii literal with
+        | "true" -> Ok (V_bool true)
+        | "false" -> Ok (V_bool false)
+        | _ -> bad ("expected bool value: " ^ literal))
+    | Json | Custom _ ->
+        Result.map (fun value -> V_string value) (unquote literal)
+    | List _ | Option _ ->
+        bad "unexpected nested list/option literal"
+
+  let list_value_of_literal typ literal =
+    match parse_list literal with
+    | Error _ as error -> error
+    | Ok values ->
+        let rec loop acc = function
+          | [] -> Ok (V_list (List.rev acc))
+          | value :: rest -> (
+              match value_of_literal typ value with
+              | Ok value -> loop (value :: acc) rest
+              | Error _ as error -> error)
+        in
+        loop [] values
+
+  let field entity name =
+    match find_field entity name with
+    | Some field -> Ok field
+    | None -> bad ("field not found on " ^ entity.name ^ ": " ^ name)
+
+  let binary entity expression operator op =
+    match find_outside operator expression with
+    | None -> None
+    | Some index ->
+        let field_name = trim (String.sub expression 0 index) in
+        let literal =
+          trim
+            (String.sub expression
+               (index + String.length operator)
+               (String.length expression - index - String.length operator))
+        in
+        Some
+          (match field entity field_name with
+          | Error _ as error -> error
+          | Ok field ->
+              let value =
+                match op with
+                | Dynamic_filter.In_list | Dynamic_filter.Not_in_list ->
+                    list_value_of_literal field.typ literal
+                | _ -> value_of_literal field.typ literal
+              in
+              Result.map
+                (fun value -> Dynamic_filter.make ~field:field.name ~value op)
+                value)
+
+  let unary entity expression suffix op =
+    if ends_with expression suffix then
+      let field_name =
+        String.sub expression 0 (String.length expression - String.length suffix)
+        |> trim
+      in
+      Some
+        (match field entity field_name with
+        | Error _ as error -> error
+        | Ok field -> Ok (Dynamic_filter.make ~field:field.name op))
+    else None
+
+  let parse_filter entity expression =
+    let expression = trim expression in
+    let candidates =
+      [
+        binary entity expression " not in " Dynamic_filter.Not_in_list;
+        binary entity expression " in " Dynamic_filter.In_list;
+        binary entity expression " contains " Dynamic_filter.Contains;
+        binary entity expression " has_prefix " Dynamic_filter.Has_prefix;
+        binary entity expression " has_suffix " Dynamic_filter.Has_suffix;
+        binary entity expression ">=" Dynamic_filter.Greater_or_equal;
+        binary entity expression "<=" Dynamic_filter.Less_or_equal;
+        binary entity expression "==" Dynamic_filter.Equal;
+        binary entity expression "!=" Dynamic_filter.Not_equal;
+        binary entity expression ">" Dynamic_filter.Greater_than;
+        binary entity expression "<" Dynamic_filter.Less_than;
+        unary entity expression " is_null" Dynamic_filter.Is_null;
+        unary entity expression " not_null" Dynamic_filter.Not_null;
+      ]
+    in
+    match List.find_map Fun.id candidates with
+    | Some result -> result
+    | None -> bad ("could not parse expression: " ^ expression)
+
+  let parse entity expression =
+    let parts = split_top_level ~sep:"&&" expression in
+    let rec loop acc = function
+      | [] -> Ok (List.rev acc)
+      | part :: rest -> (
+          match parse_filter entity part with
+          | Ok filter -> loop (filter :: acc) rest
+          | Error _ as error -> error)
+    in
+    loop [] parts
+
+  let predicate entity expression =
+    let open Result_syntax in
+    let* filters = parse entity expression in
+    match filters with
+    | [] -> bad "empty expression"
+    | [ filter ] -> Dynamic_filter.predicate entity filter
+    | filters ->
+        let rec loop acc = function
+          | [] -> Ok (And (List.rev acc))
+          | filter :: rest -> (
+              match Dynamic_filter.predicate entity filter with
+              | Ok predicate -> loop (predicate :: acc) rest
+              | Error _ as error -> error)
+        in
+        loop [] filters
+
+  let where expression (query : query) =
+    let open Result_syntax in
+    let+ predicate = predicate query.entity expression in
+    Query.where predicate query
+end
+
 let rec has_duplicate = function
   | [] -> None
   | name :: rest ->

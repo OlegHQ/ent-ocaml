@@ -285,6 +285,13 @@ module Dynamic_filter : sig
   val where_all : t list -> query -> (query, error) result
 end
 
+module Entql : sig
+  val parse : entity -> string -> (Dynamic_filter.t list, error) result
+  val parse_filter : entity -> string -> (Dynamic_filter.t, error) result
+  val predicate : entity -> string -> (predicate, error) result
+  val where : string -> query -> (query, error) result
+end
+
 type privacy_decision = Allow | Deny of string | Skip
 type 'ctx query_rule = 'ctx -> query -> privacy_decision
 type 'ctx mutation_rule = 'ctx -> mutation -> privacy_decision

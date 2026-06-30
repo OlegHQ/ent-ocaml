@@ -407,6 +407,44 @@ let test_dynamic_filter_api () =
   | Ok _ -> Alcotest.fail "unexpected nil predicate"
   | Error error -> Alcotest.fail (error_to_string error))
 
+let test_entql_api () =
+  let open Ent_ocaml in
+  (match Entql.predicate post_entity {|body contains "draft"|} with
+  | Ok (Contains ("body", "draft")) -> ()
+  | Ok _ -> Alcotest.fail "unexpected entql contains predicate"
+  | Error error -> Alcotest.fail (error_to_string error));
+  (match Entql.predicate post_entity {|user_id in ["user_1", "user_2"]|} with
+  | Ok (In ("user_id", [ V_string "user_1"; V_string "user_2" ])) -> ()
+  | Ok _ -> Alcotest.fail "unexpected entql in predicate"
+  | Error error -> Alcotest.fail (error_to_string error));
+  (match
+     Entql.where {|user_id == "user_1" && body != "draft"|}
+       (Query.make post_entity)
+   with
+  | Ok
+      {
+        predicates =
+          [ And [ Eq ("user_id", V_string "user_1"); Neq ("body", V_string "draft") ] ];
+        _;
+      } ->
+      ()
+  | Ok query ->
+      Alcotest.failf "unexpected entql query predicates: %d"
+        (List.length query.predicates)
+  | Error error -> Alcotest.fail (error_to_string error));
+  (match Entql.predicate post_entity {|published_at_ms > 10|} with
+  | Ok (Gt ("published_at_ms", V_int64 10L)) -> ()
+  | Ok _ -> Alcotest.fail "unexpected entql comparison predicate"
+  | Error error -> Alcotest.fail (error_to_string error));
+  (match Entql.predicate post_entity {|published_at_ms is_null|} with
+  | Ok (Is_nil "published_at_ms") -> ()
+  | Ok _ -> Alcotest.fail "unexpected entql null predicate"
+  | Error error -> Alcotest.fail (error_to_string error));
+  (match Entql.predicate post_entity {|published_at_ms == "soon"|} with
+  | Error (`Bad_query "entql: expected int64 value: \"soon\"") -> ()
+  | Ok _ -> Alcotest.fail "expected entql type error"
+  | Error error -> Alcotest.fail (error_to_string error))
+
 let test_schema_snapshot () =
   match Ent_ocaml.Schema_snapshot.entity post_entity with
   | Ent_ocaml.V_doc fields ->
@@ -886,6 +924,7 @@ let () =
           Alcotest.test_case "query interceptor chain" `Quick
             test_query_interceptor_chain;
           Alcotest.test_case "dynamic filter api" `Quick test_dynamic_filter_api;
+          Alcotest.test_case "entql api" `Quick test_entql_api;
           Alcotest.test_case "schema snapshot" `Quick test_schema_snapshot;
           Alcotest.test_case "schema manifest" `Quick test_schema_manifest;
         ] );

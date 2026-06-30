@@ -234,6 +234,21 @@ let load_filtered ctx =
   Posts.all ctx ~decode:post_of_bson_doc_result query
 ```
 
+For user-provided filter strings, use the generated EntQL helpers. They parse a
+small metadata-validated expression language into the same typed predicates and
+compose through `result`:
+
+```ocaml
+let load_filtered ctx =
+  let open Ent_ocaml.Result_syntax in
+  let open Post in
+  let* query =
+    query ()
+    |> where_entql {|status == "draft" && body contains "hello"|}
+  in
+  Posts.all ctx ~decode:post_of_bson_doc_result query
+```
+
 JSON fields can be marked with `[@ent.json]` and queried through generated
 path helpers:
 

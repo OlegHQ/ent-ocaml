@@ -1087,6 +1087,35 @@ let test_generated_dynamic_filter_api () =
   | Ok _ -> Alcotest.fail "unexpected generated dynamic filter result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
+let test_generated_entql_api () =
+  let open Ent_ocaml.Result_syntax in
+  let result =
+    let open Post in
+    let* predicate = entql_predicate {|status == "draft"|} in
+    let* query =
+      query ()
+      |> where_entql {|status == "draft" && body contains "hello"|}
+    in
+    Ok (predicate, query)
+  in
+  match result with
+  | ( Ok
+        ( Ent_ocaml.Eq ("status", Ent_ocaml.V_string "draft"),
+          {
+            Ent_ocaml.predicates =
+              [
+                Ent_ocaml.And
+                  [
+                    Ent_ocaml.Eq ("status", Ent_ocaml.V_string "draft");
+                    Ent_ocaml.Contains ("body", "hello");
+                  ];
+              ];
+            _;
+          } ) ) ->
+      ()
+  | Ok _ -> Alcotest.fail "unexpected generated entql result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+
 let test_generated_json_predicate_api () =
   let query =
     let open Event in
@@ -1199,6 +1228,8 @@ let () =
             test_generated_interceptor_store_api;
           Alcotest.test_case "generated dynamic filter api" `Quick
             test_generated_dynamic_filter_api;
+          Alcotest.test_case "generated entql api" `Quick
+            test_generated_entql_api;
           Alcotest.test_case "generated json predicate api" `Quick
             test_generated_json_predicate_api;
           Alcotest.test_case "generated nested value api" `Quick

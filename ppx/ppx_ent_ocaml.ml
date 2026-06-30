@@ -1657,6 +1657,11 @@ let gen_query_module td =
                (app ~loc
                   (ident ~loc [ "Ent_ocaml"; "Dynamic_filter"; "predicate" ])
                   [ evar ~loc (type_name ^ "_entity"); evar ~loc "filter" ]));
+        A.value_binding ~loc ~pat:(pvar ~loc "entql_predicate")
+          ~expr:
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "expression")
+               (app ~loc (ident ~loc [ "Ent_ocaml"; "Entql"; "predicate" ])
+                  [ evar ~loc (type_name ^ "_entity"); evar ~loc "expression" ]));
       ]
   in
   let query_pipe_helpers =
@@ -1706,6 +1711,12 @@ let gen_query_module td =
                   (app ~loc
                      (ident ~loc [ "Ent_ocaml"; "Dynamic_filter"; "where_all" ])
                      [ evar ~loc "filters"; evar ~loc "query" ])));
+        A.value_binding ~loc ~pat:(pvar ~loc "where_entql")
+          ~expr:
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "expression")
+               (A.pexp_fun ~loc Nolabel None query_pat
+                  (app ~loc (ident ~loc [ "Ent_ocaml"; "Entql"; "where" ])
+                     [ evar ~loc "expression"; evar ~loc "query" ])));
         A.value_binding ~loc ~pat:(pvar ~loc "select")
           ~expr:
             (A.pexp_fun ~loc Nolabel None (pvar ~loc "fields")
@@ -3551,6 +3562,8 @@ let gen_sig_for_type td =
       val_sig "dynamic_predicate"
         (arrow Nolabel dynamic_filter_typ
            (result_typ predicate_typ error_typ));
+      val_sig "entql_predicate"
+        (arrow Nolabel string_typ (result_typ predicate_typ error_typ));
     ]
   in
   let query_pipe_sig =
@@ -3563,6 +3576,9 @@ let gen_sig_for_type td =
            (arrow Nolabel query_typ (result_typ query_typ error_typ)));
       val_sig "where_dynamic_all"
         (arrow Nolabel (list_typ dynamic_filter_typ)
+           (arrow Nolabel query_typ (result_typ query_typ error_typ)));
+      val_sig "where_entql"
+        (arrow Nolabel string_typ
            (arrow Nolabel query_typ (result_typ query_typ error_typ)));
       val_sig "select"
         (arrow Nolabel (list_typ string_typ) (arrow Nolabel query_typ query_typ));
