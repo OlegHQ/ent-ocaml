@@ -111,8 +111,18 @@ let ent_default_attr =
     Ast_pattern.(single_expr_payload __)
     (fun expr -> expr)
 
+let ent_default_result_attr =
+  Attribute.declare "ent.default_result" Attribute.Context.label_declaration
+    Ast_pattern.(single_expr_payload __)
+    (fun expr -> expr)
+
 let ent_update_default_attr =
   Attribute.declare "ent.update_default" Attribute.Context.label_declaration
+    Ast_pattern.(single_expr_payload __)
+    (fun expr -> expr)
+
+let ent_update_default_result_attr =
+  Attribute.declare "ent.update_default_result" Attribute.Context.label_declaration
     Ast_pattern.(single_expr_payload __)
     (fun expr -> expr)
 
@@ -1055,6 +1065,9 @@ let default_binding ~loc field body =
   match Attribute.get ent_default_attr field with
   | None -> body
   | Some default ->
+      if Option.is_some (Attribute.get ent_default_result_attr field) then
+        Location.raise_errorf ~loc:field.pld_loc
+          "ent field cannot use both default and default_result";
       if has_attr ent_unique_attr field then
         Location.raise_errorf ~loc:field.pld_loc
           "ent default fields cannot be unique";
@@ -1083,10 +1096,60 @@ let default_binding ~loc field body =
 let apply_default_bindings ~loc fields body =
   List.fold_right (default_binding ~loc) fields body
 
+let default_result_binding ~loc field body =
+  match Attribute.get ent_default_result_attr field with
+  | None -> body
+  | Some default ->
+      if has_attr ent_unique_attr field then
+        Location.raise_errorf ~loc:field.pld_loc
+          "ent default_result fields cannot be unique";
+      let field_name = field.pld_name.txt in
+      let default_pair =
+        A.pexp_tuple ~loc
+          [ str ~loc field_name; value_expr ~loc field (evar ~loc "value") ]
+      in
+      let default_fields =
+        A.pexp_construct ~loc (lid ~loc [ "::" ])
+          (Some (A.pexp_tuple ~loc [ default_pair; evar ~loc "fields" ]))
+      in
+      let apply_default =
+        A.pexp_match ~loc default
+          [
+            A.case
+              ~lhs:
+                (A.ppat_construct ~loc (lid ~loc [ "Ok" ])
+                   (Some (pvar ~loc "value")))
+              ~guard:None
+              ~rhs:
+                (A.pexp_let ~loc Nonrecursive
+                   [
+                     A.value_binding ~loc ~pat:(pvar ~loc "fields")
+                       ~expr:default_fields;
+                   ]
+                   body);
+            A.case
+              ~lhs:
+                (A.ppat_construct ~loc (lid ~loc [ "Error" ])
+                   (Some (pvar ~loc "error")))
+              ~guard:None
+              ~rhs:(constr_arg ~loc [ "Error" ] (evar ~loc "error"));
+          ]
+      in
+      A.pexp_ifthenelse ~loc
+        (app ~loc (ident ~loc [ "List"; "mem_assoc" ])
+           [ str ~loc field_name; evar ~loc "fields" ])
+        body (Some apply_default)
+
+let apply_default_result_bindings ~loc fields body =
+  List.fold_right (default_result_binding ~loc) fields body
+
 let update_default_binding ~loc field body =
   match Attribute.get ent_update_default_attr field with
   | None -> body
   | Some default ->
+      if Option.is_some (Attribute.get ent_update_default_result_attr field) then
+        Location.raise_errorf ~loc:field.pld_loc
+          "ent field cannot use both update_default and update_default_result";
       if has_attr ent_unique_attr field then
         Location.raise_errorf ~loc:field.pld_loc
           "ent update_default fields cannot be unique";
@@ -1107,8 +1170,13 @@ let update_default_binding ~loc field body =
           [
             app ~loc (ident ~loc [ "List"; "mem_assoc" ])
               [ str ~loc field_name; evar ~loc "set" ];
-            app ~loc (ident ~loc [ "List"; "mem" ])
-              [ str ~loc field_name; evar ~loc "clear" ];
+            app ~loc (ident ~loc [ "||" ])
+              [
+                app ~loc (ident ~loc [ "List"; "mem_assoc" ])
+                  [ str ~loc field_name; evar ~loc "add" ];
+                app ~loc (ident ~loc [ "List"; "mem" ])
+                  [ str ~loc field_name; evar ~loc "clear" ];
+              ];
           ]
       in
       let set =
@@ -1120,6 +1188,64 @@ let update_default_binding ~loc field body =
 
 let apply_update_default_bindings ~loc fields body =
   List.fold_right (update_default_binding ~loc) fields body
+
+let update_default_result_binding ~loc field body =
+  match Attribute.get ent_update_default_result_attr field with
+  | None -> body
+  | Some default ->
+      if has_attr ent_unique_attr field then
+        Location.raise_errorf ~loc:field.pld_loc
+          "ent update_default_result fields cannot be unique";
+      if has_attr ent_immutable_attr field then
+        Location.raise_errorf ~loc:field.pld_loc
+          "ent update_default_result fields cannot be immutable";
+      let field_name = field.pld_name.txt in
+      let default_pair =
+        A.pexp_tuple ~loc
+          [ str ~loc field_name; value_expr ~loc field (evar ~loc "value") ]
+      in
+      let default_set =
+        A.pexp_construct ~loc (lid ~loc [ "::" ])
+          (Some (A.pexp_tuple ~loc [ default_pair; evar ~loc "set" ]))
+      in
+      let touched =
+        app ~loc (ident ~loc [ "||" ])
+          [
+            app ~loc (ident ~loc [ "List"; "mem_assoc" ])
+              [ str ~loc field_name; evar ~loc "set" ];
+            app ~loc (ident ~loc [ "||" ])
+              [
+                app ~loc (ident ~loc [ "List"; "mem_assoc" ])
+                  [ str ~loc field_name; evar ~loc "add" ];
+                app ~loc (ident ~loc [ "List"; "mem" ])
+                  [ str ~loc field_name; evar ~loc "clear" ];
+              ];
+          ]
+      in
+      let apply_default =
+        A.pexp_match ~loc default
+          [
+            A.case
+              ~lhs:
+                (A.ppat_construct ~loc (lid ~loc [ "Ok" ])
+                   (Some (pvar ~loc "value")))
+              ~guard:None
+              ~rhs:
+                (A.pexp_let ~loc Nonrecursive
+                   [ A.value_binding ~loc ~pat:(pvar ~loc "set") ~expr:default_set ]
+                   body);
+            A.case
+              ~lhs:
+                (A.ppat_construct ~loc (lid ~loc [ "Error" ])
+                   (Some (pvar ~loc "error")))
+              ~guard:None
+              ~rhs:(constr_arg ~loc [ "Error" ] (evar ~loc "error"));
+          ]
+      in
+      A.pexp_ifthenelse ~loc touched body (Some apply_default)
+
+let apply_update_default_result_bindings ~loc fields body =
+  List.fold_right (update_default_result_binding ~loc) fields body
 
 let gen_entity td =
   let loc = loc_of_type_decl td in
@@ -1557,6 +1683,41 @@ let gen_query_module td =
                (apply_default_bindings ~loc fields body));
       ]
   in
+  let create_result =
+    let body =
+      mutation_record ~op:"Create" ~predicates:(list ~loc [])
+        ~set:(evar ~loc "fields") ~clear:(list ~loc [])
+        ~add:(list ~loc []) ~on_insert:(list ~loc [])
+      |> constr_arg ~loc [ "Ok" ]
+    in
+    let body =
+      A.pexp_let ~loc Nonrecursive
+        [ A.value_binding ~loc ~pat:(pvar ~loc "fields") ~expr:(list ~loc []) ]
+        (apply_default_bindings ~loc fields
+           (apply_default_result_bindings ~loc fields body))
+    in
+    A.pstr_value ~loc Nonrecursive
+      [
+        A.value_binding ~loc ~pat:(pvar ~loc "create_result")
+          ~expr:(A.pexp_fun ~loc Nolabel None (unit_pat ~loc) body);
+      ]
+  in
+  let create_values_result =
+    let body =
+      mutation_record ~op:"Create" ~predicates:(list ~loc [])
+        ~set:(evar ~loc "fields") ~clear:(list ~loc [])
+        ~add:(list ~loc []) ~on_insert:(list ~loc [])
+      |> constr_arg ~loc [ "Ok" ]
+    in
+    A.pstr_value ~loc Nonrecursive
+      [
+        A.value_binding ~loc ~pat:(pvar ~loc "create_values_result")
+          ~expr:
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "fields")
+               (apply_default_bindings ~loc fields
+                  (apply_default_result_bindings ~loc fields body)));
+      ]
+  in
   let create_record =
     let fields_expr =
       A.pexp_match ~loc
@@ -1578,6 +1739,25 @@ let gen_query_module td =
           ~expr:(A.pexp_fun ~loc Nolabel None (pvar ~loc "value") body);
       ]
   in
+  let create_record_result =
+    let fields_expr =
+      A.pexp_match ~loc
+        (app ~loc (evar ~loc (type_name ^ "_to_ent_value"))
+           [ evar ~loc "value" ])
+        [
+          A.case ~lhs:(A.ppat_construct ~loc (lid ~loc [ "Ent_ocaml"; "V_doc" ]) (Some (pvar ~loc "fields")))
+            ~guard:None ~rhs:(evar ~loc "fields");
+          A.case ~lhs:(A.ppat_any ~loc) ~guard:None
+            ~rhs:(list ~loc []);
+        ]
+    in
+    let body = app ~loc (evar ~loc "create_values_result") [ fields_expr ] in
+    A.pstr_value ~loc Nonrecursive
+      [
+        A.value_binding ~loc ~pat:(pvar ~loc "create_record_result")
+          ~expr:(A.pexp_fun ~loc Nolabel None (pvar ~loc "value") body);
+      ]
+  in
   let create_many =
     A.pstr_value ~loc Nonrecursive
       [
@@ -1588,6 +1768,75 @@ let gen_query_module td =
                   [ evar ~loc "create_record"; evar ~loc "rows" ]));
       ]
   in
+  let result_list_fn name item_fn =
+    A.pstr_value ~loc Recursive
+      [
+        A.value_binding ~loc ~pat:(pvar ~loc name)
+          ~expr:
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "rows")
+               (A.pexp_let ~loc Recursive
+                  [
+                    A.value_binding ~loc ~pat:(pvar ~loc "loop")
+                      ~expr:
+                        (A.pexp_fun ~loc Nolabel None (pvar ~loc "acc")
+                           (A.pexp_fun ~loc Nolabel None (pvar ~loc "rows")
+                              (A.pexp_match ~loc (evar ~loc "rows")
+                                 [
+                                   A.case
+                                     ~lhs:(A.ppat_construct ~loc (lid ~loc [ "[]" ]) None)
+                                     ~guard:None
+                                     ~rhs:
+                                       (constr_arg ~loc [ "Ok" ]
+                                          (app ~loc (ident ~loc [ "List"; "rev" ])
+                                             [ evar ~loc "acc" ]));
+                                   A.case
+                                     ~lhs:
+                                       (A.ppat_construct ~loc (lid ~loc [ "::" ])
+                                          (Some
+                                             (A.ppat_tuple ~loc
+                                                [ pvar ~loc "row"; pvar ~loc "rest" ])))
+                                     ~guard:None
+                                     ~rhs:
+                                       (A.pexp_match ~loc
+                                          (app ~loc (evar ~loc item_fn)
+                                             [ evar ~loc "row" ])
+                                          [
+                                            A.case
+                                              ~lhs:
+                                                (A.ppat_construct ~loc
+                                                   (lid ~loc [ "Ok" ])
+                                                   (Some (pvar ~loc "mutation")))
+                                              ~guard:None
+                                              ~rhs:
+                                                (app ~loc (evar ~loc "loop")
+                                                   [
+                                                     A.pexp_construct ~loc
+                                                       (lid ~loc [ "::" ])
+                                                       (Some
+                                                          (A.pexp_tuple ~loc
+                                                             [
+                                                               evar ~loc "mutation";
+                                                               evar ~loc "acc";
+                                                             ]));
+                                                     evar ~loc "rest";
+                                                   ]);
+                                            A.case
+                                              ~lhs:
+                                                (A.ppat_construct ~loc
+                                                   (lid ~loc [ "Error" ])
+                                                   (Some (pvar ~loc "error")))
+                                              ~guard:None
+                                              ~rhs:
+                                                (constr_arg ~loc [ "Error" ]
+                                                   (evar ~loc "error"));
+                                          ]);
+                                 ])));
+                  ]
+                  (app ~loc (evar ~loc "loop")
+                     [ list ~loc []; evar ~loc "rows" ])));
+      ]
+  in
+  let create_many_result = result_list_fn "create_many_result" "create_record_result" in
   let create_many_values =
     A.pstr_value ~loc Nonrecursive
       [
@@ -1597,6 +1846,9 @@ let gen_query_module td =
                (app ~loc (ident ~loc [ "List"; "map" ])
                   [ evar ~loc "create_values"; evar ~loc "rows" ]));
       ]
+  in
+  let create_many_values_result =
+    result_list_fn "create_many_values_result" "create_values_result"
   in
   let mutation_pipe_helpers =
     A.pstr_value ~loc Nonrecursive
@@ -1664,6 +1916,32 @@ let gen_query_module td =
                            (apply_update_default_bindings ~loc fields body))))));
       ]
   in
+  let update_result_fn name op =
+    let body =
+      mutation_record ~op ~predicates:(evar ~loc "where")
+        ~set:(evar ~loc "set")
+        ~clear:(evar ~loc "clear")
+        ~add:(evar ~loc "add") ~on_insert:(list ~loc [])
+      |> constr_arg ~loc [ "Ok" ]
+    in
+    A.pstr_value ~loc Nonrecursive
+      [
+        A.value_binding ~loc ~pat:(pvar ~loc name)
+          ~expr:
+            (A.pexp_fun ~loc (Optional "where") (Some (list ~loc []))
+               (pvar ~loc "where")
+               (A.pexp_fun ~loc (Optional "set") (Some (list ~loc []))
+                  (pvar ~loc "set")
+                  (A.pexp_fun ~loc (Optional "clear") (Some (list ~loc []))
+                     (pvar ~loc "clear")
+                     (A.pexp_fun ~loc (Optional "add") (Some (list ~loc []))
+                        (pvar ~loc "add")
+                        (A.pexp_fun ~loc Nolabel None (unit_pat ~loc)
+                           (apply_update_default_bindings ~loc fields
+                              (apply_update_default_result_bindings ~loc fields
+                                 body)))))));
+      ]
+  in
   let update_query_fn name op =
     let body =
       mutation_record ~op
@@ -1686,6 +1964,32 @@ let gen_query_module td =
                      (pvar ~loc "add")
                      (A.pexp_fun ~loc Nolabel None query_pat
                         (apply_update_default_bindings ~loc fields body)))));
+      ]
+  in
+  let update_query_result_fn name op =
+    let body =
+      mutation_record ~op
+        ~predicates:
+          (A.pexp_field ~loc (evar ~loc "query")
+             (lid ~loc [ "Ent_ocaml"; "predicates" ]))
+        ~set:(evar ~loc "set")
+        ~clear:(evar ~loc "clear")
+        ~add:(evar ~loc "add") ~on_insert:(list ~loc [])
+      |> constr_arg ~loc [ "Ok" ]
+    in
+    A.pstr_value ~loc Nonrecursive
+      [
+        A.value_binding ~loc ~pat:(pvar ~loc name)
+          ~expr:
+            (A.pexp_fun ~loc (Optional "set") (Some (list ~loc []))
+               (pvar ~loc "set")
+               (A.pexp_fun ~loc (Optional "clear") (Some (list ~loc []))
+                  (pvar ~loc "clear")
+                  (A.pexp_fun ~loc (Optional "add") (Some (list ~loc []))
+                     (pvar ~loc "add")
+                     (A.pexp_fun ~loc Nolabel None query_pat
+                        (apply_update_default_bindings ~loc fields
+                           (apply_update_default_result_bindings ~loc fields body))))));
       ]
   in
   let upsert_query_fn =
@@ -1775,6 +2079,14 @@ let gen_query_module td =
                 ~expr:
                   (A.pexp_fun ~loc Nolabel None (pvar ~loc "value")
                      (app ~loc (evar ~loc "update_one_where")
+                        [ app ~loc (evar ~loc "by_id") [ evar ~loc "value" ] ]));
+            ];
+          A.pstr_value ~loc Nonrecursive
+            [
+              A.value_binding ~loc ~pat:(pvar ~loc "update_id_result")
+                ~expr:
+                  (A.pexp_fun ~loc Nolabel None (pvar ~loc "value")
+                     (app ~loc (evar ~loc "update_one_where_result")
                         [ app ~loc (evar ~loc "by_id") [ evar ~loc "value" ] ]));
             ];
           A.pstr_value ~loc Nonrecursive
@@ -2807,11 +3119,17 @@ let gen_query_module td =
   let structure =
     query :: boolean_predicates :: query_pipe_helpers :: aggregate_helpers
     :: create :: create_values
-    :: create_record :: create_many :: create_many_values :: mutation_pipe_helpers
+    :: create_result :: create_values_result :: create_record
+    :: create_record_result :: create_many :: create_many_result
+    :: create_many_values :: create_many_values_result :: mutation_pipe_helpers
     :: update_fn "update_one" "Update_one"
     :: update_fn "update" "Update"
+    :: update_result_fn "update_one_result" "Update_one"
+    :: update_result_fn "update_result" "Update"
     :: update_query_fn "update_one_where" "Update_one"
     :: update_query_fn "update_where" "Update"
+    :: update_query_result_fn "update_one_where_result" "Update_one"
+    :: update_query_result_fn "update_where_result" "Update"
     :: upsert_fn
     :: upsert_query_fn
     :: delete_fn "delete_one" "Delete_one"
@@ -2921,16 +3239,38 @@ let gen_sig_for_type td =
   let create_values_sig =
     val_sig "create_values" (arrow Nolabel field_values_typ mutation_typ)
   in
+  let create_result_sig =
+    val_sig "create_result"
+      (arrow Nolabel unit_typ (result_typ mutation_typ error_typ))
+  in
+  let create_values_result_sig =
+    val_sig "create_values_result"
+      (arrow Nolabel field_values_typ (result_typ mutation_typ error_typ))
+  in
   let create_record_sig =
     val_sig "create_record" (arrow Nolabel record_typ mutation_typ)
+  in
+  let create_record_result_sig =
+    val_sig "create_record_result"
+      (arrow Nolabel record_typ (result_typ mutation_typ error_typ))
   in
   let create_many_sig =
     val_sig "create_many"
       (arrow Nolabel (list_typ record_typ) (list_typ mutation_typ))
   in
+  let create_many_result_sig =
+    val_sig "create_many_result"
+      (arrow Nolabel (list_typ record_typ)
+         (result_typ (list_typ mutation_typ) error_typ))
+  in
   let create_many_values_sig =
     val_sig "create_many_values"
       (arrow Nolabel (list_typ field_values_typ) (list_typ mutation_typ))
+  in
+  let create_many_values_result_sig =
+    val_sig "create_many_values_result"
+      (arrow Nolabel (list_typ field_values_typ)
+         (result_typ (list_typ mutation_typ) error_typ))
   in
   let mutation_pipe_sig =
     [
@@ -3033,12 +3373,29 @@ let gen_sig_for_type td =
                (arrow (Optional "add") field_values_typ
                   (arrow Nolabel unit_typ mutation_typ)))))
   in
+  let update_result_sig name =
+    val_sig name
+      (arrow (Optional "where") predicates_typ
+         (arrow (Optional "set") field_values_typ
+            (arrow (Optional "clear") (list_typ string_typ)
+               (arrow (Optional "add") field_values_typ
+                  (arrow Nolabel unit_typ
+                     (result_typ mutation_typ error_typ))))))
+  in
   let update_query_sig name =
     val_sig name
       (arrow (Optional "set") field_values_typ
          (arrow (Optional "clear") (list_typ string_typ)
             (arrow (Optional "add") field_values_typ
                (arrow Nolabel query_typ mutation_typ))))
+  in
+  let update_query_result_sig name =
+    val_sig name
+      (arrow (Optional "set") field_values_typ
+         (arrow (Optional "clear") (list_typ string_typ)
+            (arrow (Optional "add") field_values_typ
+               (arrow Nolabel query_typ
+                  (result_typ mutation_typ error_typ)))))
   in
   let upsert_sig name =
     val_sig name
@@ -3068,6 +3425,8 @@ let gen_sig_for_type td =
         [
           val_sig "by_id" (arrow Nolabel field.pld_type query_typ);
           val_sig "update_id" (arrow Nolabel field.pld_type mutation_typ);
+          val_sig "update_id_result"
+            (arrow Nolabel field.pld_type (result_typ mutation_typ error_typ));
           val_sig "delete_id" (arrow Nolabel field.pld_type mutation_typ);
         ]
   in
@@ -3532,16 +3891,25 @@ let gen_sig_for_type td =
     @ [
         create_sig;
         create_values_sig;
+        create_result_sig;
+        create_values_result_sig;
         create_record_sig;
+        create_record_result_sig;
         create_many_sig;
+        create_many_result_sig;
         create_many_values_sig;
+        create_many_values_result_sig;
       ]
     @ mutation_pipe_sig
     @ [
         update_sig "update_one";
         update_sig "update";
+        update_result_sig "update_one_result";
+        update_result_sig "update_result";
         update_query_sig "update_one_where";
         update_query_sig "update_where";
+        update_query_result_sig "update_one_where_result";
+        update_query_result_sig "update_where_result";
         upsert_sig "upsert_one";
         upsert_query_sig "upsert_where";
         delete_sig "delete_one";

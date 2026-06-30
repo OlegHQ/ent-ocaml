@@ -91,6 +91,24 @@ type event = {
 [@@ent.entity "Event"] [@@ent.collection "events"]
 [@@deriving ent]
 
+type task = {
+  id : string;
+  title : string;
+  created_at_ms : int64 [@ent.default_result Ok 100L];
+  updated_at_ms : int64 [@ent.update_default_result Ok 200L];
+}
+[@@ent.entity "Task"] [@@ent.collection "tasks"]
+[@@deriving ent]
+
+type failing_task = {
+  id : string;
+  title : string;
+  created_at_ms : int64
+  [@ent.default_result Error (`Bad_query "clock unavailable")];
+}
+[@@ent.entity "FailingTask"] [@@ent.collection "failing_tasks"]
+[@@deriving ent]
+
 module Memory_backend = struct
   type ctx = unit
   type doc = Ent_ocaml.value
@@ -641,6 +659,60 @@ let test_generated_mutation_api () =
     "delete one op" true
     (match delete.op with Ent_ocaml.Delete_one -> true | _ -> false)
 
+let test_generated_result_default_api () =
+  let create =
+    let open Task in
+    create_values_result [ id "task_1"; title "write tests"; updated_at_ms 1L ]
+  in
+  let create =
+    match create with
+    | Ok mutation -> mutation
+    | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+  in
+  Alcotest.(check bool)
+    "create result default" true
+    (List.exists
+       (function
+         | "created_at_ms", Ent_ocaml.V_int64 100L -> true
+         | _ -> false)
+       create.set);
+  let update =
+    let open Task in
+    update_id_result "task_1"
+  in
+  let update =
+    match update with
+    | Ok mutation -> mutation
+    | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+  in
+  Alcotest.(check bool)
+    "update id result default" true
+    (List.exists
+       (function
+         | "updated_at_ms", Ent_ocaml.V_int64 200L -> true
+         | _ -> false)
+       update.set);
+  let update_from_query =
+    let open Task in
+    by_id "task_1"
+    |> update_one_where_result
+  in
+  let update_from_query =
+    match update_from_query with
+    | Ok mutation -> mutation
+    | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+  in
+  Alcotest.(check int)
+    "update where result predicate" 1
+    (List.length update_from_query.predicates);
+  (match
+     FailingTask.create_values_result
+       [ FailingTask.id "task_2"; FailingTask.title "fails" ]
+   with
+  | Error (`Bad_query "clock unavailable") -> ()
+  | Ok _ -> Alcotest.fail "expected default_result error"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error))
+
 let test_generated_store_api () =
   let module Store = Post.Store (Memory_backend) in
   let decode = function
@@ -1044,6 +1116,8 @@ let () =
             test_generated_traversal_api;
           Alcotest.test_case "generated mutation api" `Quick
             test_generated_mutation_api;
+          Alcotest.test_case "generated result default api" `Quick
+            test_generated_result_default_api;
           Alcotest.test_case "generated store api" `Quick
             test_generated_store_api;
           Alcotest.test_case "generated client api" `Quick

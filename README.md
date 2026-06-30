@@ -80,6 +80,33 @@ let mutation =
 let from_record = Post.create_record post_doc
 ```
 
+Fields with fallible defaults use explicit result-returning helpers:
+
+```ocaml
+type post = {
+  id : string;
+  body : string;
+  created_at_ms : int64 [@ent.default_result now_ms_result ()];
+}
+[@@deriving ent]
+
+let mutation =
+  let open Ent_ocaml.Result_syntax in
+  let open Post in
+  let* mutation = create_values_result [ id post.id; body post.body ] in
+  Ok mutation
+```
+
+Update defaults have matching result helpers:
+
+```ocaml
+let mutation =
+  let open Ent_ocaml.Result_syntax in
+  let open Post in
+  let* mutation = update_id_result post.id in
+  Ok (mutation |> set (body body))
+```
+
 Generated entity modules also expose a backend-agnostic `Store` functor:
 
 ```ocaml
@@ -357,7 +384,10 @@ aggregates, so callers keep writing `id_eq value` even when the document stores
 that field as `_id`. Fields annotated with
 `[@ent.default expr]` are inserted by generated create helpers when omitted, and
 `[@ent.update_default expr]` is inserted by generated update helpers unless the
-field is explicitly set or cleared. Fields annotated with
+field is explicitly set, added, or cleared. Use `[@ent.default_result expr]`
+and `[@ent.update_default_result expr]` when computing a default can fail; call
+the generated `_result` helpers and compose with `Ent_ocaml.Result_syntax`.
+Fields annotated with
 `[@ent.validate [fn1; fn2]]` run typed validator functions during core mutation
 validation. `Ent_ocaml.Result_syntax` provides `let*` and `let+` for direct
 result composition at backend/application boundaries.

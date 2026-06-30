@@ -84,9 +84,9 @@ The initial package scaffold already provides:
   functional upsert mutation helpers with insert-only field setters, functional
   mutation pipeline helpers, aggregate and group-by constructors, record create
   helpers, create-bulk helpers, named aggregate scan constructors, field
-  selector constants, create-time and update-time default values, typed
-  validator wrappers, and matching `.mli` signatures for generated helper
-  modules. Type-level `[@@ent.edges ...]`
+  selector constants, create-time and update-time default values including
+  result-returning default helpers, typed validator wrappers, and matching
+  `.mli` signatures for generated helper modules. Type-level `[@@ent.edges ...]`
   descriptors generate FK edge metadata, clean edge predicate aliases such as
   `Post.user (User.id_eq id)`, bulk `has_<edge>_with` helpers, and
   `query_<edge>` traversal helpers plus `with_<edge>` eager-load helpers.
@@ -158,7 +158,7 @@ The initial package scaffold already provides:
 | Interceptors | Generated query middleware via `Store.With_interceptors` and schema `Store.Schema_interceptors` implemented; traversal-specific interceptors pending | Around query execution and traversal construction |
 | Privacy | Query/mutation rule-chain evaluation, generated policy-aware Stores, and schema `Store.Schema_policy` implemented; mixin registration pending | Evaluated before backend execution |
 | Mixins | Reusable fields, edges, indexes, hooks, policies | PPX composition step |
-| Field defaults | Generated `[@ent.default expr]` and `[@ent.update_default expr]`; error-returning default funcs pending | OCaml expressions evaluated in create/update APIs |
+| Field defaults | Generated `[@ent.default expr]`, `[@ent.update_default expr]`, `[@ent.default_result expr]`, and `[@ent.update_default_result expr]` | OCaml expressions evaluated in create/update APIs |
 | Field validators | Generated `[@ent.validate [fn1; fn2]]` wrappers for primitive/enum fields | Checked before backend mutation |
 | Sensitive/deprecated/comments | Generated schema metadata implemented with `[@ent.sensitive]`, `[@ent.deprecated "..."]`, and `[@ent.comment "..."]` | Snapshot/display metadata |
 | Indexes | Field, edge, compound, unique, and typed partial-filter index descriptors implemented | Mongo indexes with options and `partialFilterExpression` |
@@ -205,13 +205,17 @@ The initial package scaffold already provides:
    unknown-field, duplicate-field, unsafe upsert-overlap, and immutable update
    validation are implemented in the core mutation validator. Generated create
    helpers apply `[@ent.default expr]` for omitted fields and generated update
-   helpers apply `[@ent.update_default expr]` unless the field is explicitly set
-   or cleared. Generated validator wrappers support `[@ent.validate [fn1; fn2]]`
-   on primitive and enum fields. Generated context-capturing `Client (Backend)`
-   modules expose the same entity-local operations as `Store (Backend)` plus a
-   `with_transaction` boundary and `Tx` operation module. Defaults that return
-   errors, validators for custom/nested fields, and commit/rollback hooks are
-   still pending.
+   helpers apply `[@ent.update_default expr]` unless the field is explicitly set,
+   added, or cleared. Generated `create_result`, `create_values_result`,
+   `create_record_result`, `create_many_result`, `update_one_result`,
+   `update_result`, `update_one_where_result`, `update_where_result`, and
+   `update_id_result` helpers compose `[@ent.default_result expr]` and
+   `[@ent.update_default_result expr]` without exceptions. Generated validator
+   wrappers support `[@ent.validate [fn1; fn2]]` on primitive and enum fields.
+   Generated context-capturing `Client (Backend)` modules expose the same
+   entity-local operations as `Store (Backend)` plus a `with_transaction`
+   boundary and `Tx` operation module. Validators for custom/nested fields and
+   commit/rollback hooks are still pending.
 
 5. Poster pilot:
    model `User`, `Session`, `Post`, `Media`, and `PublishAttempt`; replace the
