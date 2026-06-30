@@ -53,7 +53,23 @@ let transaction_session ctx =
   | Some tx ->
       let start = not tx.started in
       tx.started <- true;
-      Some (Mongo_session.transaction_context ~start tx.session ~txn_number:tx.txn_number)
+      let read_concern =
+        if start then
+          Option.bind tx.options (fun options ->
+              Option.map
+                (function
+                  | Ent_ocaml.Read_local -> Mongo_command.Local
+                  | Read_majority -> Mongo_command.Majority
+                  | Read_linearizable -> Mongo_command.Linearizable
+                  | Read_available -> Mongo_command.Available
+                  | Read_snapshot -> Mongo_command.Snapshot
+                  | Read_custom level -> Mongo_command.Custom level)
+                options.read_concern)
+        else None
+      in
+      Some
+        (Mongo_session.transaction_context ?read_concern ~start tx.session
+           ~txn_number:tx.txn_number)
 
 let backend_error operation entity error =
   `Backend
@@ -2573,19 +2589,47 @@ let delete ctx (mutation : Ent_ocaml.mutation) =
           | Ok result -> Ok result.Mongo_crud.deleted_count
           | Error error -> Error (backend_error "delete" entity error))))
 
-let transaction_command ctx tx name =
-  let session =
-    Mongo_session.transaction_context tx.session ~txn_number:tx.txn_number
-  in
-  let command =
-    match (name, tx.options) with
-    | "commitTransaction", Some { max_commit_time_ms = Some ms } ->
+let mongo_write_concern_w = function
+  | Ent_ocaml.Write_majority -> `Majority
+  | Write_nodes nodes -> `Nodes nodes
+  | Write_tag tag -> `Tag tag
+
+let mongo_write_concern (concern : Ent_ocaml.transaction_write_concern) =
+  Mongo_command.
+    {
+      w = Option.map mongo_write_concern_w concern.write_w;
+      j = concern.write_journal;
+      wtimeout_ms = concern.write_wtimeout_ms;
+    }
+
+let transaction_command_fields name options =
+  let fields =
+    match (name, options) with
+    | "commitTransaction", Some { Ent_ocaml.max_commit_time_ms = Some ms; _ } ->
         [
           (name, Bson.create_int32 1l);
           ("maxTimeMS", Bson.create_int64 (Int64.of_int ms));
         ]
     | _ -> [ (name, Bson.create_int32 1l) ]
   in
+  match (name, options) with
+  | "commitTransaction", Some { Ent_ocaml.write_concern = Some concern; _ } ->
+      fields
+      @ [
+          ( "writeConcern",
+            Bson.create_doc_element
+              (Mongo_command.write_concern_doc (mongo_write_concern concern)) );
+        ]
+  | _ -> fields
+
+let transaction_command_to_bson name options =
+  doc (transaction_command_fields name options)
+
+let transaction_command ctx tx name =
+  let session =
+    Mongo_session.transaction_context tx.session ~txn_number:tx.txn_number
+  in
+  let command = transaction_command_fields name tx.options in
   Mongo_eio.direct_run_command ~session ctx.client "admin"
     command
 

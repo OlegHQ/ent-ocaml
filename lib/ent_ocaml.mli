@@ -404,8 +404,29 @@ type 'ctx transaction_hook = {
   after_rollback : 'ctx -> error -> (unit, error) result;
 }
 
+type transaction_read_concern =
+  | Read_local
+  | Read_majority
+  | Read_linearizable
+  | Read_available
+  | Read_snapshot
+  | Read_custom of string
+
+type transaction_write_concern_w =
+  | Write_majority
+  | Write_nodes of int
+  | Write_tag of string
+
+type transaction_write_concern = {
+  write_w : transaction_write_concern_w option;
+  write_journal : bool option;
+  write_wtimeout_ms : int option;
+}
+
 type transaction_options = {
   max_commit_time_ms : int option;
+  read_concern : transaction_read_concern option;
+  write_concern : transaction_write_concern option;
 }
 
 module Privacy : sig
@@ -462,7 +483,19 @@ module Hook : sig
 end
 
 module Transaction : sig
-  val options : ?max_commit_time_ms:int -> unit -> transaction_options
+  val write_concern :
+    ?w:transaction_write_concern_w ->
+    ?journal:bool ->
+    ?wtimeout_ms:int ->
+    unit ->
+    transaction_write_concern
+
+  val options :
+    ?max_commit_time_ms:int ->
+    ?read_concern:transaction_read_concern ->
+    ?write_concern:transaction_write_concern ->
+    unit ->
+    transaction_options
 
   val hook :
     ?after_commit:('ctx -> (unit, error) result) ->

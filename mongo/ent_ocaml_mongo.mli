@@ -147,6 +147,9 @@ val group :
   Ent_ocaml.group_aggregate ->
   (Ent_ocaml.group_result list, Ent_ocaml.error) result
 
+val transaction_command_to_bson :
+  string -> Ent_ocaml.transaction_options option -> Bson.t
+
 val transaction :
   ?options:Ent_ocaml.transaction_options ->
   ctx ->

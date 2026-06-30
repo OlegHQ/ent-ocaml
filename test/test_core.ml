@@ -509,13 +509,30 @@ let test_transaction_options () =
     seen := options;
     f ()
   in
-  let options = Ent_ocaml.Transaction.options ~max_commit_time_ms:50 () in
+  let write_concern =
+    Ent_ocaml.Transaction.write_concern ~w:Ent_ocaml.Write_majority
+      ~journal:true ~wtimeout_ms:250 ()
+  in
+  let options =
+    Ent_ocaml.Transaction.options ~max_commit_time_ms:50
+      ~read_concern:Ent_ocaml.Read_snapshot ~write_concern ()
+  in
   match Ent_ocaml.Transaction.run ~options [] transaction () (fun () -> Ok ()) with
   | Ok () ->
       Alcotest.(check (option int))
         "max commit time"
         (Some 50)
-        (Option.bind !seen (fun options -> options.max_commit_time_ms))
+        (Option.bind !seen (fun options -> options.max_commit_time_ms));
+      Alcotest.(check bool)
+        "read concern"
+        true
+        (Option.bind !seen (fun options -> options.read_concern)
+        = Some Ent_ocaml.Read_snapshot);
+      Alcotest.(check bool)
+        "write concern"
+        true
+        (Option.bind !seen (fun options -> options.write_concern)
+        = Some write_concern)
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
 let test_dynamic_filter_api () =
@@ -892,6 +909,33 @@ let test_mongo_backend_order_planning () =
   | Ok None -> Alcotest.fail "expected projection"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
+let test_mongo_transaction_options_planning () =
+  let write_concern =
+    Ent_ocaml.Transaction.write_concern ~w:(Ent_ocaml.Write_nodes 2)
+      ~journal:true ~wtimeout_ms:125 ()
+  in
+  let options =
+    Ent_ocaml.Transaction.options ~max_commit_time_ms:50 ~write_concern ()
+  in
+  let command =
+    Ent_ocaml_mongo.transaction_command_to_bson "commitTransaction"
+      (Some options)
+  in
+  Alcotest.(check int64)
+    "max time" 50L
+    (Bson.get_int64 (Bson.get_element "maxTimeMS" command));
+  let concern =
+    Bson.get_doc_element (Bson.get_element "writeConcern" command)
+  in
+  Alcotest.(check int32)
+    "write nodes" 2l (Bson.get_int32 (Bson.get_element "w" concern));
+  Alcotest.(check bool)
+    "write journal" true
+    (Bson.get_boolean (Bson.get_element "j" concern));
+  Alcotest.(check int32)
+    "write timeout" 125l
+    (Bson.get_int32 (Bson.get_element "wtimeout" concern))
+
 let test_mongo_projection_planning () =
   let projection =
     match
@@ -1232,6 +1276,8 @@ let () =
             test_mongo_edge_count_order_planning;
           Alcotest.test_case "backend order planning" `Quick
             test_mongo_backend_order_planning;
+          Alcotest.test_case "transaction options planning" `Quick
+            test_mongo_transaction_options_planning;
           Alcotest.test_case "projection planning" `Quick
             test_mongo_projection_planning;
           Alcotest.test_case "projection missing field" `Quick

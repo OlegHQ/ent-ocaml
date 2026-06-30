@@ -1169,7 +1169,14 @@ let test_generated_client_transaction_hooks () =
   | Ok () ->
       Alcotest.(check (list string)) "client commit hook" [ "commit" ] !events
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
-  let options = Ent_ocaml.Transaction.options ~max_commit_time_ms:25 () in
+  let write_concern =
+    Ent_ocaml.Transaction.write_concern ~w:Ent_ocaml.Write_majority
+      ~journal:true ()
+  in
+  let options =
+    Ent_ocaml.Transaction.options ~max_commit_time_ms:25
+      ~read_concern:Ent_ocaml.Read_snapshot ~write_concern ()
+  in
   (match Client.with_transaction ~options client (fun _tx -> Ok ()) with
   | Ok () -> ()
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));

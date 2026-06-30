@@ -193,13 +193,21 @@ let save_post ctx mutation =
       Post_client.Tx.insert tx mutation)
 ```
 
-Transaction options compose through the same call. Mongo currently uses
-`max_commit_time_ms` as `maxTimeMS` on `commitTransaction`:
+Transaction options compose through the same call. Mongo applies read concern
+to the first command that starts the transaction, and applies write concern plus
+`max_commit_time_ms` to `commitTransaction`:
 
 ```ocaml
-let save_with_commit_budget ctx mutation =
+let save_with_transaction_options ctx mutation =
   let client = Post_client.make ctx in
-  let options = Ent_ocaml.Transaction.options ~max_commit_time_ms:500 () in
+  let write_concern =
+    Ent_ocaml.Transaction.write_concern ~w:Ent_ocaml.Write_majority
+      ~journal:true ~wtimeout_ms:250 ()
+  in
+  let options =
+    Ent_ocaml.Transaction.options ~max_commit_time_ms:500
+      ~read_concern:Ent_ocaml.Read_snapshot ~write_concern ()
+  in
   Post_client.with_transaction ~options client (fun tx ->
       Post_client.Tx.insert tx mutation)
 ```

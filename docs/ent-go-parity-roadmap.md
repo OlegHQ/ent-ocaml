@@ -108,7 +108,9 @@ The initial package scaffold already provides:
   result-returning transaction hooks through `with_transaction ~hooks`, and core
   `Ent_ocaml.Transaction` helpers run after-commit and after-rollback hooks.
   Generated clients accept typed transaction options through
-  `with_transaction ~options`; the Mongo backend maps `max_commit_time_ms` to
+  `with_transaction ~options`; the Mongo backend maps `read_concern` to the
+  first command that starts the transaction, maps `write_concern` to
+  `commitTransaction`, and maps `max_commit_time_ms` to
   `commitTransaction.maxTimeMS`.
   Generated Store/Client `values` and `value` helpers decode selected Mongo
   projection fields and aliased order values to `Ent_ocaml.value` rows without
@@ -205,7 +207,7 @@ The initial package scaffold already provides:
 | Sensitive/deprecated/comments | Generated schema metadata implemented with `[@ent.sensitive]`, `[@ent.deprecated "..."]`, and `[@ent.comment "..."]` | Snapshot/display metadata |
 | Indexes | Field, edge, compound, unique, and typed partial-filter index descriptors implemented | Mongo indexes with options and `partialFilterExpression` |
 | Annotations | Backend/codegen metadata, only when needed by concrete backend features | OCaml attributes and typed metadata records |
-| Transactions | Generated `with_transaction` and `Tx` clients plus session-backed Mongo transaction execution, transaction hooks, and typed commit-time budget option implemented; richer read/write concern options pending | Mongo sessions/transactions where deployment supports them |
+| Transactions | Generated `with_transaction` and `Tx` clients plus session-backed Mongo transaction execution, transaction hooks, typed read/write concern options, and commit-time budget option implemented | Mongo sessions/transactions where deployment supports them |
 | Schema/index checks | Mongo index ensure/drift verification and collection validator ensure/drift verification implemented | `createIndexes`, `listIndexes`, `collMod`, `listCollections` |
 | Schema migrations | Out of scope for Poster; do not build migration planners/generators for this roadmap | Use explicit deployment/admin operations outside ent-ocaml |
 | Global IDs | Optional globally unique ID configuration | App-generated IDs or ObjectId strategy |
@@ -261,7 +263,8 @@ The initial package scaffold already provides:
    modules expose the same entity-local operations as `Store (Backend)` plus a
    `with_transaction` boundary, `Tx` operation module, result-returning
    transaction hooks for after-commit and after-rollback side effects, and typed
-   transaction options for backend-supported commit-time limits.
+   transaction options for backend-supported read concern, write concern, and
+   commit-time limits.
 
 5. Poster pilot:
    model `User`, `Session`, `Post`, `Media`, and `PublishAttempt`; replace the

@@ -1450,8 +1450,29 @@ type 'ctx transaction_hook = {
   after_rollback : 'ctx -> error -> (unit, error) result;
 }
 
+type transaction_read_concern =
+  | Read_local
+  | Read_majority
+  | Read_linearizable
+  | Read_available
+  | Read_snapshot
+  | Read_custom of string
+
+type transaction_write_concern_w =
+  | Write_majority
+  | Write_nodes of int
+  | Write_tag of string
+
+type transaction_write_concern = {
+  write_w : transaction_write_concern_w option;
+  write_journal : bool option;
+  write_wtimeout_ms : int option;
+}
+
 type transaction_options = {
   max_commit_time_ms : int option;
+  read_concern : transaction_read_concern option;
+  write_concern : transaction_write_concern option;
 }
 
 module Privacy = struct
@@ -1533,7 +1554,11 @@ module Hook = struct
 end
 
 module Transaction = struct
-  let options ?max_commit_time_ms () = { max_commit_time_ms }
+  let write_concern ?w ?journal ?wtimeout_ms () =
+    { write_w = w; write_journal = journal; write_wtimeout_ms = wtimeout_ms }
+
+  let options ?max_commit_time_ms ?read_concern ?write_concern () =
+    { max_commit_time_ms; read_concern; write_concern }
 
   let hook ?(after_commit = fun _ -> Ok ())
       ?(after_rollback = fun _ _ -> Ok ()) () =
