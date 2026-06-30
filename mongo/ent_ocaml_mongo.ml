@@ -29,6 +29,17 @@ type index_check = {
   status : index_check_status;
 }
 
+type collection_validator_check_status =
+  | Validator_present
+  | Validator_missing
+  | Validator_mismatched of string list
+
+type collection_validator_check = {
+  validator_entity : string;
+  validator_collection : string;
+  validator_status : collection_validator_check_status;
+}
+
 let create ~client config = { client; config; transaction = None }
 
 let transaction_session ctx =
@@ -1002,6 +1013,207 @@ let verify_indexes ctx entities =
             (`Bad_schema
               ("Mongo index drift: "
               ^ String.concat ", " (List.map index_check_to_string failed))))
+
+let bson_type_element = function
+  | [] -> Bson.create_list []
+  | [ typ ] -> Bson.create_string typ
+  | types -> Bson.create_list (List.map Bson.create_string types)
+
+let rec json_schema_parts = function
+  | Ent_ocaml.Option typ ->
+      Option.map
+        (fun (types, fields) -> ("null" :: types, fields))
+        (json_schema_parts typ)
+  | String | Uuid | Enum _ -> Some ([ "string" ], [])
+  | Int | Int64 | Time_ms -> Some ([ "long" ], [])
+  | Int32 -> Some ([ "int" ], [])
+  | Float -> Some ([ "double" ], [])
+  | Bool -> Some ([ "bool" ], [])
+  | Bytes -> Some ([ "binData" ], [])
+  | Custom _ -> Some ([ "object" ], [])
+  | Json -> None
+  | List typ ->
+      let item_schema =
+        match json_schema_parts typ with
+        | None -> []
+        | Some (types, fields) ->
+            [
+              ( "items",
+                Bson.create_doc_element
+                  (doc (("bsonType", bson_type_element types) :: fields)) );
+            ]
+      in
+      Some ([ "array" ], item_schema)
+
+let field_json_schema (field : Ent_ocaml.field) =
+  match json_schema_parts field.typ with
+  | None -> None
+  | Some (types, fields) ->
+      Some
+        ( field.storage_key,
+          doc (("bsonType", bson_type_element types) :: fields) )
+
+let collection_validator_to_bson (entity : Ent_ocaml.entity) =
+  let properties =
+    entity.fields
+    |> List.filter_map field_json_schema
+    |> List.fold_left
+         (fun acc (name, schema) ->
+           Bson.add_element name (Bson.create_doc_element schema) acc)
+         Bson.empty
+  in
+  let required =
+    entity.fields
+    |> List.filter (fun (field : Ent_ocaml.field) -> field.required)
+    |> List.map (fun (field : Ent_ocaml.field) -> Bson.create_string field.storage_key)
+  in
+  let schema =
+    doc
+      [
+        ("bsonType", Bson.create_string "object");
+        ("properties", Bson.create_doc_element properties);
+      ]
+  in
+  let schema =
+    match required with
+    | [] -> schema
+    | fields -> Bson.add_element "required" (Bson.create_list fields) schema
+  in
+  doc [ ("$jsonSchema", Bson.create_doc_element schema) ]
+
+let ensure_collection_validator ctx (entity : Ent_ocaml.entity) =
+  let validator = collection_validator_to_bson entity in
+  let command =
+    [
+      ("collMod", Bson.create_string entity.collection);
+      ("validator", Bson.create_doc_element validator);
+      ("validationLevel", Bson.create_string "moderate");
+      ("validationAction", Bson.create_string "error");
+    ]
+  in
+  match Mongo_eio.direct_run_command ctx.client ctx.config.database command with
+  | Ok _ -> Ok ()
+  | Error error when Mongo_error.code error = Some 26 ->
+      let create_command =
+        [
+          ("create", Bson.create_string entity.collection);
+          ("validator", Bson.create_doc_element validator);
+          ("validationLevel", Bson.create_string "moderate");
+          ("validationAction", Bson.create_string "error");
+        ]
+      in
+      (match Mongo_eio.direct_run_command ctx.client ctx.config.database create_command with
+      | Ok _ -> Ok ()
+      | Error error -> Error (backend_error "create_collection_validator" entity error))
+  | Error error -> Error (backend_error "coll_mod_validator" entity error)
+
+let ensure_collection_validators ctx entities =
+  let rec loop = function
+    | [] -> Ok ()
+    | entity :: rest -> (
+        match ensure_collection_validator ctx entity with
+        | Ok () -> loop rest
+        | Error _ as error -> error)
+  in
+  loop entities
+
+let collection_validator_check_ok check =
+  match check.validator_status with
+  | Validator_present -> true
+  | Validator_missing | Validator_mismatched _ -> false
+
+let collection_validator_check_to_string check =
+  match check.validator_status with
+  | Validator_present ->
+      Printf.sprintf "%s validator present" check.validator_collection
+  | Validator_missing ->
+      Printf.sprintf "%s validator missing" check.validator_collection
+  | Validator_mismatched reasons ->
+      Printf.sprintf "%s validator mismatched: %s" check.validator_collection
+        (String.concat "; " reasons)
+
+let collection_actual ctx (entity : Ent_ocaml.entity) =
+  let filter = doc [ ("name", Bson.create_string entity.collection) ] in
+  match
+    Mongo_eio.direct_run_command ctx.client ctx.config.database
+      [
+        ("listCollections", Bson.create_int32 1l);
+        ("filter", Bson.create_doc_element filter);
+        ("nameOnly", Bson.create_boolean false);
+      ]
+  with
+  | Error error -> Error (backend_error "list_collections" entity error)
+  | Ok response -> (
+      match Mongo_command.cursor_batch response.Mongo_command.body with
+      | [] -> Ok None
+      | collection :: _ -> Ok (Some collection))
+
+let collection_doc name bson =
+  try Some (Bson.get_doc_element (Bson.get_element name bson)) with
+  | Not_found | Bson.Wrong_bson_type -> None
+
+let collection_string ~default name bson =
+  try Bson.get_string (Bson.get_element name bson) with
+  | Not_found | Bson.Wrong_bson_type -> default
+
+let check_collection_validator ctx (entity : Ent_ocaml.entity) =
+  match collection_actual ctx entity with
+  | Error _ as error -> error
+  | Ok None ->
+      Ok
+        {
+          validator_entity = entity.name;
+          validator_collection = entity.collection;
+          validator_status = Validator_missing;
+        }
+  | Ok (Some collection) ->
+      let expected = collection_validator_to_bson entity in
+      let options = collection_doc "options" collection |> Option.value ~default:Bson.empty in
+      let actual = collection_doc "validator" options in
+      let mismatches = ref [] in
+      let check name condition =
+        if not condition then mismatches := name :: !mismatches
+      in
+      check "validator"
+        (match actual with
+        | Some actual -> doc_equal expected actual
+        | None -> false);
+      check "validationLevel"
+        (collection_string ~default:"" "validationLevel" options = "moderate");
+      check "validationAction"
+        (collection_string ~default:"" "validationAction" options = "error");
+      Ok
+        {
+          validator_entity = entity.name;
+          validator_collection = entity.collection;
+          validator_status =
+            (match List.rev !mismatches with
+            | [] -> Validator_present
+            | mismatches -> Validator_mismatched mismatches);
+        }
+
+let check_collection_validators ctx entities =
+  let rec loop acc = function
+    | [] -> Ok (List.rev acc)
+    | entity :: rest -> (
+        match check_collection_validator ctx entity with
+        | Error _ as error -> error
+        | Ok check -> loop (check :: acc) rest)
+  in
+  loop [] entities
+
+let verify_collection_validators ctx entities =
+  match check_collection_validators ctx entities with
+  | Error _ as error -> error
+  | Ok checks -> (
+      match List.filter (fun check -> not (collection_validator_check_ok check)) checks with
+      | [] -> Ok ()
+      | failed ->
+          Error
+            (`Bad_schema
+              ("Mongo collection validator drift: "
+              ^ String.concat ", "
+                  (List.map collection_validator_check_to_string failed))))
 
 let document_to_bson ?entity fields =
   let rec loop doc = function

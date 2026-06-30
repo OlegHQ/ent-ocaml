@@ -17,6 +17,17 @@ type index_check = {
   status : index_check_status;
 }
 
+type collection_validator_check_status =
+  | Validator_present
+  | Validator_missing
+  | Validator_mismatched of string list
+
+type collection_validator_check = {
+  validator_entity : string;
+  validator_collection : string;
+  validator_status : collection_validator_check_status;
+}
+
 val create : client:Mongo_eio.direct_client -> config -> ctx
 val filter_to_bson : Ent_ocaml.query -> (Bson.t, Ent_ocaml.error) result
 val sort_to_bson : ?entity:Ent_ocaml.entity -> Ent_ocaml.order list -> Bson.t option
@@ -45,6 +56,14 @@ val index_check_ok : index_check -> bool
 val index_check_to_string : index_check -> string
 val check_indexes : ctx -> Ent_ocaml.entity list -> (index_check list, Ent_ocaml.error) result
 val verify_indexes : ctx -> Ent_ocaml.entity list -> (unit, Ent_ocaml.error) result
+val collection_validator_to_bson : Ent_ocaml.entity -> Bson.t
+val collection_validator_check_ok : collection_validator_check -> bool
+val collection_validator_check_to_string : collection_validator_check -> string
+val ensure_collection_validators : ctx -> Ent_ocaml.entity list -> (unit, Ent_ocaml.error) result
+val check_collection_validators :
+  ctx -> Ent_ocaml.entity list -> (collection_validator_check list, Ent_ocaml.error) result
+val verify_collection_validators :
+  ctx -> Ent_ocaml.entity list -> (unit, Ent_ocaml.error) result
 
 val decode_document :
   decode:(Bson.t -> ('a, string) result) ->

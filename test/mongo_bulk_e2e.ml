@@ -461,9 +461,58 @@ let check_index_drift ctx =
   | Error (`Bad_schema _) -> Ok ()
   | Error _ as error -> error
 
+let check_collection_validator_drift ctx =
+  let open Ent_ocaml.Result_syntax in
+  let* checks =
+    Ent_ocaml_mongo.check_collection_validators ctx [ user_entity; post_entity ]
+  in
+  assert_true "collection validator check passes"
+    (List.for_all Ent_ocaml_mongo.collection_validator_check_ok checks);
+  let drift_entity =
+    Ent_ocaml.
+      {
+        post_entity with
+        fields =
+          {
+            name = "unexpected_required";
+            storage_key = "unexpected_required";
+            typ = String;
+            required = true;
+            unique = false;
+            immutable = false;
+            nillable = false;
+            validators = [];
+            sensitive = false;
+            deprecated = None;
+            comment = None;
+          }
+          :: post_entity.fields;
+      }
+  in
+  let* drift_checks =
+    Ent_ocaml_mongo.check_collection_validators ctx [ drift_entity ]
+  in
+  assert_true "collection validator drift check reports mismatch"
+    (List.exists
+       (fun (check : Ent_ocaml_mongo.collection_validator_check) ->
+         match check.validator_status with
+         | Ent_ocaml_mongo.Validator_mismatched _ -> true
+         | Ent_ocaml_mongo.Validator_present | Ent_ocaml_mongo.Validator_missing ->
+             false)
+       drift_checks);
+  match Ent_ocaml_mongo.verify_collection_validators ctx [ drift_entity ] with
+  | Ok () ->
+      Error (`Bad_query "expected collection validator drift verification failure")
+  | Error (`Bad_schema _) -> Ok ()
+  | Error _ as error -> error
+
 let run_flow client =
   let open Ent_ocaml.Result_syntax in
   let ctx = Ent_ocaml_mongo.create ~client { database = db } in
+  let* () =
+    Ent_ocaml_mongo.ensure_collection_validators ctx [ user_entity; post_entity ]
+  in
+  let* () = check_collection_validator_drift ctx in
   let* () = Ent_ocaml_mongo.ensure_indexes ctx [ user_entity; post_entity ] in
   let* () = check_index_drift ctx in
   let* () = check_partial_index client in

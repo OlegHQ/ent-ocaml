@@ -159,7 +159,10 @@ The initial package scaffold already provides:
   Mongo backend maps logical fields through storage keys and emits
   `partialFilterExpression`. Mongo index drift checks compare declared index
   descriptors with live `listIndexes` output through typed
-  `check_indexes`/`verify_indexes` reports.
+  `check_indexes`/`verify_indexes` reports. Mongo collection validators are
+  generated from entity field metadata as `$jsonSchema` documents, and
+  `check_collection_validators`/`verify_collection_validators` compare them with
+  live `listCollections` metadata.
 - Poster pilot integration for `User`, `Session`, `Post`, `Media`,
   `PublishState`, and `PublishAttempt` DTO entities.
 
@@ -199,7 +202,7 @@ The initial package scaffold already provides:
 | Indexes | Field, edge, compound, unique, and typed partial-filter index descriptors implemented | Mongo indexes with options and `partialFilterExpression` |
 | Annotations | Backend/codegen metadata, only when needed by concrete backend features | OCaml attributes and typed metadata records |
 | Transactions | Generated `with_transaction` and `Tx` clients plus session-backed Mongo transaction execution, transaction hooks, and typed commit-time budget option implemented; richer read/write concern options pending | Mongo sessions/transactions where deployment supports them |
-| Schema/index checks | Mongo index ensure and drift verification implemented; collection validators pending | `createIndexes`, `listIndexes`, optional collection validators |
+| Schema/index checks | Mongo index ensure/drift verification and collection validator ensure/drift verification implemented | `createIndexes`, `listIndexes`, `collMod`, `listCollections` |
 | Schema migrations | Out of scope for Poster; do not build migration planners/generators for this roadmap | Use explicit deployment/admin operations outside ent-ocaml |
 | Global IDs | Optional globally unique ID configuration | App-generated IDs or ObjectId strategy |
 | Schema views | Read-only entity descriptors and generated query modules | Mongo views/aggregation-backed collections where useful |
@@ -309,8 +312,11 @@ The initial package scaffold already provides:
    generated index descriptors and `ensure_indexes` are implemented for field,
    compound, unique, and typed partial-filter indexes. `check_indexes` and
    `verify_indexes` compare expected keys, uniqueness, and partial filters
-   against live Mongo `listIndexes` output. Collection validators where useful
-   and audit docs for production rollout remain.
+   against live Mongo `listIndexes` output. `ensure_collection_validators`,
+   `check_collection_validators`, and `verify_collection_validators` generate
+   mechanical Mongo `$jsonSchema` validators from entity field metadata and
+   compare them against live `listCollections` output. Audit docs for
+   production rollout remain.
 
 11. EntQL and backend-specific metadata:
    metadata-validated runtime dynamic filters are implemented for field

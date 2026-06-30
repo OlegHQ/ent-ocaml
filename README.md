@@ -494,12 +494,22 @@ type post = {
 The Mongo backend creates those indexes through `ensure_indexes` and maps
 logical field names through storage keys before sending `partialFilterExpression`.
 Use predicates that the target MongoDB server accepts for partial indexes.
-Operational checks can compare schema-declared indexes with live MongoDB state:
+Operational checks can compare schema-declared indexes and generated collection
+validators with live MongoDB state:
 
 ```ocaml
 let verify_schema ctx =
-  Ent_ocaml_mongo.verify_indexes ctx [ user_entity; post_entity ]
+  let open Ent_ocaml.Result_syntax in
+  let entities = [ user_entity; post_entity ] in
+  let* () = Ent_ocaml_mongo.ensure_collection_validators ctx entities in
+  let* () = Ent_ocaml_mongo.verify_collection_validators ctx entities in
+  let* () = Ent_ocaml_mongo.ensure_indexes ctx entities in
+  Ent_ocaml_mongo.verify_indexes ctx entities
 ```
+
+Collection validators are generated from entity field metadata as Mongo
+`$jsonSchema` documents using storage keys and simple BSON types. Keep
+application/domain validation in typed OCaml validators and domain mapping.
 
 Aggregates compose from queries too:
 

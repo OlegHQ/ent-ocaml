@@ -1102,6 +1102,33 @@ let test_mongo_partial_index_bson () =
       Alcotest.(check string)
         "name" "published_body" (Bson.get_string (Bson.get_element "name" bson))
 
+let test_mongo_collection_validator_bson () =
+  let validator = Ent_ocaml_mongo.collection_validator_to_bson post_entity in
+  let schema =
+    Bson.get_doc_element (Bson.get_element "$jsonSchema" validator)
+  in
+  let required =
+    Bson.get_list (Bson.get_element "required" schema) |> List.map Bson.get_string
+  in
+  Alcotest.(check (list string))
+    "required storage keys" [ "_id"; "user_id" ] required;
+  let properties =
+    Bson.get_doc_element (Bson.get_element "properties" schema)
+  in
+  let id_schema =
+    Bson.get_doc_element (Bson.get_element "_id" properties)
+  in
+  Alcotest.(check string)
+    "id type" "string" (Bson.get_string (Bson.get_element "bsonType" id_schema));
+  let published_schema =
+    Bson.get_doc_element (Bson.get_element "published_at_ms" properties)
+  in
+  let published_types =
+    Bson.get_list (Bson.get_element "bsonType" published_schema)
+    |> List.map Bson.get_string
+  in
+  Alcotest.(check (list string)) "option types" [ "null"; "long" ] published_types
+
 let test_mongo_index_missing_field () =
   let index =
     Ent_ocaml.
@@ -1200,6 +1227,8 @@ let () =
             test_mongo_compound_index_storage_fields;
           Alcotest.test_case "partial index bson" `Quick
             test_mongo_partial_index_bson;
+          Alcotest.test_case "collection validator bson" `Quick
+            test_mongo_collection_validator_bson;
           Alcotest.test_case "index missing field" `Quick
             test_mongo_index_missing_field;
         ]
