@@ -658,6 +658,28 @@ let test_entql_api () =
       ()
   | Ok _ -> Alcotest.fail "expected entql target registry error"
   | Error error -> Alcotest.fail (error_to_string error));
+  (match Entql.predicate post_entity {|metadata.flags.pinned == true|} with
+  | Ok (Json_eq ("metadata", [ "flags"; "pinned" ], V_bool true)) -> ()
+  | Ok _ -> Alcotest.fail "unexpected entql json bool predicate"
+  | Error error -> Alcotest.fail (error_to_string error));
+  (match Entql.predicate post_entity {|metadata.priority >= 10|} with
+  | Ok (Json_gte ("metadata", [ "priority" ], V_int64 10L)) -> ()
+  | Ok _ -> Alcotest.fail "unexpected entql json comparison predicate"
+  | Error error -> Alcotest.fail (error_to_string error));
+  (match
+     Entql.predicate post_entity
+       {|metadata.author.id in ["alice", "bob"]|}
+   with
+  | Ok
+      (Json_in
+        ("metadata", [ "author"; "id" ], [ V_string "alice"; V_string "bob" ])) ->
+      ()
+  | Ok _ -> Alcotest.fail "unexpected entql json list predicate"
+  | Error error -> Alcotest.fail (error_to_string error));
+  (match Entql.predicate post_entity {|metadata.deleted_at is_null|} with
+  | Ok (Json_is_nil ("metadata", [ "deleted_at" ])) -> ()
+  | Ok _ -> Alcotest.fail "unexpected entql json null predicate"
+  | Error error -> Alcotest.fail (error_to_string error));
   (match Entql.predicate post_entity {|published_at_ms == "soon"|} with
   | Error (`Bad_query "entql: expected int64 value: \"soon\"") -> ()
   | Ok _ -> Alcotest.fail "expected entql type error"

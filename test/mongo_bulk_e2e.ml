@@ -762,6 +762,31 @@ let run_flow client =
     (match pinned_posts with
     | [ doc ] -> Bson.get_string (Bson.get_element "_id" doc) = "post_2"
     | _ -> false);
+  let* entql_pinned_posts =
+    match
+      Ent_ocaml.Query.make post_entity
+      |> Ent_ocaml.Entql.where {|metadata.flags.pinned == true|}
+    with
+    | Ok query -> Ent_ocaml_mongo.find ctx query
+    | Error _ as error -> error
+  in
+  assert_true "entql json path predicate returns pinned post"
+    (match entql_pinned_posts with
+    | [ doc ] -> Bson.get_string (Bson.get_element "_id" doc) = "post_2"
+    | _ -> false);
+  let* entql_priority_posts =
+    match
+      Ent_ocaml.Query.make post_entity
+      |> Ent_ocaml.Entql.where {|metadata.priority >= 20|}
+    with
+    | Ok query -> Ent_ocaml_mongo.find ctx query
+    | Error _ as error -> error
+  in
+  assert_true "entql json path comparison returns priority posts"
+    (List.map
+       (fun doc -> Bson.get_string (Bson.get_element "_id" doc))
+       entql_priority_posts
+    = [ "post_2"; "post_2b" ]);
   let* priority_posts =
     Ent_ocaml_mongo.find ctx
       Ent_ocaml.

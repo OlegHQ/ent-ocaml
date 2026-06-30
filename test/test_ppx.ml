@@ -1632,6 +1632,38 @@ let test_generated_entql_api () =
   | Ok _ -> Alcotest.fail "unexpected generated entql result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
+let test_generated_entql_json_path_api () =
+  let open Ent_ocaml.Result_syntax in
+  let result =
+    let open Event in
+    let* pinned = entql_predicate {|metadata.flags.pinned == true|} in
+    let* query =
+      query ()
+      |> where_entql
+           {|metadata.priority >= 10 && metadata.deleted_at is_null|}
+    in
+    Ok (pinned, query)
+  in
+  match result with
+  | Ok
+      ( Ent_ocaml.Json_eq
+          ("metadata", [ "flags"; "pinned" ], Ent_ocaml.V_bool true),
+        {
+          Ent_ocaml.predicates =
+            [
+              Ent_ocaml.And
+                [
+                  Ent_ocaml.Json_gte
+                    ("metadata", [ "priority" ], Ent_ocaml.V_int64 10L);
+                  Ent_ocaml.Json_is_nil ("metadata", [ "deleted_at" ]);
+                ];
+            ];
+          _;
+        } ) ->
+      ()
+  | Ok _ -> Alcotest.fail "unexpected generated entql json path result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+
 let test_generated_entql_edge_path_api () =
   let open Ent_ocaml.Result_syntax in
   let result =
@@ -1797,6 +1829,8 @@ let () =
             test_generated_dynamic_filter_api;
           Alcotest.test_case "generated entql api" `Quick
             test_generated_entql_api;
+          Alcotest.test_case "generated entql json path api" `Quick
+            test_generated_entql_json_path_api;
           Alcotest.test_case "generated entql edge path api" `Quick
             test_generated_entql_edge_path_api;
           Alcotest.test_case "generated json predicate api" `Quick

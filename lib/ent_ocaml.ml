@@ -973,6 +973,23 @@ module Entql = struct
     | List _ | Option _ ->
         bad "unexpected nested list/option literal"
 
+  let json_value_of_literal literal =
+    let literal = trim literal in
+    match String.lowercase_ascii literal with
+    | "null" -> Ok V_null
+    | "true" -> Ok (V_bool true)
+    | "false" -> Ok (V_bool false)
+    | _ -> (
+        if starts_with literal "\"" && ends_with literal "\"" then
+          Result.map (fun value -> V_string value) (unquote literal)
+        else
+          match Int64.of_string_opt literal with
+          | Some value -> Ok (V_int64 value)
+          | None -> (
+              match float_of_string_opt literal with
+              | Some value -> Ok (V_float value)
+              | None -> Result.map (fun value -> V_string value) (unquote literal)))
+
   let list_value_of_literal typ literal =
     match parse_list literal with
     | Error _ as error -> error
@@ -981,6 +998,19 @@ module Entql = struct
           | [] -> Ok (V_list (List.rev acc))
           | value :: rest -> (
               match value_of_literal typ value with
+              | Ok value -> loop (value :: acc) rest
+              | Error _ as error -> error)
+        in
+        loop [] values
+
+  let json_list_value_of_literal literal =
+    match parse_list literal with
+    | Error _ as error -> error
+    | Ok values ->
+        let rec loop acc = function
+          | [] -> Ok (V_list (List.rev acc))
+          | value :: rest -> (
+              match json_value_of_literal value with
               | Ok value -> loop (value :: acc) rest
               | Error _ as error -> error)
         in
@@ -1029,6 +1059,48 @@ module Entql = struct
     | [ edge_name; field_name ] when edge_name <> "" && field_name <> "" ->
         Some (edge_name, field_name)
     | _ -> None
+
+  let split_json_path (entity : entity) name =
+    match String.split_on_char '.' name with
+    | root :: (_ :: _ as path)
+      when root <> ""
+           && List.for_all
+                (fun segment ->
+                  segment <> "" && not (String.starts_with ~prefix:"$" segment))
+                path -> (
+        match find_field entity root with
+        | Some { typ = Json; _ } -> Ok (Some (root, path))
+        | Some _ -> Ok None
+        | None -> Ok None)
+    | _ -> Ok None
+
+  let json_path_predicate field path op value =
+    match op with
+    | Dynamic_filter.Equal -> Ok (Json_eq (field, path, value))
+    | Not_equal -> Ok (Json_neq (field, path, value))
+    | Greater_than -> Ok (Json_gt (field, path, value))
+    | Greater_or_equal -> Ok (Json_gte (field, path, value))
+    | Less_than -> Ok (Json_lt (field, path, value))
+    | Less_or_equal -> Ok (Json_lte (field, path, value))
+    | In_list -> (
+        match value with
+        | V_list values -> Ok (Json_in (field, path, values))
+        | _ -> bad ("expected list value for json path: " ^ field))
+    | Not_in_list -> (
+        match value with
+        | V_list values -> Ok (Json_not_in (field, path, values))
+        | _ -> bad ("expected list value for json path: " ^ field))
+    | Contains | Has_prefix | Has_suffix | Is_null | Not_null ->
+        bad ("operator is not valid for json path: " ^ field)
+
+  let json_path_unary_predicate field path op =
+    match op with
+    | Dynamic_filter.Is_null -> Ok (Json_is_nil (field, path))
+    | Not_null -> Ok (Json_not_nil (field, path))
+    | Equal | Not_equal | Greater_than | Greater_or_equal | Less_than
+    | Less_or_equal | In_list | Not_in_list | Contains | Has_prefix
+    | Has_suffix ->
+        bad ("operator is not valid for json path: " ^ field)
 
   let binary entity expression operator op =
     match find_outside operator expression with
@@ -1119,32 +1191,45 @@ module Entql = struct
                (String.length expression - index - String.length operator))
         in
         Some
-          (match split_edge_path field_name with
-          | Some (edge_name, edge_field) ->
+          (match split_json_path entity field_name with
+          | Error _ as error -> error
+          | Ok (Some (json_field, path)) ->
               let open Result_syntax in
-              let* typ =
-                if edge_field = "id" then edge_id_type entity edge_name
-                else
-                  let* edge = edge entity edge_name in
-                  let* target = target_entity targets edge in
-                  let+ field = field target edge_field in
-                  field.typ
-              in
               let* value =
                 match op with
                 | Dynamic_filter.In_list | Dynamic_filter.Not_in_list ->
-                    list_value_of_literal typ literal
-                | _ -> value_of_literal typ literal
+                    json_list_value_of_literal literal
+                | _ -> json_value_of_literal literal
               in
-              edge_field_predicate ~targets entity edge_name edge_field op value
-          | None ->
-              let open Result_syntax in
-              let* filter =
-                match binary entity expression operator op with
-                | Some result -> result
-                | None -> bad ("could not parse expression: " ^ expression)
-              in
-              predicate_of_filter entity filter)
+              json_path_predicate json_field path op value
+          | Ok None -> (
+              match split_edge_path field_name with
+              | Some (edge_name, edge_field) ->
+                  let open Result_syntax in
+                  let* typ =
+                    if edge_field = "id" then edge_id_type entity edge_name
+                    else
+                      let* edge = edge entity edge_name in
+                      let* target = target_entity targets edge in
+                      let+ field = field target edge_field in
+                      field.typ
+                  in
+                  let* value =
+                    match op with
+                    | Dynamic_filter.In_list | Dynamic_filter.Not_in_list ->
+                        list_value_of_literal typ literal
+                    | _ -> value_of_literal typ literal
+                  in
+                  edge_field_predicate ~targets entity edge_name edge_field op
+                    value
+              | None ->
+                  let open Result_syntax in
+                  let* filter =
+                    match binary entity expression operator op with
+                    | Some result -> result
+                    | None -> bad ("could not parse expression: " ^ expression)
+                  in
+                  predicate_of_filter entity filter))
 
   let unary entity expression suffix op =
     if ends_with expression suffix then
@@ -1165,17 +1250,23 @@ module Entql = struct
         |> trim
       in
       Some
-        (match split_edge_path field_name with
-        | Some (edge_name, edge_field) ->
-            edge_field_unary_predicate ~targets entity edge_name edge_field op
-        | None ->
-            let open Result_syntax in
-            let* filter =
-              match unary entity expression suffix op with
-              | Some result -> result
-              | None -> bad ("could not parse expression: " ^ expression)
-            in
-            predicate_of_filter entity filter)
+        (match split_json_path entity field_name with
+        | Error _ as error -> error
+        | Ok (Some (json_field, path)) ->
+            json_path_unary_predicate json_field path op
+        | Ok None -> (
+            match split_edge_path field_name with
+            | Some (edge_name, edge_field) ->
+                edge_field_unary_predicate ~targets entity edge_name edge_field
+                  op
+            | None ->
+                let open Result_syntax in
+                let* filter =
+                  match unary entity expression suffix op with
+                  | Some result -> result
+                  | None -> bad ("could not parse expression: " ^ expression)
+                in
+                predicate_of_filter entity filter))
     else None
 
   let parse_filter entity expression =
