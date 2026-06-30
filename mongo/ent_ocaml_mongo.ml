@@ -2,9 +2,16 @@ type config = {
   database : string;
 }
 
+type transaction_state = {
+  session : Mongo_session.t;
+  txn_number : int64;
+  mutable started : bool;
+}
+
 type ctx = {
   client : Mongo_eio.direct_client;
   config : config;
+  transaction : transaction_state option;
 }
 
 type doc = Bson.t
@@ -21,7 +28,15 @@ type index_check = {
   status : index_check_status;
 }
 
-let create ~client config = { client; config }
+let create ~client config = { client; config; transaction = None }
+
+let transaction_session ctx =
+  match ctx.transaction with
+  | None -> None
+  | Some tx ->
+      let start = not tx.started in
+      tx.started <- true;
+      Some (Mongo_session.transaction_context ~start tx.session ~txn_number:tx.txn_number)
 
 let backend_error operation entity error =
   `Backend
@@ -753,8 +768,9 @@ let find ctx (query : Ent_ocaml.query) =
   match find_options query with
   | Error _ as error -> error
   | Ok options -> (
+      let session = transaction_session ctx in
       match
-        Mongo_eio.direct_find ctx.client ~db:ctx.config.database
+        Mongo_eio.direct_find ?session ctx.client ~db:ctx.config.database
           ~collection:query.Ent_ocaml.entity.collection options
       with
       | Ok docs -> Ok docs
@@ -795,8 +811,9 @@ let count ctx (query : Ent_ocaml.query) =
   match filter_to_bson query with
   | Error _ as error -> error
   | Ok filter -> (
+      let session = transaction_session ctx in
       match
-        Mongo_eio.direct_count_documents ctx.client ~db:ctx.config.database
+        Mongo_eio.direct_count_documents ?session ctx.client ~db:ctx.config.database
           ~collection:query.Ent_ocaml.entity.collection ~query:filter ()
       with
       | Ok count -> Ok count
@@ -1047,8 +1064,9 @@ let load_edge_as ctx (edge_query : Ent_ocaml.edge_query) ~decode_source
                   | Ok targets -> pair_rows targets [] source_docs)))
 
 let run_aggregate ctx (query : Ent_ocaml.query) pipeline =
+  let session = transaction_session ctx in
   match
-    Mongo_eio.direct_run_command ctx.client ctx.config.database
+    Mongo_eio.direct_run_command ?session ctx.client ctx.config.database
       [
         ("aggregate", Bson.create_string query.Ent_ocaml.entity.collection);
         ("pipeline", Bson.create_doc_element_list pipeline);
@@ -1129,8 +1147,9 @@ let group ctx (group : Ent_ocaml.group_aggregate) =
           loop [] docs)
 
 let insert ctx entity doc =
+  let session = transaction_session ctx in
   match
-    Mongo_eio.direct_insert_one ctx.client ~db:ctx.config.database
+    Mongo_eio.direct_insert_one ?session ctx.client ~db:ctx.config.database
       ~collection:entity.Ent_ocaml.collection doc
   with
   | Ok _ -> Ok doc
@@ -1143,8 +1162,9 @@ let insert_many ?(ordered = true) ctx entity docs =
   | [] -> Ok []
   | _ -> (
       let options = Mongo_crud.{ default_insert with ordered } in
+      let session = transaction_session ctx in
       match
-        Mongo_eio.direct_insert_many ctx.client ~db:ctx.config.database
+        Mongo_eio.direct_insert_many ?session ctx.client ~db:ctx.config.database
           ~collection:entity.Ent_ocaml.collection ~options docs
       with
       | Ok _ -> Ok docs
@@ -1207,14 +1227,15 @@ let update ctx (mutation : Ent_ocaml.mutation) =
           match (selector mutation, update_to_bson mutation) with
           | Error _ as error, _ | _, (Error _ as error) -> error
           | Ok selector, Ok update_doc -> (
+          let session = transaction_session ctx in
           let run =
             match mutation.op with
             | Ent_ocaml.Update_one ->
-                Mongo_eio.direct_update_one ctx.client ~db:ctx.config.database
+                Mongo_eio.direct_update_one ?session ctx.client ~db:ctx.config.database
                   ~collection:entity.collection ~upsert:false selector
                   update_doc
             | Update ->
-                Mongo_eio.direct_update_many ctx.client ~db:ctx.config.database
+                Mongo_eio.direct_update_many ?session ctx.client ~db:ctx.config.database
                   ~collection:entity.collection ~upsert:false selector
                   update_doc
             | Create | Delete_one | Delete | Upsert_one -> assert false
@@ -1238,8 +1259,9 @@ let update_one ctx (mutation : Ent_ocaml.mutation) =
           match (selector mutation, update_to_bson mutation) with
           | Error _ as error, _ | _, (Error _ as error) -> error
           | Ok selector, Ok update_doc -> (
+          let session = transaction_session ctx in
           match
-            Mongo_eio.direct_update_one ctx.client ~db:ctx.config.database
+            Mongo_eio.direct_update_one ?session ctx.client ~db:ctx.config.database
               ~collection:entity.collection ~upsert:false selector update_doc
           with
           | Ok result ->
@@ -1259,8 +1281,9 @@ let upsert_one ctx (mutation : Ent_ocaml.mutation) =
           match (selector mutation, update_to_bson mutation) with
           | Error _ as error, _ | _, (Error _ as error) -> error
           | Ok selector, Ok update_doc -> (
+              let session = transaction_session ctx in
               match
-                Mongo_eio.direct_update_one ctx.client ~db:ctx.config.database
+                Mongo_eio.direct_update_one ?session ctx.client ~db:ctx.config.database
                   ~collection:entity.collection ~upsert:true selector update_doc
               with
               | Ok _ -> Ok ()
@@ -1278,13 +1301,14 @@ let delete ctx (mutation : Ent_ocaml.mutation) =
           match selector mutation with
           | Error _ as error -> error
           | Ok selector -> (
+          let session = transaction_session ctx in
           let run =
             match mutation.op with
             | Ent_ocaml.Delete_one ->
-                Mongo_eio.direct_delete_one ctx.client ~db:ctx.config.database
+                Mongo_eio.direct_delete_one ?session ctx.client ~db:ctx.config.database
                   ~collection:entity.collection selector
             | Delete ->
-                Mongo_eio.direct_delete_many ctx.client ~db:ctx.config.database
+                Mongo_eio.direct_delete_many ?session ctx.client ~db:ctx.config.database
                   ~collection:entity.collection selector
             | Create | Update_one | Update | Upsert_one -> assert false
           in
@@ -1292,4 +1316,32 @@ let delete ctx (mutation : Ent_ocaml.mutation) =
           | Ok result -> Ok result.Mongo_crud.deleted_count
           | Error error -> Error (backend_error "delete" entity error))))
 
-let transaction ctx f = f ctx
+let transaction_command ctx tx name =
+  let session =
+    Mongo_session.transaction_context tx.session ~txn_number:tx.txn_number
+  in
+  Mongo_eio.direct_run_command ~session ctx.client "admin"
+    [ (name, Bson.create_int32 1l) ]
+
+let transaction ctx f =
+  match ctx.transaction with
+  | Some _ -> f ctx
+  | None ->
+      let tx =
+        let session = Mongo_session.create () in
+        { session; txn_number = Mongo_session.next_txn session; started = false }
+      in
+      let tx_ctx = { ctx with transaction = Some tx } in
+      match f tx_ctx with
+      | Ok value ->
+          if not tx.started then Ok value
+          else (
+            match transaction_command ctx tx "commitTransaction" with
+            | Ok _ -> Ok value
+            | Error error ->
+                Error
+                  (`Backend
+                    ("commit_transaction: " ^ Mongo_error.to_string error)))
+      | Error error ->
+          if tx.started then ignore (transaction_command ctx tx "abortTransaction");
+          Error error

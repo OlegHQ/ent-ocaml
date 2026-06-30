@@ -123,6 +123,10 @@ let save_post ctx mutation =
       Post_client.Tx.insert tx mutation)
 ```
 
+For Mongo, `with_transaction` runs operations with one logical session and a
+stable transaction number, then commits on `Ok` or aborts on `Error` when the
+deployment supports Mongo transactions.
+
 Selected values decode projected rows without a full-record decoder:
 
 ```ocaml

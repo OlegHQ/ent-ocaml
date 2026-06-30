@@ -342,6 +342,59 @@ let check_partial_index client =
       assert_true "partial index created" has_partial;
       Ok ()
 
+let query_id id =
+  Ent_ocaml.
+    {
+      query_all with
+      predicates = [ Eq ("id", V_string id) ];
+      limit = Some 1;
+    }
+
+let string_contains haystack needle =
+  let haystack = String.lowercase_ascii haystack in
+  let needle = String.lowercase_ascii needle in
+  let haystack_len = String.length haystack in
+  let needle_len = String.length needle in
+  let rec loop index =
+    index + needle_len <= haystack_len
+    &&
+    (String.sub haystack index needle_len = needle || loop (index + 1))
+  in
+  needle_len = 0 || loop 0
+
+let transaction_not_supported message =
+  List.exists
+    (string_contains message)
+    [
+      "transaction numbers are only allowed";
+      "transaction";
+      "replica set";
+      "not supported";
+    ]
+
+let check_transaction_rollback ctx =
+  let open Ent_ocaml.Result_syntax in
+  let tx_id = "tx_rollback" in
+  match
+    Ent_ocaml_mongo.transaction ctx (fun tx ->
+        let* _ =
+          Ent_ocaml_mongo.insert_values tx
+            (create tx_id "user_1" "rolled back" 1L)
+        in
+        Error (`Bad_query "force rollback"))
+  with
+  | Error (`Bad_query "force rollback") ->
+      let* rows = Ent_ocaml_mongo.find ctx (query_id tx_id) in
+      assert_true "transaction rollback removes inserted row" (rows = []);
+      Ok ()
+  | Error (`Backend message) when transaction_not_supported message ->
+      Printf.printf
+        "SKIP transaction rollback unsupported by Mongo deployment: %s\n%!"
+        message;
+      Ok ()
+  | Error _ as error -> error
+  | Ok _ -> Error (`Bad_query "expected transaction rollback error")
+
 let check_index_drift ctx =
   let open Ent_ocaml.Result_syntax in
   let* checks = Ent_ocaml_mongo.check_indexes ctx [ user_entity; post_entity ] in
@@ -578,6 +631,7 @@ let run_flow client =
   | Error error ->
       failwith
         ("FAIL unexpected validation error: " ^ Ent_ocaml.error_to_string error));
+  let* () = check_transaction_rollback ctx in
   Ok ()
 
 let () =
