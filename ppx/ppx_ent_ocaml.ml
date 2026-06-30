@@ -1111,6 +1111,13 @@ let gen_query_module td =
                (A.pexp_fun ~loc Nolabel None (pvar ~loc "query")
                   (app ~loc (ident ~loc [ "Ent_ocaml"; "Aggregate"; "avg" ])
                      [ evar ~loc "field"; evar ~loc "query" ])));
+        A.value_binding ~loc ~pat:(pvar ~loc "group_by")
+          ~expr:
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "field")
+               (A.pexp_fun ~loc Nolabel None (pvar ~loc "aggregate")
+                  (app ~loc
+                     (ident ~loc [ "Ent_ocaml"; "Aggregate"; "group_by" ])
+                     [ evar ~loc "field"; evar ~loc "aggregate" ])));
       ]
   in
   let edge_helper_items edge_name =
@@ -1429,6 +1436,14 @@ let gen_query_module td =
                      (Nolabel, evar ~loc "ctx");
                      (Nolabel, evar ~loc "aggregate");
                    ])));
+        value_fun "group"
+          (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+             (A.pexp_fun ~loc Nolabel None (pvar ~loc "group")
+                (backend_apply "group"
+                   [
+                     (Nolabel, evar ~loc "ctx");
+                     (Nolabel, evar ~loc "group");
+                   ])));
         value_fun "insert"
           (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
              (A.pexp_fun ~loc Nolabel None (pvar ~loc "mutation")
@@ -1536,6 +1551,12 @@ let gen_sig_for_type td =
   let aggregate_typ =
     A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "aggregate" ]) []
   in
+  let group_aggregate_typ =
+    A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "group_aggregate" ]) []
+  in
+  let group_result_typ =
+    A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "group_result" ]) []
+  in
   let mutation_typ =
     A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "mutation" ]) []
   in
@@ -1627,6 +1648,9 @@ let gen_sig_for_type td =
       val_sig "max" (arrow Nolabel string_typ (arrow Nolabel query_typ aggregate_typ));
       val_sig "sum" (arrow Nolabel string_typ (arrow Nolabel query_typ aggregate_typ));
       val_sig "avg" (arrow Nolabel string_typ (arrow Nolabel query_typ aggregate_typ));
+      val_sig "group_by"
+        (arrow Nolabel string_typ
+           (arrow Nolabel aggregate_typ group_aggregate_typ));
     ]
   in
   let edge_sig_items edge_name =
@@ -1756,6 +1780,9 @@ let gen_sig_for_type td =
         (A.ptyp_constr ~loc (lid ~loc [ "option" ]) [ value_typ ])
         error_typ
     in
+    let group_result =
+      result_typ (list_typ group_result_typ) error_typ
+    in
     let store_items =
       [
         value_sig "all"
@@ -1775,6 +1802,9 @@ let gen_sig_for_type td =
         value_sig "aggregate"
           (arrow Nolabel backend_ctx
              (arrow Nolabel aggregate_typ value_option_result));
+        value_sig "group"
+          (arrow Nolabel backend_ctx
+             (arrow Nolabel group_aggregate_typ group_result));
         value_sig "insert"
           (arrow Nolabel backend_ctx (arrow Nolabel mutation_typ doc_result));
         value_sig "insert_many"

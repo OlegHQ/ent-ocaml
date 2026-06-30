@@ -253,16 +253,17 @@ let aggregate_field = function
   | Ent_ocaml.Count -> None
   | Min field | Max field | Sum field | Avg field -> Some field
 
-let aggregate_pipeline_to_bson (aggregate : Ent_ocaml.aggregate) =
+let aggregate_pipeline ~group_key (aggregate : Ent_ocaml.aggregate) =
   let query = aggregate.query in
   let field_key =
     match aggregate_field aggregate.op with
     | None -> Ok ""
     | Some field -> field_storage_key query.entity field
   in
-  match (filter_to_bson query, field_key) with
-  | Error _ as error, _ | _, (Error _ as error) -> error
-  | Ok filter, Ok storage_key ->
+  match (filter_to_bson query, field_key, group_key) with
+  | Error _ as error, _, _ | _, (Error _ as error), _ | _, _, (Error _ as error) ->
+      error
+  | Ok filter, Ok storage_key, Ok group_key ->
       let match_stage =
         if filter = Bson.empty then []
         else [ doc [ ("$match", Bson.create_doc_element filter) ] ]
@@ -270,11 +271,25 @@ let aggregate_pipeline_to_bson (aggregate : Ent_ocaml.aggregate) =
       let group =
         doc
           [
-            ("_id", Bson.create_null ());
+            ( "_id",
+              match group_key with
+              | None -> Bson.create_null ()
+              | Some key -> Bson.create_string ("$" ^ key) );
             ("value", aggregate_expr aggregate.op storage_key);
           ]
       in
       Ok (match_stage @ [ doc [ ("$group", Bson.create_doc_element group) ] ])
+
+let aggregate_pipeline_to_bson aggregate =
+  aggregate_pipeline ~group_key:(Ok None) aggregate
+
+let group_pipeline_to_bson (group : Ent_ocaml.group_aggregate) =
+  let query = group.aggregate.query in
+  aggregate_pipeline
+    ~group_key:
+      (field_storage_key query.entity group.group
+      |> Result.map (fun key -> Some key))
+    group.aggregate
 
 let index_storage_fields (entity : Ent_ocaml.entity) (index : Ent_ocaml.index) =
   let rec loop acc = function
@@ -461,27 +476,62 @@ let value_of_bson_element element =
   in
   loop decoders
 
+let run_aggregate ctx (query : Ent_ocaml.query) pipeline =
+  match
+    Mongo_eio.direct_run_command ctx.client ctx.config.database
+      [
+        ("aggregate", Bson.create_string query.Ent_ocaml.entity.collection);
+        ("pipeline", Bson.create_doc_element_list pipeline);
+        ("cursor", Bson.create_doc_element Bson.empty);
+      ]
+  with
+  | Error error -> Error (backend_error "aggregate" query.Ent_ocaml.entity error)
+  | Ok response -> Ok (Mongo_command.cursor_batch response.Mongo_command.body)
+
 let aggregate ctx (aggregate : Ent_ocaml.aggregate) =
   let query = aggregate.Ent_ocaml.query in
   match aggregate_pipeline_to_bson aggregate with
   | Error _ as error -> error
   | Ok pipeline -> (
-      match
-        Mongo_eio.direct_run_command ctx.client ctx.config.database
-          [
-            ("aggregate", Bson.create_string query.entity.collection);
-            ("pipeline", Bson.create_doc_element_list pipeline);
-            ("cursor", Bson.create_doc_element Bson.empty);
-          ]
-      with
-      | Error error -> Error (backend_error "aggregate" query.entity error)
-      | Ok response -> (
-          match Mongo_command.cursor_batch response.Mongo_command.body with
-          | [] -> Ok None
-          | doc :: _ -> (
-              match Bson.get_element "value" doc with
-              | value -> value_of_bson_element value |> Result.map Option.some
-              | exception Not_found -> Error (`Decode "aggregate value missing"))))
+      match run_aggregate ctx query pipeline with
+      | Error _ as error -> error
+      | Ok [] -> Ok None
+      | Ok (doc :: _) -> (
+          match Bson.get_element "value" doc with
+          | value -> value_of_bson_element value |> Result.map Option.some
+          | exception Not_found -> Error (`Decode "aggregate value missing")))
+
+let group ctx (group : Ent_ocaml.group_aggregate) =
+  let query = group.Ent_ocaml.aggregate.query in
+  let decode doc =
+    match Bson.get_element "_id" doc with
+    | exception Not_found -> Error (`Decode "aggregate group missing")
+    | group_value -> (
+        match value_of_bson_element group_value with
+        | Error _ as error -> error
+        | Ok group_value -> (
+            match Bson.get_element "value" doc with
+            | exception Not_found -> Ok { Ent_ocaml.group = group_value; value = None }
+            | value -> (
+                match value_of_bson_element value with
+                | Error _ as error -> error
+                | Ok value ->
+                    Ok { Ent_ocaml.group = group_value; value = Some value })))
+  in
+  match group_pipeline_to_bson group with
+  | Error _ as error -> error
+  | Ok pipeline -> (
+      match run_aggregate ctx query pipeline with
+      | Error _ as error -> error
+      | Ok docs ->
+          let rec loop acc = function
+            | [] -> Ok (List.rev acc)
+            | doc :: rest -> (
+                match decode doc with
+                | Ok result -> loop (result :: acc) rest
+                | Error _ as error -> error)
+          in
+          loop [] docs)
 
 let insert ctx entity doc =
   match

@@ -90,6 +90,18 @@ let total_views =
   |> Posts.aggregate ctx
 ```
 
+Grouped aggregates keep the same shape:
+
+```ocaml
+let views_by_status =
+  let open Post in
+  query ()
+  |> where (user (User.id_eq user_id))
+  |> sum select_views
+  |> group_by select_status
+  |> Posts.group ctx
+```
+
 Backends execute those
 typed values with `result`-returning functions such as
 `Ent_ocaml_mongo.insert_many_values`. Core mutation validation catches missing

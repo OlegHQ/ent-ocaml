@@ -289,6 +289,23 @@ let test_mongo_aggregate_planning () =
     "max storage key" "$_id"
     (Bson.get_string (Bson.get_element "$max" value))
 
+let test_mongo_group_planning () =
+  let pipeline =
+    match
+      Ent_ocaml_mongo.group_pipeline_to_bson
+        (Ent_ocaml.Aggregate.group_by "user_id"
+           (Ent_ocaml.Aggregate.sum "id" (query ())))
+    with
+    | Ok pipeline -> pipeline
+    | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+  in
+  Alcotest.(check int) "pipeline stages" 1 (List.length pipeline);
+  let group_stage = List.hd pipeline in
+  let group = Bson.get_doc_element (Bson.get_element "$group" group_stage) in
+  Alcotest.(check string)
+    "group storage key" "$user_id"
+    (Bson.get_string (Bson.get_element "_id" group))
+
 let test_mongo_update_planning () =
   let update =
     match
@@ -453,6 +470,7 @@ let () =
             test_mongo_projection_missing_field;
           Alcotest.test_case "aggregate planning" `Quick
             test_mongo_aggregate_planning;
+          Alcotest.test_case "group planning" `Quick test_mongo_group_planning;
           Alcotest.test_case "update planning" `Quick test_mongo_update_planning;
           Alcotest.test_case "upsert planning" `Quick test_mongo_upsert_planning;
           Alcotest.test_case "document planning" `Quick

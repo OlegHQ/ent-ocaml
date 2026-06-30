@@ -19,12 +19,12 @@ Keep one Git submodule, `vendor/ent-ocaml`, with three opam packages:
   errors, hooks, interceptors, privacy decisions, transactions, generated-client
   support, and backend signatures.
 - `ent-ocaml-mongo`: first concrete backend. Owns Mongo query planning, CRUD,
-  transactions/sessions when available, index creation, migration checks,
+  transactions/sessions when available, index creation, schema/index checks,
   aggregation pipelines, and result/error mapping for the `mongo` Eio driver.
-- `ent-ocaml-ppx`: schema and client generator. Owns PPX attributes/extensions,
+- `ent-ocaml-ppx`: schema and client generator. Owns PPX attributes,
   compile-time schema validation, generated entity modules, predicate modules,
-  builders, edge traversals, hook/privacy/interceptor registration, and expansion
-  tests.
+  builders, edge traversals, hook/privacy/interceptor registration, and
+  expansion tests.
 
 Poster should depend on the submodule through opam pins and keep MongoDB
 required. The app should keep explicit domain-to-entity mapping so generated code
@@ -70,18 +70,19 @@ The initial package scaffold already provides:
   entity-local executors.
 - Mongo planning and CRUD execution for scalar filters, boolean predicates,
   field selection/projection, ordering, limit/offset, insert, bulk insert,
-  update, upsert-one with `$setOnInsert`, delete, count, filtered
+  update, upsert-one with `$setOnInsert`, delete, count, filtered and grouped
   min/max/sum/avg aggregates, stored-FK edge predicates, and basic value
   translation.
 - `[@@deriving ent]` generation for entity metadata, functional query helpers,
   typed field predicates, typed ordering helpers, create/update/delete mutation
   values, functional upsert mutation helpers with insert-only field setters,
-  functional mutation pipeline helpers, aggregate constructors, record create
-  helpers, create-bulk helpers, field selector constants, create-time and
-  update-time default values, typed validator wrappers, and matching `.mli`
-  signatures for generated helper modules. Type-level `[@@ent.edges ...]`
-  descriptors generate FK edge metadata plus clean edge predicate aliases such
-  as `Post.user (User.id_eq id)` alongside bulk `has_<edge>_with` helpers.
+  functional mutation pipeline helpers, aggregate and group-by constructors,
+  record create helpers, create-bulk helpers, field selector constants,
+  create-time and update-time default values, typed validator wrappers, and
+  matching `.mli` signatures for generated helper modules. Type-level
+  `[@@ent.edges ...]` descriptors generate FK edge metadata plus clean edge
+  predicate aliases such as `Post.user (User.id_eq id)` alongside bulk
+  `has_<edge>_with` helpers.
 - Poster pilot integration for `User`, `Session`, `Post`, `Media`,
   `PublishState`, and `PublishAttempt` DTO entities.
 
@@ -110,7 +111,7 @@ The initial package scaffold already provides:
 | Bidirectional edge refs | Optional generated in-memory backrefs | Set after eager load, avoid cycles by default |
 | Pagination | Limit, offset, cursor pagination | `limit`, `skip`, sort, stable cursor keys |
 | Ordering | Field and edge-count/edge-field ordering | sort, aggregation for edge terms |
-| Aggregation | count, filtered min/max/sum/avg implemented; group by and scan pending | aggregation pipeline |
+| Aggregation | count and filtered/grouped min/max/sum/avg implemented; scan pending | aggregation pipeline |
 | Hooks | Mutation middleware, global and entity-specific | Around generated mutators |
 | Interceptors | Query middleware and traversal interceptors | Around query execution and traversal construction |
 | Privacy | Query/mutation rule chains with allow/deny/skip | Evaluated before backend execution |
@@ -121,12 +122,11 @@ The initial package scaffold already provides:
 | Indexes | Field, edge, compound, unique, partial/specialized annotations | Mongo indexes with options and partial filters |
 | Annotations | Backend/codegen metadata extension point | OCaml attributes and extensible annotation records |
 | Transactions | Tx client, with-tx helper, commit/rollback hooks | Mongo sessions/transactions where deployment supports them |
-| Migrations | Auto/versioned migration equivalent | Index/schema validation first; collection validators later |
-| Data migrations | Versioned scripts with test helpers | Explicit migration modules using Mongo client |
+| Schema/index checks | Runtime schema/index verification | Index manifests and optional collection validators |
 | Global IDs | Optional globally unique ID configuration | App-generated IDs or ObjectId strategy |
 | Schema views | Read-only entity descriptors and generated query modules | Mongo views/aggregation-backed collections where useful |
 | Schema snapshot | PPX-generated schema manifest for conflict/debugging | Checked-in `.ml` manifest or JSON snapshot |
-| External templates/extensions | Generator hooks and extension output | PPX extension modules/templates later |
+| Local custom code | Hand-written modules beside generated code | Ordinary OCaml modules, not generator templates |
 | Dynamic EntQL | Runtime generic filters | Runtime predicate AST parser/builder |
 | SQL-only features | Backend-specific optional capabilities | Provide Mongo-specific analogs, keep SQL names out of core |
 | GraphQL/gRPC integrations | Out of core for first release | Future packages, not required for Poster |
@@ -186,18 +186,18 @@ The initial package scaffold already provides:
    order.
 
 9. Aggregation, ordering, and pagination:
-   filtered count/min/max/sum/avg is implemented. Group-by, aggregate scan,
+   filtered and grouped count/min/max/sum/avg are implemented. Aggregate scan,
    edge counts, edge-field ordering, cursor pagination, selected order values,
    and custom backend terms are still pending.
 
-10. Mongo migrations and indexes:
+10. Mongo schema/index checks:
    generate index manifests, `ensure_indexes`, drift checks, collection
-   validators where useful, versioned migration files if schema-changing
-   operations become necessary, and audit docs for production rollout.
+   validators where useful, and audit docs for production rollout.
 
-11. EntQL and extension system:
-   add runtime dynamic filters, schema snapshots, generator hooks, external
-   template/output hooks, custom annotations, and backend-specific escape hatches.
+11. EntQL and annotations:
+   add runtime dynamic filters, schema snapshots, custom annotations, and
+   backend-specific escape hatches. Do not add a generator-template extension
+   system unless a concrete user need appears.
 
 12. Poster cutover and e2e:
    run unit tests, PPX expansion tests, Mongo driver e2e, Poster HTTP e2e, and

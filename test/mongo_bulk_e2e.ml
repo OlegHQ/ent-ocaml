@@ -177,6 +177,24 @@ let assert_float_value label expected = function
       assert_true label (Float.of_int value = expected)
   | _ -> failwith ("FAIL " ^ label)
 
+let value_to_int64 = function
+  | Ent_ocaml.V_int64 value -> Some value
+  | Ent_ocaml.V_int32 value -> Some (Int64.of_int32 value)
+  | Ent_ocaml.V_int value -> Some (Int64.of_int value)
+  | _ -> None
+
+let group_value key groups =
+  match
+    List.find_opt
+      (fun result -> result.Ent_ocaml.group = Ent_ocaml.V_string key)
+      groups
+  with
+  | None -> None
+  | Some result -> (
+      match result.Ent_ocaml.value with
+      | None -> None
+      | Some value -> value_to_int64 value)
+
 let cleanup client =
   Mongo_eio.direct_run_command client db [ ("dropDatabase", Bson.create_int32 1l) ]
   |> Result.map (fun _ -> ())
@@ -205,6 +223,15 @@ let run_flow client =
     Ent_ocaml_mongo.aggregate ctx (Ent_ocaml.Aggregate.avg "views" query_all)
   in
   assert_float_value "aggregate avg returns all views" 15.0 avg_value;
+  let* grouped =
+    Ent_ocaml_mongo.group ctx
+      (Ent_ocaml.Aggregate.group_by "user_id"
+         (Ent_ocaml.Aggregate.sum "views" query_all))
+  in
+  assert_true "group aggregate returns user_1 views"
+    (group_value "user_1" grouped = Some 10L);
+  assert_true "group aggregate returns user_2 views"
+    (group_value "user_2" grouped = Some 20L);
   let* () =
     Ent_ocaml_mongo.upsert_one ctx (upsert "post_3" "user_1" "third")
   in

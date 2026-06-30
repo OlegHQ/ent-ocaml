@@ -107,6 +107,16 @@ type aggregate = {
   op : aggregate_op;
 }
 
+type group_aggregate = {
+  aggregate : aggregate;
+  group : string;
+}
+
+type group_result = {
+  group : value;
+  value : value option;
+}
+
 module Query : sig
   val make :
     ?where:predicate list ->
@@ -131,6 +141,7 @@ module Aggregate : sig
   val max : string -> query -> aggregate
   val sum : string -> query -> aggregate
   val avg : string -> query -> aggregate
+  val group_by : string -> aggregate -> group_aggregate
 end
 
 type mutation_op = Create | Update_one | Update | Delete_one | Delete | Upsert_one
@@ -188,6 +199,7 @@ module type BACKEND = sig
   val upsert_one : ctx -> mutation -> (unit, error) result
   val delete : ctx -> mutation -> (int, error) result
   val aggregate : ctx -> aggregate -> (value option, error) result
+  val group : ctx -> group_aggregate -> (group_result list, error) result
   val count : ctx -> query -> (int, error) result
   val transaction : ctx -> (tx -> ('a, error) result) -> ('a, error) result
 end
@@ -218,5 +230,6 @@ module type STORE_BACKEND = sig
   val upsert_one : ctx -> mutation -> (unit, error) result
   val delete : ctx -> mutation -> (int, error) result
   val aggregate : ctx -> aggregate -> (value option, error) result
+  val group : ctx -> group_aggregate -> (group_result list, error) result
   val count : ctx -> query -> (int, error) result
 end

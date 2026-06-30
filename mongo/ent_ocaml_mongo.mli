@@ -11,6 +11,8 @@ val sort_to_bson : Ent_ocaml.order list -> Bson.t option
 val projection_to_bson : Ent_ocaml.query -> (Bson.t option, Ent_ocaml.error) result
 val aggregate_pipeline_to_bson :
   Ent_ocaml.aggregate -> (Bson.t list, Ent_ocaml.error) result
+val group_pipeline_to_bson :
+  Ent_ocaml.group_aggregate -> (Bson.t list, Ent_ocaml.error) result
 val document_to_bson : (string * Ent_ocaml.value) list -> (Bson.t, Ent_ocaml.error) result
 val update_to_bson : Ent_ocaml.mutation -> (Bson.t, Ent_ocaml.error) result
 val predicate_to_bson :
@@ -66,3 +68,7 @@ val update : ctx -> Ent_ocaml.mutation -> (int, Ent_ocaml.error) result
 val upsert_one : ctx -> Ent_ocaml.mutation -> (unit, Ent_ocaml.error) result
 val delete : ctx -> Ent_ocaml.mutation -> (int, Ent_ocaml.error) result
 val aggregate : ctx -> Ent_ocaml.aggregate -> (Ent_ocaml.value option, Ent_ocaml.error) result
+val group :
+  ctx ->
+  Ent_ocaml.group_aggregate ->
+  (Ent_ocaml.group_result list, Ent_ocaml.error) result

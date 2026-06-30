@@ -82,6 +82,15 @@ module Memory_backend = struct
     | Ent_ocaml.Count -> Ok (Some (Ent_ocaml.V_int 2))
     | Ent_ocaml.Min _ | Ent_ocaml.Max _ | Ent_ocaml.Sum _ | Ent_ocaml.Avg _ ->
         Ok (Some (Ent_ocaml.V_int64 42L))
+
+  let group () (group : Ent_ocaml.group_aggregate) =
+    Ok
+      [
+        {
+          Ent_ocaml.group = Ent_ocaml.V_string group.group;
+          value = Some (V_int64 42L);
+        };
+      ]
 end
 
 let find_field name =
@@ -369,6 +378,24 @@ let test_generated_store_api () =
   | Ok (Some (Ent_ocaml.V_int64 value)) ->
       Alcotest.(check int64) "aggregate value" 42L value
   | Ok _ -> Alcotest.fail "unexpected aggregate result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  let grouped =
+    let open Post in
+    query ()
+    |> where (status_eq "draft")
+    |> sum select_created_at_ms
+    |> group_by select_status
+  in
+  (match Store.group () grouped with
+  | Ok
+      [
+        {
+          Ent_ocaml.group = Ent_ocaml.V_string "status";
+          value = Some (Ent_ocaml.V_int64 value);
+        };
+      ] ->
+      Alcotest.(check int64) "group aggregate value" 42L value
+  | Ok _ -> Alcotest.fail "unexpected group aggregate result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
   let mutation =
     let open Post in
