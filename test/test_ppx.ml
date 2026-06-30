@@ -1204,8 +1204,11 @@ let test_generated_mutation_api () =
         message
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
   let update =
-    Post.update_one ~where:[ Post.id_eq "post_1" ]
-      ~set:[ Post.body "updated" ] ~clear:[ "published_at_ms" ] ()
+    let open Post in
+    by_id "post_1"
+    |> update_one_where
+    |> set (body "updated")
+    |> clear "published_at_ms"
   in
   Alcotest.(check bool)
     "update one op" true
@@ -1254,8 +1257,8 @@ let test_generated_mutation_api () =
   | Ok () -> ()
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
   let clear_updated =
-    Post.update_one ~where:[ Post.id_eq "post_1" ]
-      ~clear:[ "updated_at_ms" ] ()
+    let open Post in
+    by_id "post_1" |> update_one_where |> clear "updated_at_ms"
   in
   Alcotest.(check bool)
     "cleared update default omitted" false
@@ -1264,7 +1267,10 @@ let test_generated_mutation_api () =
          | "updated_at_ms", Ent_ocaml.V_int64 42L -> true
          | _ -> false)
        clear_updated.set);
-  let delete = Post.delete_one ~where:[ Post.id_eq "post_1" ] () in
+  let delete =
+    let open Post in
+    by_id "post_1" |> delete_one_where
+  in
   let delete_from_query =
     let open Post in
     query ()
@@ -1438,7 +1444,8 @@ let test_generated_store_api () =
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
   let upsert =
     let open Post in
-    upsert_one ~where:[ id_eq "post_1" ] ()
+    by_id "post_1"
+    |> upsert_where
     |> set (body "upserted")
     |> on_insert (id "post_1")
     |> on_insert (user_id "user_1")
