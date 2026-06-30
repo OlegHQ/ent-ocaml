@@ -9,6 +9,20 @@ type post = {
 }
 [@@ent.entity "Post"] [@@ent.collection "posts"] [@@deriving ent]
 
+type publish_state = {
+  kind : string;
+  external_id : string option;
+}
+[@@ent.entity "PublishState"] [@@ent.collection "publish_states"]
+[@@deriving ent]
+
+type publish_attempt = {
+  id : string;
+  state : publish_state;
+}
+[@@ent.entity "PublishAttempt"] [@@ent.collection "publish_attempts"]
+[@@deriving ent]
+
 let find_field name =
   List.find
     (fun (field : Ent_ocaml.field) -> field.name = name)
@@ -93,6 +107,32 @@ let test_generated_mutation_api () =
     "delete one op" true
     (match delete.op with Ent_ocaml.Delete_one -> true | _ -> false)
 
+let test_generated_nested_value_api () =
+  let state = { kind = "confirmed"; external_id = Some "ext_1" } in
+  let value = publish_state_to_ent_value state in
+  Alcotest.(check bool)
+    "state value" true
+    (match value with
+    | Ent_ocaml.V_doc
+        [
+          ("kind", V_string "confirmed");
+          ("external_id", V_string "ext_1");
+        ] ->
+        true
+    | _ -> false);
+  let create =
+    PublishAttempt.create
+      [
+        PublishAttempt.id "attempt_1";
+        PublishAttempt.state state;
+      ]
+  in
+  Alcotest.(check bool)
+    "nested create" true
+    (match create.set with
+    | [ ("id", Ent_ocaml.V_string "attempt_1"); ("state", V_doc _) ] -> true
+    | _ -> false)
+
 let () =
   Alcotest.run "ent-ocaml-ppx"
     [
@@ -103,5 +143,7 @@ let () =
             test_generated_query_api;
           Alcotest.test_case "generated mutation api" `Quick
             test_generated_mutation_api;
+          Alcotest.test_case "generated nested value api" `Quick
+            test_generated_nested_value_api;
         ] );
     ]

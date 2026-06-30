@@ -88,6 +88,11 @@ let type_path_parts path =
   in
   loop [] path
 
+let type_path_name path =
+  match List.rev (type_path_parts path) with
+  | [] -> invalid_arg "type_path_name"
+  | name :: _ -> name
+
 let rec field_type_expr ~loc field =
   match Attribute.get ent_enum_attr field with
   | Some values ->
@@ -193,6 +198,12 @@ let rec value_constructor field =
         ->
           let inner = { field with pld_type = inner } in
           Option.map (fun _ -> [ "Ent_ocaml"; "V_list" ]) (value_constructor inner)
+      | Ptyp_constr ({ txt = path; _ }, []) ->
+          let name = String.concat "." (type_path_parts path) in
+          if name = "Ptime.t" || name = "Uuidm.t" || name = "Yojson.Safe.t"
+             || name = "Yojson.t"
+          then None
+          else Some [ "Ent_ocaml"; "V_doc" ]
       | _ -> None)
 
 let rec value_expr ~loc field value =
@@ -243,6 +254,14 @@ let rec value_expr ~loc field value =
           in
           constr_arg ~loc [ "Ent_ocaml"; "V_list" ]
             (app ~loc (ident ~loc [ "List"; "map" ]) [ mapper; value ])
+      | Ptyp_constr ({ txt = path; _ }, []) ->
+          let name = String.concat "." (type_path_parts path) in
+          if name = "Ptime.t" || name = "Uuidm.t" || name = "Yojson.Safe.t"
+             || name = "Yojson.t"
+          then
+            Location.raise_errorf ~loc:field.pld_type.ptyp_loc
+              "ent deriving cannot generate value helper for this field type"
+          else app ~loc (evar ~loc (type_path_name path ^ "_to_ent_value")) [ value ]
       | _ ->
           Location.raise_errorf ~loc:field.pld_type.ptyp_loc
             "ent deriving cannot generate value helper for this field type")
@@ -462,6 +481,31 @@ let gen_entity td =
   A.pstr_value ~loc Nonrecursive
     [ A.value_binding ~loc ~pat:(pvar ~loc (type_name ^ "_entity")) ~expr ]
 
+let gen_value_converter td =
+  let loc = loc_of_type_decl td in
+  let fields = ensure_record td in
+  let type_name = td.ptype_name.txt in
+  let value = evar ~loc "value" in
+  let value_pat =
+    A.ppat_constraint ~loc (pvar ~loc "value")
+      (A.ptyp_constr ~loc (lid ~loc [ type_name ]) [])
+  in
+  let field_value field =
+    let field_name = field.pld_name.txt in
+    let access =
+      A.pexp_field ~loc value (lid ~loc [ field_name ])
+    in
+    A.pexp_tuple ~loc [ str ~loc field_name; value_expr ~loc field access ]
+  in
+  A.pstr_value ~loc Nonrecursive
+    [
+      A.value_binding ~loc ~pat:(pvar ~loc (type_name ^ "_to_ent_value"))
+        ~expr:
+          (A.pexp_fun ~loc Nolabel None value_pat
+             (constr_arg ~loc [ "Ent_ocaml"; "V_doc" ]
+                (list ~loc (List.map field_value fields))));
+    ]
+
 let gen_query_module td =
   let loc = loc_of_type_decl td in
   let fields = ensure_record td in
@@ -582,7 +626,9 @@ let gen_query_module td =
        ~expr:(A.pmod_structure ~loc structure))
 
 let generate_str ~loc:_ ~path:_ (_rec_flag, tds) =
-  List.concat_map (fun td -> [ gen_entity td; gen_query_module td ]) tds
+  List.concat_map
+    (fun td -> [ gen_entity td; gen_value_converter td; gen_query_module td ])
+    tds
 
 let gen_sig_for_type td =
   let loc = loc_of_type_decl td in
@@ -590,6 +636,11 @@ let gen_sig_for_type td =
   let type_name = td.ptype_name.txt in
   let module_name = snake_to_pascal type_name in
   let typ = A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "entity" ]) [] in
+  let record_typ = A.ptyp_constr ~loc (lid ~loc [ type_name ]) [] in
+  let value_converter_typ =
+    A.ptyp_arrow ~loc Nolabel record_typ
+      (A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "value" ]) [])
+  in
   let predicate_typ =
     A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "predicate" ]) []
   in
@@ -725,6 +776,10 @@ let gen_sig_for_type td =
       (A.value_description ~loc
          ~name:{ loc; txt = type_name ^ "_entity" }
          ~type_:typ ~prim:[]);
+    A.psig_value ~loc
+      (A.value_description ~loc
+         ~name:{ loc; txt = type_name ^ "_to_ent_value" }
+         ~type_:value_converter_typ ~prim:[]);
     A.psig_module ~loc
       (A.module_declaration ~loc ~name:{ loc; txt = Some module_name }
          ~type_:(A.pmty_signature ~loc module_items));
