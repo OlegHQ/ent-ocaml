@@ -194,6 +194,14 @@ Generated schema snapshots provide stable metadata for drift/debug tooling:
 let snapshot = Post.post_schema_snapshot
 ```
 
+Projects can collect entity descriptors into a stable repository manifest:
+
+```ocaml
+let schema_manifest =
+  Ent_ocaml.Schema_snapshot.manifest ~name:"poster"
+    [ user_entity; post_entity; media_entity ]
+```
+
 Fields can carry Ent-style metadata without changing runtime validation or
 persistence behavior:
 

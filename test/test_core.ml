@@ -445,6 +445,22 @@ let test_schema_snapshot () =
         | _ -> false)
   | _ -> Alcotest.fail "expected schema snapshot document"
 
+let test_schema_manifest () =
+  match Ent_ocaml.Schema_snapshot.manifest ~name:"poster" [ post_entity ] with
+  | Ent_ocaml.V_doc fields ->
+      Alcotest.(check (option string))
+        "name" (Some "poster")
+        (Option.map
+           (function Ent_ocaml.V_string value -> value | _ -> "")
+           (List.assoc_opt "name" fields));
+      Alcotest.(check bool)
+        "entities" true
+        (match List.assoc_opt "entities" fields with
+        | Some (Ent_ocaml.V_list [ Ent_ocaml.V_doc entity ]) ->
+            List.assoc_opt "name" entity = Some (Ent_ocaml.V_string "Post")
+        | _ -> false)
+  | _ -> Alcotest.fail "expected schema manifest document"
+
 let test_mongo_eq_predicate () =
   match
     Ent_ocaml_mongo.predicate_to_bson
@@ -834,6 +850,7 @@ let () =
             test_query_interceptor_chain;
           Alcotest.test_case "dynamic filter api" `Quick test_dynamic_filter_api;
           Alcotest.test_case "schema snapshot" `Quick test_schema_snapshot;
+          Alcotest.test_case "schema manifest" `Quick test_schema_manifest;
         ] );
       ( "mongo",
         [

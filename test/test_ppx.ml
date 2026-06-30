@@ -256,6 +256,30 @@ let test_generated_schema_snapshot () =
         | _ -> false)
   | _ -> Alcotest.fail "expected generated schema snapshot document"
 
+let test_generated_schema_manifest () =
+  match
+    Ent_ocaml.Schema_snapshot.manifest ~name:"test"
+      [
+        user_entity;
+        post_entity;
+        publish_state_entity;
+        publish_attempt_entity;
+        event_entity;
+      ]
+  with
+  | Ent_ocaml.V_doc fields ->
+      Alcotest.(check (option string))
+        "name" (Some "test")
+        (Option.map
+           (function Ent_ocaml.V_string value -> value | _ -> "")
+           (List.assoc_opt "name" fields));
+      Alcotest.(check bool)
+        "entities" true
+        (match List.assoc_opt "entities" fields with
+        | Some (Ent_ocaml.V_list entities) -> List.length entities = 5
+        | _ -> false)
+  | _ -> Alcotest.fail "expected generated schema manifest document"
+
 let test_generated_query_api () =
   let query =
     Post.query ()
@@ -924,6 +948,8 @@ let () =
           Alcotest.test_case "entity metadata" `Quick test_entity_metadata;
           Alcotest.test_case "generated schema snapshot" `Quick
             test_generated_schema_snapshot;
+          Alcotest.test_case "generated schema manifest" `Quick
+            test_generated_schema_manifest;
           Alcotest.test_case "generated query api" `Quick
             test_generated_query_api;
           Alcotest.test_case "generated order value api" `Quick

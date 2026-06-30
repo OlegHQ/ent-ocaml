@@ -107,6 +107,8 @@ The initial package scaffold already provides:
   Generated schema snapshots expose stable `Ent_ocaml.value` metadata documents
   for drift/debug tooling, including `[@ent.sensitive]`,
   `[@ent.deprecated "..."]`, and `[@ent.comment "..."]` field metadata.
+  Repository-wide schema manifests are supported with
+  `Ent_ocaml.Schema_snapshot.manifest ~name entities`.
 - Poster pilot integration for `User`, `Session`, `Post`, `Media`,
   `PublishState`, and `PublishAttempt` DTO entities.
 
@@ -149,7 +151,7 @@ The initial package scaffold already provides:
 | Schema/index checks | Runtime schema/index verification | Index manifests and optional collection validators |
 | Global IDs | Optional globally unique ID configuration | App-generated IDs or ObjectId strategy |
 | Schema views | Read-only entity descriptors and generated query modules | Mongo views/aggregation-backed collections where useful |
-| Schema snapshot | PPX-generated per-entity schema snapshot implemented; repository-wide manifests/check-in tooling pending | Checked-in `.ml` manifest or JSON snapshot |
+| Schema snapshot | PPX-generated per-entity schema snapshots and repository-wide manifests implemented | Checked-in `.ml` manifest or JSON snapshot |
 | Local custom code | Hand-written modules beside generated code | Ordinary OCaml modules |
 | Dynamic EntQL | Metadata-validated runtime field filters implemented; parsing/string expression language pending | Runtime predicate AST parser/builder |
 | SQL-only features | Backend-specific optional capabilities | Provide Mongo-specific analogs, keep SQL names out of core |
@@ -235,8 +237,8 @@ The initial package scaffold already provides:
 11. EntQL and backend-specific metadata:
    metadata-validated runtime dynamic filters are implemented for field
    predicates, generated JSON path predicates are implemented for JSON fields,
-   and generated per-entity schema snapshots are implemented. String
-   parsing/expression syntax, repository-wide snapshot manifests, custom
+   and generated per-entity schema snapshots plus repository-wide snapshot
+   manifests are implemented. String parsing/expression syntax, custom
    annotations when they directly support a backend feature, and typed
    backend-specific escape hatches remain. Do not add generator plugins unless a
    concrete user need appears.

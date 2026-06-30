@@ -156,6 +156,7 @@ module Schema_snapshot : sig
   val index : index -> value
   val entity : entity -> value
   val entities : entity list -> value
+  val manifest : name:string -> entity list -> value
 end
 
 module Query : sig

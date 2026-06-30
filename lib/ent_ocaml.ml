@@ -233,6 +233,14 @@ module Schema_snapshot = struct
         ("version", V_int 1);
         ("entities", V_list (List.map entity entities));
       ]
+
+  let manifest ~name entities =
+    V_doc
+      [
+        ("version", V_int 1);
+        string "name" name;
+        ("entities", V_list (List.map entity entities));
+      ]
 end
 
 module Query = struct
