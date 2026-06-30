@@ -525,6 +525,117 @@ let has_edge_field_order (query : Ent_ocaml.query) =
 
 let edge_order_temp index = "__ent_edge_order_" ^ string_of_int index
 let edge_predicate_temp index = "__ent_edge_pred_" ^ string_of_int index
+let join_predicate_temp index = "__ent_join_pred_" ^ string_of_int index
+
+let find_join_edge (entity : Ent_ocaml.entity) edge_name =
+  match find_edge entity edge_name with
+  | None -> Ok None
+  | Some { Ent_ocaml.join = None; _ } -> Ok None
+  | Some ({ direction = From _; _ } : Ent_ocaml.edge) ->
+      Error (`Bad_query "join edge predicates currently support to-edges")
+  | Some { cardinality = One; _ } ->
+      Error (`Bad_query "join edge predicates currently support to-many edges")
+  | Some ({ join = Some _; _ } as edge) -> Ok (Some edge)
+
+let join_edge_predicate_stage (query : Ent_ocaml.query) index predicate =
+  let edge_name =
+    match predicate with
+    | Ent_ocaml.Has_edge edge_name | Has_edge_with (edge_name, _) -> edge_name
+    | _ -> ""
+  in
+  match
+    ( find_join_edge query.entity edge_name,
+      field_storage_key query.entity "id" )
+  with
+  | Error _ as error, _ | _, (Error _ as error) -> error
+  | Ok None, _ ->
+      Error (`Bad_query ("edge " ^ edge_name ^ " is not a join-backed edge"))
+  | Ok (Some { join = None; _ }), _ ->
+      Error (`Bad_query ("edge " ^ edge_name ^ " is not a join-backed edge"))
+  | Ok (Some { join = Some join; _ }), Ok source_id_key -> (
+      let temp = join_predicate_temp index in
+      let lookup =
+        doc
+          [
+            ("from", Bson.create_string join.collection);
+            ("localField", Bson.create_string source_id_key);
+            ("foreignField", Bson.create_string join.source_key);
+            ("as", Bson.create_string temp);
+          ]
+      in
+      let match_filter =
+        match predicate with
+        | Ent_ocaml.Has_edge _ ->
+            Ok
+              (doc
+                 [
+                   ( temp ^ ".0",
+                     Bson.create_doc_element
+                       (doc [ ("$exists", Bson.create_boolean true) ]) );
+                 ])
+        | Has_edge_with (_, predicates) -> (
+            match remap_id_predicates (temp ^ "." ^ join.target_key) predicates with
+            | Error _ as error -> error
+            | Ok [] ->
+                Ok
+                  (doc
+                     [
+                       ( temp ^ ".0",
+                         Bson.create_doc_element
+                           (doc [ ("$exists", Bson.create_boolean true) ]) );
+                     ])
+            | Ok [ predicate ] -> predicate_to_bson predicate
+            | Ok predicates -> predicate_to_bson (Ent_ocaml.And predicates))
+        | _ -> Error (`Bad_query "expected join edge predicate")
+      in
+      match match_filter with
+      | Error _ as error -> error
+      | Ok filter ->
+          Ok
+            [
+              doc [ ("$lookup", Bson.create_doc_element lookup) ];
+              doc [ ("$match", Bson.create_doc_element filter) ];
+            ])
+
+let rec predicate_has_join_edge entity = function
+  | Ent_ocaml.Has_edge edge | Has_edge_with (edge, _) -> (
+      match find_join_edge entity edge with
+      | Ok (Some _) -> true
+      | Ok None -> false
+      | Error _ -> true)
+  | And predicates | Or predicates ->
+      List.exists (predicate_has_join_edge entity) predicates
+  | Not predicate -> predicate_has_join_edge entity predicate
+  | Eq _ | Neq _ | Gt _ | Gte _ | Lt _ | Lte _ | In _ | Not_in _ | Is_nil _
+  | Not_nil _ | Contains _ | Has_prefix _ | Has_suffix _ | Json_eq _ | Json_neq _
+  | Json_gt _ | Json_gte _ | Json_lt _ | Json_lte _ | Json_in _ | Json_not_in _
+  | Json_is_nil _ | Json_not_nil _ | Has_edge_with_target _ | Backend _ ->
+      false
+
+let partition_join_edge_predicates (query : Ent_ocaml.query) predicates =
+  let rec loop join normal = function
+    | [] -> Ok (List.rev join, List.rev normal)
+    | (Ent_ocaml.Has_edge edge_name as predicate) :: rest
+    | (Has_edge_with (edge_name, _) as predicate) :: rest -> (
+        match find_join_edge query.entity edge_name with
+        | Error _ as error -> error
+        | Ok (Some _) -> loop (predicate :: join) normal rest
+        | Ok None -> loop join (predicate :: normal) rest)
+    | predicate :: rest when predicate_has_join_edge query.entity predicate ->
+        Error (`Bad_query "join edge predicates must be top-level query predicates")
+    | predicate :: rest -> loop join (predicate :: normal) rest
+  in
+  loop [] [] predicates
+
+let join_edge_predicate_lookup_pipeline query join_predicates =
+  let rec loop index acc = function
+    | [] -> Ok (List.rev acc)
+    | predicate :: rest -> (
+        match join_edge_predicate_stage query index predicate with
+        | Ok stages -> loop (index + 1) (List.rev_append stages acc) rest
+        | Error _ as error -> error)
+  in
+  loop 0 [] join_predicates
 
 let edge_target_predicate_lookup_stage (query : Ent_ocaml.query) index ~edge
     ~target ~predicates =
@@ -621,6 +732,11 @@ let edge_target_predicate_lookup_pipeline query edge_predicates =
 
 let has_edge_target_predicate (query : Ent_ocaml.query) =
   List.exists predicate_has_edge_target query.Ent_ocaml.predicates
+
+let has_join_edge_predicate (query : Ent_ocaml.query) =
+  List.exists
+    (predicate_has_join_edge query.Ent_ocaml.entity)
+    query.Ent_ocaml.predicates
 
 let edge_order_field (query : Ent_ocaml.query) index (order : Ent_ocaml.order) =
   let ({ Ent_ocaml.target = order_target; _ } : Ent_ocaml.order) = order in
@@ -1412,11 +1528,20 @@ let find_aggregate_pipeline (query : Ent_ocaml.query) =
       error
   | Ok (edge_predicates, normal_predicates), Ok lookup_stages, Ok sort, Ok projection -> (
       match
-        ( filter_to_bson { query with predicates = normal_predicates },
-          edge_target_predicate_lookup_pipeline query edge_predicates )
+        partition_join_edge_predicates query normal_predicates
       with
-      | Error _ as error, _ | _, (Error _ as error) -> error
-      | Ok filter, Ok edge_predicate_stages ->
+      | Error _ as error -> error
+      | Ok (join_predicates, normal_predicates) -> (
+          match
+            ( filter_to_bson { query with predicates = normal_predicates },
+              edge_target_predicate_lookup_pipeline query edge_predicates,
+              join_edge_predicate_lookup_pipeline query join_predicates )
+          with
+          | Error _ as error, _, _
+          | _, (Error _ as error), _
+          | _, _, (Error _ as error) ->
+              error
+          | Ok filter, Ok edge_predicate_stages, Ok join_predicate_stages ->
       let match_stage =
         if filter = Bson.empty then []
         else [ doc [ ("$match", Bson.create_doc_element filter) ] ]
@@ -1443,8 +1568,9 @@ let find_aggregate_pipeline (query : Ent_ocaml.query) =
             [ doc [ ("$project", Bson.create_doc_element projection) ] ]
       in
       Ok
-        (match_stage @ edge_predicate_stages @ lookup_stages @ sort_stage
-       @ skip_stage @ limit_stage @ project_stage))
+        (match_stage @ edge_predicate_stages @ join_predicate_stages
+       @ lookup_stages @ sort_stage
+       @ skip_stage @ limit_stage @ project_stage)))
 
 let find_with_aggregate ctx query =
   match find_aggregate_pipeline query with
@@ -1463,7 +1589,10 @@ let find_with_aggregate ctx query =
       | Ok response -> Ok (Mongo_command.cursor_batch response.Mongo_command.body))
 
 let find ctx (query : Ent_ocaml.query) =
-  if has_edge_field_order query || has_edge_target_predicate query then
+  if
+    has_edge_field_order query || has_edge_target_predicate query
+    || has_join_edge_predicate query
+  then
     find_with_aggregate ctx query
   else
     match find_options query with

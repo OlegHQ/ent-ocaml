@@ -631,6 +631,12 @@ let draft_tags ctx =
   |> Posts.load_edge ctx
        ~decode_source:post_of_bson_doc_result
        ~decode_target:tag_of_bson_doc_result
+
+let tagged_with_ocaml ctx =
+  let open Post in
+  query ()
+  |> where (tags (Tag.id_eq "tag_ocaml"))
+  |> Posts.all ctx ~decode:post_of_bson_doc_result
 ```
 
 The optional `~as_` label is preserved on the edge query so higher-level loaders

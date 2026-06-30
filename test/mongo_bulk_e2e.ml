@@ -402,6 +402,22 @@ let query_tags_from_posts =
         }
     query_all
 
+let query_posts_with_any_tag =
+  Ent_ocaml.
+    {
+      query_all with
+      predicates = [ Has_edge "tags" ];
+      orders = [ Order.field ~direction:Asc "id" ];
+    }
+
+let query_posts_with_ocaml_tag =
+  Ent_ocaml.
+    {
+      query_all with
+      predicates = [ Has_edge_with ("tags", [ Eq ("id", V_string "tag_ocaml") ]) ];
+      orders = [ Order.field ~direction:Asc "id" ];
+    }
+
 let assert_true label condition =
   if condition then Printf.printf "PASS %s\n%!" label
   else failwith ("FAIL " ^ label)
@@ -871,6 +887,18 @@ let run_flow client =
     (match alice_posts with
     | [ doc ] -> Bson.get_string (Bson.get_element "_id" doc) = "post_1"
     | _ -> false);
+  let* tagged_posts = Ent_ocaml_mongo.find ctx query_posts_with_any_tag in
+  assert_true "join edge predicate returns tagged posts"
+    (List.map (fun doc -> Bson.get_string (Bson.get_element "_id" doc)) tagged_posts
+    = [ "post_1"; "post_2"; "post_2b" ]);
+  let* ocaml_tagged_posts =
+    Ent_ocaml_mongo.find ctx query_posts_with_ocaml_tag
+  in
+  assert_true "join edge id predicate returns tagged posts"
+    (List.map
+       (fun doc -> Bson.get_string (Bson.get_element "_id" doc))
+       ocaml_tagged_posts
+    = [ "post_1"; "post_2b" ]);
   assert_true "named edge alias preserved"
     (query_user_from_posts.Ent_ocaml.edge_alias = Some "author");
   let* traversed_users =
