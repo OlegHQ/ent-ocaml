@@ -637,6 +637,12 @@ let tagged_with_ocaml ctx =
   query ()
   |> where (tags (Tag.id_eq "tag_ocaml"))
   |> Posts.all ctx ~decode:post_of_bson_doc_result
+
+let tagged_by_name ctx =
+  let open Post in
+  query ()
+  |> where (tags ~target:Tag.tag_entity (Tag.name_eq "ocaml"))
+  |> Posts.all ctx ~decode:post_of_bson_doc_result
 ```
 
 The optional `~as_` label is preserved on the edge query so higher-level loaders

@@ -418,6 +418,22 @@ let query_posts_with_ocaml_tag =
       orders = [ Order.field ~direction:Asc "id" ];
     }
 
+let query_posts_with_ocaml_tag_name =
+  Ent_ocaml.
+    {
+      query_all with
+      predicates =
+        [
+          Has_edge_with_target
+            {
+              edge = "tags";
+              target = tag_entity;
+              predicates = [ Eq ("name", V_string "ocaml") ];
+            };
+        ];
+      orders = [ Order.field ~direction:Asc "id" ];
+    }
+
 let assert_true label condition =
   if condition then Printf.printf "PASS %s\n%!" label
   else failwith ("FAIL " ^ label)
@@ -898,6 +914,27 @@ let run_flow client =
     (List.map
        (fun doc -> Bson.get_string (Bson.get_element "_id" doc))
        ocaml_tagged_posts
+    = [ "post_1"; "post_2b" ]);
+  let* ocaml_tag_name_posts =
+    Ent_ocaml_mongo.find ctx query_posts_with_ocaml_tag_name
+  in
+  assert_true "join target edge predicate returns tagged posts"
+    (List.map
+       (fun doc -> Bson.get_string (Bson.get_element "_id" doc))
+       ocaml_tag_name_posts
+    = [ "post_1"; "post_2b" ]);
+  let* entql_ocaml_tag_posts =
+    match
+      Ent_ocaml.Query.make post_entity
+      |> Ent_ocaml.Entql.where ~targets:[ tag_entity ] {|tags.name == "ocaml"|}
+    with
+    | Ok query -> Ent_ocaml_mongo.find ctx query
+    | Error _ as error -> error
+  in
+  assert_true "entql join target edge path returns tagged posts"
+    (List.map
+       (fun doc -> Bson.get_string (Bson.get_element "_id" doc))
+       entql_ocaml_tag_posts
     = [ "post_1"; "post_2b" ]);
   assert_true "named edge alias preserved"
     (query_user_from_posts.Ent_ocaml.edge_alias = Some "author");

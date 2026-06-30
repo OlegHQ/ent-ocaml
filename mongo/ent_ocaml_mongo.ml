@@ -526,6 +526,8 @@ let has_edge_field_order (query : Ent_ocaml.query) =
 let edge_order_temp index = "__ent_edge_order_" ^ string_of_int index
 let edge_predicate_temp index = "__ent_edge_pred_" ^ string_of_int index
 let join_predicate_temp index = "__ent_join_pred_" ^ string_of_int index
+let join_target_temp index = "__ent_join_target_" ^ string_of_int index
+let dedup_root_temp index = "__ent_dedup_root_" ^ string_of_int index
 
 let find_join_edge (entity : Ent_ocaml.entity) edge_name =
   match find_edge entity edge_name with
@@ -648,11 +650,15 @@ let edge_target_predicate_lookup_stage (query : Ent_ocaml.query) index ~edge
              edge_desc.target target.name))
   | Some { direction = From _; _ } ->
       Error (`Bad_query "target edge predicates currently support to-edges")
-  | Some { cardinality = Many; _ } ->
-      Error (`Bad_query "target edge predicates currently support to-one edges")
   | Some edge_desc -> (
-      match (edge_desc.storage_key, field_storage_key target "id") with
-      | Some local_key, Ok foreign_key -> (
+      match
+        ( edge_desc.cardinality,
+          edge_desc.storage_key,
+          edge_desc.join,
+          field_storage_key target "id",
+          field_storage_key query.entity "id" )
+      with
+      | Ent_ocaml.One, Some local_key, None, Ok foreign_key, _ -> (
           let temp = edge_predicate_temp index in
           let lookup =
             doc
@@ -687,12 +693,99 @@ let edge_target_predicate_lookup_stage (query : Ent_ocaml.query) index ~edge
                       doc [ ("$unwind", Bson.create_doc_element unwind) ];
                       doc [ ("$match", Bson.create_doc_element filter) ];
                     ]))
-      | None, _ ->
+      | Many, None, Some join, Ok foreign_key, Ok source_id_key -> (
+          let join_temp = join_predicate_temp index in
+          let target_temp = join_target_temp index in
+          let root_temp = dedup_root_temp index in
+          let join_lookup =
+            doc
+              [
+                ("from", Bson.create_string join.collection);
+                ("localField", Bson.create_string source_id_key);
+                ("foreignField", Bson.create_string join.source_key);
+                ("as", Bson.create_string join_temp);
+              ]
+          in
+          let target_lookup =
+            doc
+              [
+                ("from", Bson.create_string target.collection);
+                ( "localField",
+                  Bson.create_string (join_temp ^ "." ^ join.target_key) );
+                ("foreignField", Bson.create_string foreign_key);
+                ("as", Bson.create_string target_temp);
+              ]
+          in
+          let unwind_join =
+            doc [ ("path", Bson.create_string ("$" ^ join_temp)) ]
+          in
+          let unwind_target =
+            doc [ ("path", Bson.create_string ("$" ^ target_temp)) ]
+          in
+          let group =
+            doc
+              [
+                ("_id", Bson.create_string ("$" ^ source_id_key));
+                ( root_temp,
+                  Bson.create_doc_element
+                    (doc [ ("$first", Bson.create_string "$$ROOT") ]) );
+              ]
+          in
+          let replace_root =
+            doc [ ("newRoot", Bson.create_string ("$" ^ root_temp)) ]
+          in
+          let base_stages =
+            [
+              doc [ ("$lookup", Bson.create_doc_element join_lookup) ];
+              doc [ ("$unwind", Bson.create_doc_element unwind_join) ];
+              doc [ ("$lookup", Bson.create_doc_element target_lookup) ];
+              doc [ ("$unwind", Bson.create_doc_element unwind_target) ];
+            ]
+          in
+          let dedup_stages =
+            [
+              doc [ ("$group", Bson.create_doc_element group) ];
+              doc [ ("$replaceRoot", Bson.create_doc_element replace_root) ];
+            ]
+          in
+          match prefix_target_predicates target ~prefix:target_temp predicates with
+          | Error _ as error -> error
+          | Ok [] -> Ok (base_stages @ dedup_stages)
+          | Ok [ predicate ] -> (
+              match predicate_to_bson predicate with
+              | Error _ as error -> error
+              | Ok filter ->
+                  Ok
+                    (base_stages
+                    @ [ doc [ ("$match", Bson.create_doc_element filter) ] ]
+                    @ dedup_stages))
+          | Ok predicates -> (
+              match predicate_to_bson (Ent_ocaml.And predicates) with
+              | Error _ as error -> error
+              | Ok filter ->
+                  Ok
+                    (base_stages
+                    @ [ doc [ ("$match", Bson.create_doc_element filter) ] ]
+                    @ dedup_stages)))
+      | Many, Some _, Some _, _, _ ->
+          Error
+            (`Bad_query
+              ("edge " ^ edge_desc.name
+             ^ " must use either storage_key or join metadata, not both"))
+      | Many, Some _, None, _, _ ->
+          Error (`Bad_query "target edge predicates currently support to-one stored-FK edges")
+      | One, _, Some _, _, _ ->
+          Error
+            (`Bad_query
+              ("edge " ^ edge_desc.name ^ " has join metadata but is not to-many"))
+      | _, None, None, _, _ ->
           Error
             (`Bad_query
               ("edge " ^ edge_desc.name
              ^ " does not have a stored foreign-key field"))
-      | _, (Error _ as error) -> error)
+      | _, _, _, (Error _ as error), _
+      | _, _, _, _, (Error _ as error) ->
+          error)
 
 let rec predicate_has_edge_target = function
   | Ent_ocaml.Has_edge_with_target _ -> true
