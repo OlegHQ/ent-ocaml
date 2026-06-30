@@ -494,6 +494,26 @@ let gen_query_module td =
                            query_body)))));
       ]
   in
+  let boolean_predicates =
+    A.pstr_value ~loc Nonrecursive
+      [
+        A.value_binding ~loc ~pat:(pvar ~loc "and_")
+          ~expr:
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "predicates")
+               (constr_arg ~loc [ "Ent_ocaml"; "And" ]
+                  (evar ~loc "predicates")));
+        A.value_binding ~loc ~pat:(pvar ~loc "or_")
+          ~expr:
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "predicates")
+               (constr_arg ~loc [ "Ent_ocaml"; "Or" ]
+                  (evar ~loc "predicates")));
+        A.value_binding ~loc ~pat:(pvar ~loc "not_")
+          ~expr:
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "predicate")
+               (constr_arg ~loc [ "Ent_ocaml"; "Not" ]
+                  (evar ~loc "predicate")));
+      ]
+  in
   let mutation_record ~op ~predicates ~set ~clear ~add =
     A.pexp_record ~loc
       [
@@ -551,7 +571,7 @@ let gen_query_module td =
       ]
   in
   let structure =
-    query :: create :: update_fn "update_one" "Update_one"
+    query :: boolean_predicates :: create :: update_fn "update_one" "Update_one"
     :: update_fn "update" "Update"
     :: delete_fn "delete_one" "Delete_one"
     :: delete_fn "delete" "Delete"
@@ -607,6 +627,13 @@ let gen_sig_for_type td =
   in
   let create_sig =
     val_sig "create" (arrow Nolabel field_values_typ mutation_typ)
+  in
+  let boolean_sig =
+    [
+      val_sig "and_" (arrow Nolabel predicates_typ predicate_typ);
+      val_sig "or_" (arrow Nolabel predicates_typ predicate_typ);
+      val_sig "not_" (arrow Nolabel predicate_typ predicate_typ);
+    ]
   in
   let update_sig name =
     val_sig name
@@ -688,9 +715,10 @@ let gen_sig_for_type td =
         value_sig @ base @ comparison_helpers @ nil_helpers @ string_helpers
   in
   let module_items =
-    query_sig :: create_sig :: update_sig "update_one" :: update_sig "update"
-    :: delete_sig "delete_one" :: delete_sig "delete"
-    :: List.concat_map field_sig_items fields
+    query_sig :: boolean_sig
+    @ (create_sig :: update_sig "update_one" :: update_sig "update"
+      :: delete_sig "delete_one" :: delete_sig "delete"
+      :: List.concat_map field_sig_items fields)
   in
   [
     A.psig_value ~loc

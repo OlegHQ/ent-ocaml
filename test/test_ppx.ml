@@ -38,6 +38,11 @@ let test_generated_query_api () =
       ~where:
         [
           Post.user_id_eq "user_1";
+          Post.or_
+            [
+              Post.status_eq "draft";
+              Post.not_ (Post.body_has_prefix "archived");
+            ];
           Post.created_at_ms_gte 1_700_000_000L;
           Post.body_contains "hello";
           Post.media_ids_eq [ "media_1"; "media_2" ];
@@ -47,7 +52,7 @@ let test_generated_query_api () =
       ~limit:10 ()
   in
   Alcotest.(check string) "entity" "Post" query.entity.name;
-  Alcotest.(check int) "predicates" 5 (List.length query.predicates);
+  Alcotest.(check int) "predicates" 6 (List.length query.predicates);
   Alcotest.(check int) "orders" 1 (List.length query.orders);
   Alcotest.(check (option int)) "limit" (Some 10) query.limit;
   Alcotest.(check bool)
