@@ -202,8 +202,8 @@ The initial package scaffold already provides:
 | Aggregation | count, filtered/grouped min/max/sum/avg, and named scans implemented | aggregation pipeline |
 | Hooks | Generated mutation middleware via `Store.With_hooks`, `Client.With_hooks`, `Store.Schema_hooks`, `Client.Schema_hooks`, `Store.With_schema_hooks`, and `Client.With_schema_hooks` implemented with stable schema-then-caller composition | Around generated mutators |
 | Interceptors | Generated query middleware via `Store.With_interceptors`, `Client.With_interceptors`, `Store.Schema_interceptors`, `Client.Schema_interceptors`, `Store.With_schema_interceptors`, and `Client.With_schema_interceptors` implemented; traversal/eager-load edge middleware via `Store.With_edge_interceptors`, `Client.With_edge_interceptors`, `Store.Schema_edge_interceptors`, `Client.Schema_edge_interceptors`, `Store.With_schema_edge_interceptors`, and `Client.With_schema_edge_interceptors` implemented | Around query execution and traversal construction |
-| Privacy | Query/mutation rule-chain evaluation, generated policy-aware Store/Client modules, schema `Store.Schema_policy`/`Client.Schema_policy`, and stable schema-then-caller `With_schema_policy` modules implemented; mixin registration pending | Evaluated before backend execution |
-| Mixins | Reusable fields, edges, indexes, hooks, policies | PPX composition step |
+| Privacy | Query/mutation rule-chain evaluation, generated policy-aware Store/Client modules, schema `Store.Schema_policy`/`Client.Schema_policy`, stable schema-then-caller `With_schema_policy` modules, and mixin-provided privacy rule registration implemented | Evaluated before backend execution |
+| Mixins | Mixin-provided policy, hook, query-interceptor, and edge-interceptor registration implemented through `[@@ent.mixins [ Module ]]`; reusable field, edge, and index composition pending | PPX composition step |
 | Field defaults | Generated `[@ent.default expr]`, `[@ent.update_default expr]`, `[@ent.default_result expr]`, and `[@ent.update_default_result expr]` | OCaml expressions evaluated in create/update APIs |
 | Field validators | Generated `[@ent.validate [fn1; fn2]]` wrappers for primitive, enum, option, list, JSON, and nested custom record fields | Checked before backend mutation |
 | Sensitive/deprecated/comments | Generated schema metadata implemented with `[@ent.sensitive]`, `[@ent.deprecated "..."]`, and `[@ent.comment "..."]` | Snapshot/display metadata |
@@ -310,8 +310,10 @@ The initial package scaffold already provides:
    `Schema_edge_interceptors` modules. Generated `With_schema_policy`,
    `With_schema_hooks`, `With_schema_interceptors`, and
    `With_schema_edge_interceptors` modules compose schema middleware before
-   caller-provided middleware without a mutable global registry. Mixin-provided
-   rules remain.
+   caller-provided middleware without a mutable global registry. Schema
+   `[@@ent.mixins [ Module ]]` registers reusable policy, hook, query
+   interceptor, and edge interceptor modules before schema-local middleware.
+   Reusable field, edge, and index mixin composition remains.
 
 9. Aggregation, ordering, and pagination:
    filtered and grouped count/min/max/sum/avg, named aggregate scans, and

@@ -413,6 +413,28 @@ let save_audited ctx mutation =
   Post_client.Schema_hooks.insert client mutation
 ```
 
+Reusable middleware modules can be registered on a schema with `[@@ent.mixins]`.
+Mixin modules expose the same five lists as schema middleware, and EntoCaml
+composes mixins in the order listed before the schema-local attributes:
+
+```ocaml
+module Audit_mixin = struct
+  let query_rules = []
+  let mutation_rules = [ require_audited_write ]
+  let mutation_hooks = [ stamp_audit_fields ]
+  let query_interceptors = []
+  let edge_interceptors = []
+end
+
+type post = {
+  id : string;
+  body : string;
+}
+[@@ent.mixins [ Audit_mixin ]]
+[@@ent.mutation_hooks [ validate_post_write ]]
+[@@deriving ent]
+```
+
 When schema middleware should always run and a caller needs extra scoped
 middleware, use the generated `With_schema_*` functors. EntoCaml composes the
 schema list before the caller-provided list, so order is explicit and stable:

@@ -91,6 +91,11 @@ let ent_edge_interceptors_attr =
     Ast_pattern.(single_expr_payload (elist __))
     (fun interceptors -> interceptors)
 
+let ent_mixins_attr =
+  Attribute.declare "ent.mixins" Attribute.Context.type_declaration
+    Ast_pattern.(single_expr_payload (elist __))
+    (fun mixins -> mixins)
+
 let ent_optional_attr =
   Attribute.declare "ent.optional" Attribute.Context.label_declaration
     Ast_pattern.(pstr nil)
@@ -173,6 +178,14 @@ let type_path_parts path =
         Location.raise_errorf "ent deriving does not support applicative paths"
   in
   loop [] path
+
+let mixin_module_parts expr =
+  match expr.pexp_desc with
+  | Pexp_ident { txt; _ } | Pexp_construct ({ txt; _ }, None) ->
+      type_path_parts txt
+  | _ ->
+      Location.raise_errorf ~loc:expr.pexp_loc
+        "ent.mixins expects module paths, for example [ Audit_mixin ]"
 
 let label_name = function
   | Longident.Lident name -> name
@@ -1650,6 +1663,42 @@ let gen_query_module td =
   in
   let schema_edge_interceptors =
     Attribute.get ent_edge_interceptors_attr td |> Option.value ~default:[]
+  in
+  let schema_mixins =
+    Attribute.get ent_mixins_attr td |> Option.value ~default:[]
+    |> List.map mixin_module_parts
+  in
+  let concat_lists values =
+    A.pexp_apply ~loc
+      (ident ~loc [ "List"; "concat" ])
+      [ (Nolabel, list ~loc values) ]
+  in
+  let mixin_values field_name =
+    List.map
+      (fun mixin_parts -> ident ~loc (mixin_parts @ [ field_name ]))
+      schema_mixins
+  in
+  let schema_query_rules_expr =
+    concat_lists
+      (mixin_values "query_rules" @ [ list ~loc schema_query_rules ])
+  in
+  let schema_mutation_rules_expr =
+    concat_lists
+      (mixin_values "mutation_rules" @ [ list ~loc schema_mutation_rules ])
+  in
+  let schema_mutation_hooks_expr =
+    concat_lists
+      (mixin_values "mutation_hooks" @ [ list ~loc schema_mutation_hooks ])
+  in
+  let schema_query_interceptors_expr =
+    concat_lists
+      (mixin_values "query_interceptors"
+      @ [ list ~loc schema_query_interceptors ])
+  in
+  let schema_edge_interceptors_expr =
+    concat_lists
+      (mixin_values "edge_interceptors"
+      @ [ list ~loc schema_edge_interceptors ])
   in
   let query_body =
     A.pexp_record ~loc
@@ -3371,17 +3420,17 @@ let gen_query_module td =
     let schema_policy_module =
       schema_module "Schema_policy" "With_policy"
         [
-          ("query_rules", list ~loc schema_query_rules);
-          ("mutation_rules", list ~loc schema_mutation_rules);
+          ("query_rules", schema_query_rules_expr);
+          ("mutation_rules", schema_mutation_rules_expr);
         ]
     in
     let schema_hooks_module =
       schema_module "Schema_hooks" "With_hooks"
-        [ ("mutation_hooks", list ~loc schema_mutation_hooks) ]
+        [ ("mutation_hooks", schema_mutation_hooks_expr) ]
     in
     let schema_interceptors_module =
       schema_module "Schema_interceptors" "With_interceptors"
-        [ ("query_interceptors", list ~loc schema_query_interceptors) ]
+        [ ("query_interceptors", schema_query_interceptors_expr) ]
     in
     let base_structure =
       [
@@ -3586,7 +3635,7 @@ let gen_query_module td =
     in
     let schema_edge_interceptors_module =
       schema_module "Schema_edge_interceptors" "With_edge_interceptors"
-        [ ("edge_interceptors", list ~loc schema_edge_interceptors) ]
+        [ ("edge_interceptors", schema_edge_interceptors_expr) ]
     in
     let append_list left right =
       A.pexp_apply ~loc (ident ~loc [ "List"; "append" ])
@@ -3615,10 +3664,10 @@ let gen_query_module td =
         policy_type
         [
           ( "query_rules",
-            list ~loc schema_query_rules,
+            schema_query_rules_expr,
             ident ~loc [ "Policy"; "query_rules" ] );
           ( "mutation_rules",
-            list ~loc schema_mutation_rules,
+            schema_mutation_rules_expr,
             ident ~loc [ "Policy"; "mutation_rules" ] );
         ]
     in
@@ -3626,7 +3675,7 @@ let gen_query_module td =
       schema_plus_module "With_schema_hooks" "With_hooks" "Hooks" hooks_type
         [
           ( "mutation_hooks",
-            list ~loc schema_mutation_hooks,
+            schema_mutation_hooks_expr,
             ident ~loc [ "Hooks"; "mutation_hooks" ] );
         ]
     in
@@ -3635,7 +3684,7 @@ let gen_query_module td =
         "Interceptors" interceptors_type
         [
           ( "query_interceptors",
-            list ~loc schema_query_interceptors,
+            schema_query_interceptors_expr,
             ident ~loc [ "Interceptors"; "query_interceptors" ] );
         ]
     in
@@ -3644,7 +3693,7 @@ let gen_query_module td =
         "With_edge_interceptors" "Edge_interceptors" edge_interceptors_type
         [
           ( "edge_interceptors",
-            list ~loc schema_edge_interceptors,
+            schema_edge_interceptors_expr,
             ident ~loc [ "Edge_interceptors"; "edge_interceptors" ] );
         ]
     in
@@ -3979,21 +4028,21 @@ let gen_query_module td =
     let schema_policy_module =
       schema_module "Schema_policy" "With_policy"
         [
-          ("query_rules", list ~loc schema_query_rules);
-          ("mutation_rules", list ~loc schema_mutation_rules);
+          ("query_rules", schema_query_rules_expr);
+          ("mutation_rules", schema_mutation_rules_expr);
         ]
     in
     let schema_hooks_module =
       schema_module "Schema_hooks" "With_hooks"
-        [ ("mutation_hooks", list ~loc schema_mutation_hooks) ]
+        [ ("mutation_hooks", schema_mutation_hooks_expr) ]
     in
     let schema_interceptors_module =
       schema_module "Schema_interceptors" "With_interceptors"
-        [ ("query_interceptors", list ~loc schema_query_interceptors) ]
+        [ ("query_interceptors", schema_query_interceptors_expr) ]
     in
     let schema_edge_interceptors_module =
       schema_module "Schema_edge_interceptors" "With_edge_interceptors"
-        [ ("edge_interceptors", list ~loc schema_edge_interceptors) ]
+        [ ("edge_interceptors", schema_edge_interceptors_expr) ]
     in
     let append_list left right =
       A.pexp_apply ~loc (ident ~loc [ "List"; "append" ])
@@ -4022,10 +4071,10 @@ let gen_query_module td =
         policy_type
         [
           ( "query_rules",
-            list ~loc schema_query_rules,
+            schema_query_rules_expr,
             ident ~loc [ "Policy"; "query_rules" ] );
           ( "mutation_rules",
-            list ~loc schema_mutation_rules,
+            schema_mutation_rules_expr,
             ident ~loc [ "Policy"; "mutation_rules" ] );
         ]
     in
@@ -4033,7 +4082,7 @@ let gen_query_module td =
       schema_plus_module "With_schema_hooks" "With_hooks" "Hooks" hooks_type
         [
           ( "mutation_hooks",
-            list ~loc schema_mutation_hooks,
+            schema_mutation_hooks_expr,
             ident ~loc [ "Hooks"; "mutation_hooks" ] );
         ]
     in
@@ -4042,7 +4091,7 @@ let gen_query_module td =
         "Interceptors" interceptors_type
         [
           ( "query_interceptors",
-            list ~loc schema_query_interceptors,
+            schema_query_interceptors_expr,
             ident ~loc [ "Interceptors"; "query_interceptors" ] );
         ]
     in
@@ -4051,7 +4100,7 @@ let gen_query_module td =
         "With_edge_interceptors" "Edge_interceptors" edge_interceptors_type
         [
           ( "edge_interceptors",
-            list ~loc schema_edge_interceptors,
+            schema_edge_interceptors_expr,
             ident ~loc [ "Edge_interceptors"; "edge_interceptors" ] );
         ]
     in

@@ -17,6 +17,57 @@ let schema_order_events = ref []
 let record_schema_order_event event =
   schema_order_events := !schema_order_events @ [ event ]
 
+module Ordered_mixin = struct
+  let query_rules =
+    [
+      (fun _ctx _query ->
+        record_schema_order_event "mixin query";
+        Ent_ocaml.Skip);
+    ]
+
+  let mutation_rules =
+    [
+      (fun _ctx _mutation ->
+        record_schema_order_event "mixin mutation";
+        Ent_ocaml.Skip);
+    ]
+
+  let mutation_hooks =
+    [
+      {
+        Ent_ocaml.wrap_mutation =
+          (fun next ctx mutation ->
+            record_schema_order_event "mixin hook";
+            next ctx
+              (Ent_ocaml.Mutation.set ("body", Ent_ocaml.V_string "mixin")
+                 mutation));
+      };
+    ]
+
+  let query_interceptors =
+    [
+      {
+        Ent_ocaml.wrap_query =
+          (fun next ctx query ->
+            record_schema_order_event "mixin interceptor";
+            next ctx
+              (query
+               |> Ent_ocaml.Query.where
+                    (Ent_ocaml.Eq ("user_id", Ent_ocaml.V_string "mixin"))));
+      };
+    ]
+
+  let edge_interceptors =
+    [
+      {
+        Ent_ocaml.wrap_edge =
+          (fun next ctx edge_query ->
+            record_schema_order_event "mixin edge";
+            next ctx edge_query);
+      };
+    ]
+end
+
 type ordered = {
   id : string [@ent.key "_id"];
   user_id : string;
@@ -24,6 +75,7 @@ type ordered = {
   status : string;
 }
 [@@ent.entity "Ordered"] [@@ent.collection "ordered"]
+[@@ent.mixins [ Ordered_mixin ]]
 [@@ent.edges
   [
     {
@@ -1725,7 +1777,7 @@ let test_generated_schema_composed_store_api () =
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
   Alcotest.(check (list string))
     "composed query policy order"
-    [ "schema query"; "caller query" ] !schema_order_events;
+    [ "mixin query"; "schema query"; "caller query" ] !schema_order_events;
   schema_order_events := [];
   (match Ordered_policy.insert () mutation with
   | Error (`Denied "caller no writes") -> ()
@@ -1733,7 +1785,8 @@ let test_generated_schema_composed_store_api () =
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
   Alcotest.(check (list string))
     "composed mutation policy order"
-    [ "schema mutation"; "caller mutation" ] !schema_order_events;
+    [ "mixin mutation"; "schema mutation"; "caller mutation" ]
+    !schema_order_events;
   schema_order_events := [];
   (match Ordered_hooks.insert () mutation with
   | Ok (Ent_ocaml.V_doc fields) ->
@@ -1752,16 +1805,18 @@ let test_generated_schema_composed_store_api () =
   | Ok _ -> Alcotest.fail "unexpected composed hook insert result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
   Alcotest.(check (list string))
-    "composed hook order" [ "schema hook"; "caller hook" ]
+    "composed hook order" [ "mixin hook"; "schema hook"; "caller hook" ]
     !schema_order_events;
   schema_order_events := [];
   (match Ordered_interceptors.count () query with
-  | Ok 2 -> ()
-  | Ok count -> Alcotest.failf "expected two composed predicates, got %d" count
+  | Ok 3 -> ()
+  | Ok count ->
+      Alcotest.failf "expected three composed predicates, got %d" count
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
   Alcotest.(check (list string))
     "composed interceptor order"
-    [ "schema interceptor"; "caller interceptor" ] !schema_order_events;
+    [ "mixin interceptor"; "schema interceptor"; "caller interceptor" ]
+    !schema_order_events;
   schema_order_events := [];
   let edge_query =
     let open Ordered in
@@ -1772,7 +1827,7 @@ let test_generated_schema_composed_store_api () =
   | Ok _ -> Alcotest.fail "unexpected composed edge traverse result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
   Alcotest.(check (list string))
-    "composed edge interceptor order" [ "schema edge"; "caller edge" ]
+    "composed edge interceptor order" [ "mixin edge"; "schema edge"; "caller edge" ]
     !schema_order_events
 
 let test_generated_schema_composed_client_api () =
@@ -1828,17 +1883,18 @@ let test_generated_schema_composed_client_api () =
   | Ok _ -> Alcotest.fail "unexpected client composed hook insert result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
   Alcotest.(check (list string))
-    "client composed hook order" [ "schema hook"; "client hook" ]
+    "client composed hook order" [ "mixin hook"; "schema hook"; "client hook" ]
     !schema_order_events;
   schema_order_events := [];
   (match Ordered_interceptors.count intercepted_client (Ordered.query ()) with
-  | Ok 2 -> ()
+  | Ok 3 -> ()
   | Ok count ->
-      Alcotest.failf "expected two client composed predicates, got %d" count
+      Alcotest.failf "expected three client composed predicates, got %d" count
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
   Alcotest.(check (list string))
     "client composed interceptor order"
-    [ "schema interceptor"; "client interceptor" ] !schema_order_events
+    [ "mixin interceptor"; "schema interceptor"; "client interceptor" ]
+    !schema_order_events
 
 let test_generated_dynamic_filter_api () =
   let open Ent_ocaml.Result_syntax in
