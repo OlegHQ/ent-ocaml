@@ -1095,6 +1095,32 @@ let run_flow client =
     (match entql_engineering_slug_posts with
     | [ doc ] -> Bson.get_string (Bson.get_element "_id" doc) = "post_1"
     | _ -> false);
+  let* alice_post_count =
+    Ent_ocaml_mongo.count ctx
+      (Ent_ocaml.Query.make post_entity
+         ~where:
+           Ent_ocaml.
+             [
+               Has_edge_with_target
+                 {
+                   edge = "user";
+                   target = user_entity;
+                   predicates = [ Eq ("username", V_string "alice") ];
+                 };
+             ])
+  in
+  assert_true "target edge count returns alice posts" (alice_post_count = 1);
+  let* engineering_post_count =
+    match
+      Ent_ocaml.Query.make post_entity
+      |> Ent_ocaml.Entql.where ~targets:[ user_entity; org_entity ]
+           {|user.org.slug == "engineering"|}
+    with
+    | Ok query -> Ent_ocaml_mongo.count ctx query
+    | Error _ as error -> error
+  in
+  assert_true "nested target edge count returns engineering posts"
+    (engineering_post_count = 1);
   let* alice_posts =
     Ent_ocaml_mongo.find ctx
       (Ent_ocaml.Query.make post_entity
@@ -1148,6 +1174,16 @@ let run_flow client =
        (fun doc -> Bson.get_string (Bson.get_element "_id" doc))
        entql_ocaml_tag_posts
     = [ "post_1"; "post_2b" ]);
+  let* ocaml_tag_count =
+    match
+      Ent_ocaml.Query.make post_entity
+      |> Ent_ocaml.Entql.where ~targets:[ tag_entity ] {|tags.name == "ocaml"|}
+    with
+    | Ok query -> Ent_ocaml_mongo.count ctx query
+    | Error _ as error -> error
+  in
+  assert_true "join target edge count returns tagged posts"
+    (ocaml_tag_count = 2);
   assert_true "named edge alias preserved"
     (query_user_from_posts.Ent_ocaml.edge_alias = Some "author");
   let* traversed_users =

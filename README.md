@@ -520,6 +520,11 @@ let load_filtered ctx =
   Posts.all ctx ~decode:post_of_bson_doc_result query
 ```
 
+Generated `Store.count` and `Client.count` use the same query values as `all`
+and `one`. Mongo counts ordinary filters with `countDocuments` and uses the
+aggregate planner for edge target, join-backed edge, and EntQL relationship
+predicates.
+
 JSON fields can be marked with `[@ent.json]` and queried through generated
 path helpers:
 

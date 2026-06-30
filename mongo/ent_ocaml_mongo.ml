@@ -1912,17 +1912,61 @@ let find_one_as ctx query ~decode =
   | Ok (Some doc) -> decode_document ~decode doc |> Result.map Option.some
   | Error _ as error -> error
 
-let count ctx (query : Ent_ocaml.query) =
-  match filter_to_bson query with
+let count_of_bson_element element =
+  try Ok (Int64.to_int (Bson.get_int64 element)) with
+  | _ -> (
+      try Ok (Int32.to_int (Bson.get_int32 element)) with
+      | _ -> Error (`Decode "aggregate count is not an integer"))
+
+let count_with_aggregate ctx (query : Ent_ocaml.query) =
+  let query =
+    {
+      query with
+      select = [];
+      orders = [];
+      limit = None;
+      offset = None;
+    }
+  in
+  match find_aggregate_pipeline query with
   | Error _ as error -> error
-  | Ok filter -> (
+  | Ok pipeline -> (
+      let pipeline =
+        pipeline
+        @ [ doc [ ("$count", Bson.create_string "__ent_count") ] ]
+      in
       let session = transaction_session ctx in
       match
-        Mongo_eio.direct_count_documents ?session ctx.client ~db:ctx.config.database
-          ~collection:query.Ent_ocaml.entity.collection ~query:filter ()
+        Mongo_eio.direct_run_command ?session ctx.client ctx.config.database
+          [
+            ("aggregate", Bson.create_string query.Ent_ocaml.entity.collection);
+            ("pipeline", Bson.create_doc_element_list pipeline);
+            ("cursor", Bson.create_doc_element Bson.empty);
+          ]
       with
-      | Ok count -> Ok count
-      | Error error -> Error (backend_error "count" query.entity error))
+      | Error error -> Error (backend_error "aggregate count" query.entity error)
+      | Ok response -> (
+          match Mongo_command.cursor_batch response.Mongo_command.body with
+          | [] -> Ok 0
+          | doc :: _ -> (
+              match Bson.get_element "__ent_count" doc with
+              | exception Not_found -> Error (`Decode "aggregate count missing")
+              | element -> count_of_bson_element element)))
+
+let count ctx (query : Ent_ocaml.query) =
+  if has_edge_target_predicate query || has_join_edge_predicate query then
+    count_with_aggregate ctx query
+  else
+    match filter_to_bson query with
+    | Error _ as error -> error
+    | Ok filter -> (
+        let session = transaction_session ctx in
+        match
+          Mongo_eio.direct_count_documents ?session ctx.client ~db:ctx.config.database
+            ~collection:query.Ent_ocaml.entity.collection ~query:filter ()
+        with
+        | Ok count -> Ok count
+        | Error error -> Error (backend_error "count" query.entity error))
 
 let value_of_bson_element element =
   let decoders =
