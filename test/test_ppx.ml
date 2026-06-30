@@ -4,6 +4,7 @@ type post = {
   body : string;
   media_ids : string list;
   status : string [@ent.enum [ "draft"; "published" ]];
+  created_at_ms : int64;
   published_at_ms : int64 option;
 }
 [@@ent.entity "Post"] [@@ent.collection "posts"] [@@deriving ent]
@@ -16,7 +17,7 @@ let find_field name =
 let test_entity_metadata () =
   Alcotest.(check string) "entity name" "Post" post_entity.name;
   Alcotest.(check string) "collection" "posts" post_entity.collection;
-  Alcotest.(check int) "field count" 6 (List.length post_entity.fields);
+  Alcotest.(check int) "field count" 7 (List.length post_entity.fields);
   let id = find_field "id" in
   Alcotest.(check string) "id storage key" "_id" id.storage_key;
   Alcotest.(check bool) "id unique" true id.unique;
@@ -37,6 +38,7 @@ let test_generated_query_api () =
       ~where:
         [
           Post.user_id_eq "user_1";
+          Post.created_at_ms_gte 1_700_000_000L;
           Post.body_contains "hello";
           Post.media_ids_eq [ "media_1"; "media_2" ];
           Post.published_at_ms_is_nil ();
@@ -45,7 +47,7 @@ let test_generated_query_api () =
       ~limit:10 ()
   in
   Alcotest.(check string) "entity" "Post" query.entity.name;
-  Alcotest.(check int) "predicates" 4 (List.length query.predicates);
+  Alcotest.(check int) "predicates" 5 (List.length query.predicates);
   Alcotest.(check int) "orders" 1 (List.length query.orders);
   Alcotest.(check (option int)) "limit" (Some 10) query.limit;
   Alcotest.(check bool)
@@ -63,13 +65,14 @@ let test_generated_mutation_api () =
         Post.body "hello";
         Post.media_ids [ "media_1"; "media_2" ];
         Post.status "draft";
+        Post.created_at_ms 1_700_000_000L;
         Post.published_at_ms None;
       ]
   in
   Alcotest.(check bool)
     "create op" true
     (match create.op with Ent_ocaml.Create -> true | _ -> false);
-  Alcotest.(check int) "create fields" 6 (List.length create.set);
+  Alcotest.(check int) "create fields" 7 (List.length create.set);
   let update =
     Post.update_one ~where:[ Post.id_eq "post_1" ]
       ~set:[ Post.body "updated" ] ~clear:[ "published_at_ms" ] ()

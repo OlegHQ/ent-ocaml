@@ -137,6 +137,30 @@ let is_option field =
       true
   | _ -> false
 
+let is_comparable_field field =
+  if is_option field then false
+  else
+    match Attribute.get ent_enum_attr field with
+    | Some _ -> false
+    | None -> (
+        match field.pld_type.ptyp_desc with
+        | Ptyp_constr ({ txt = Longident.Lident "string"; _ }, [])
+        | Ptyp_constr ({ txt = Longident.Lident "int"; _ }, [])
+        | Ptyp_constr ({ txt = Longident.Lident "int32"; _ }, [])
+        | Ptyp_constr
+            ( { txt = Longident.Ldot (Longident.Lident "Int32", "t"); _ },
+              [] )
+        | Ptyp_constr ({ txt = Longident.Lident "int64"; _ }, [])
+        | Ptyp_constr
+            ( { txt = Longident.Ldot (Longident.Lident "Int64", "t"); _ },
+              [] )
+        | Ptyp_constr ({ txt = Longident.Lident "float"; _ }, []) ->
+            true
+        | Ptyp_constr ({ txt = path; _ }, []) ->
+            let name = String.concat "." (type_path_parts path) in
+            name = "Ptime.t" || name = "Uuidm.t"
+        | _ -> false)
+
 let rec value_constructor field =
   match Attribute.get ent_enum_attr field with
   | Some _ -> Some [ "Ent_ocaml"; "V_string" ]
@@ -351,6 +375,20 @@ let field_helper_items field =
           order;
         ]
       in
+      let comparison_helpers =
+        if is_comparable_field field then
+          [
+            predicate_function ~loc (field_name ^ "_gt")
+              [ "Ent_ocaml"; "Gt" ] field_name field;
+            predicate_function ~loc (field_name ^ "_gte")
+              [ "Ent_ocaml"; "Gte" ] field_name field;
+            predicate_function ~loc (field_name ^ "_lt")
+              [ "Ent_ocaml"; "Lt" ] field_name field;
+            predicate_function ~loc (field_name ^ "_lte")
+              [ "Ent_ocaml"; "Lte" ] field_name field;
+          ]
+        else []
+      in
       let nil_helpers =
         if is_option field then
           [
@@ -374,7 +412,7 @@ let field_helper_items field =
             ]
         | _ -> []
       in
-      value_item @ base @ nil_helpers @ string_helpers
+      value_item @ base @ comparison_helpers @ nil_helpers @ string_helpers
 
 let field_expr field =
   let loc = field.pld_loc in
@@ -610,6 +648,20 @@ let gen_sig_for_type td =
             order_sig;
           ]
         in
+        let comparison_helpers =
+          if is_comparable_field field then
+            [
+              val_sig (field_name ^ "_gt")
+                (arrow Nolabel field_typ predicate_typ);
+              val_sig (field_name ^ "_gte")
+                (arrow Nolabel field_typ predicate_typ);
+              val_sig (field_name ^ "_lt")
+                (arrow Nolabel field_typ predicate_typ);
+              val_sig (field_name ^ "_lte")
+                (arrow Nolabel field_typ predicate_typ);
+            ]
+          else []
+        in
         let nil_helpers =
           if is_option field then
             [
@@ -633,7 +685,7 @@ let gen_sig_for_type td =
               ]
           | _ -> []
         in
-        value_sig @ base @ nil_helpers @ string_helpers
+        value_sig @ base @ comparison_helpers @ nil_helpers @ string_helpers
   in
   let module_items =
     query_sig :: create_sig :: update_sig "update_one" :: update_sig "update"
