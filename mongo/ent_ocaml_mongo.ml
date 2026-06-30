@@ -300,6 +300,20 @@ let insert ctx entity doc =
       Error (`Constraint "duplicate key")
   | Error error -> Error (backend_error "insert" entity error)
 
+let insert_many ?(ordered = true) ctx entity docs =
+  match docs with
+  | [] -> Ok []
+  | _ -> (
+      let options = Mongo_crud.{ default_insert with ordered } in
+      match
+        Mongo_eio.direct_insert_many ctx.client ~db:ctx.config.database
+          ~collection:entity.Ent_ocaml.collection ~options docs
+      with
+      | Ok _ -> Ok docs
+      | Error error when Mongo_error.is_duplicate_key error ->
+          Error (`Constraint "duplicate key")
+      | Error error -> Error (backend_error "insert_many" entity error))
+
 let insert_values ctx (mutation : Ent_ocaml.mutation) =
   match mutation.op with
   | Ent_ocaml.Create -> (
@@ -308,6 +322,34 @@ let insert_values ctx (mutation : Ent_ocaml.mutation) =
       | Ok doc -> insert ctx mutation.entity doc)
   | Update_one | Update | Delete_one | Delete ->
       Error (`Bad_query "insert_values expects Create mutation op")
+
+let insert_many_values ?ordered ctx mutations =
+  let rec loop entity acc = function
+    | [] -> (
+        match entity with
+        | None -> Ok []
+        | Some entity -> insert_many ?ordered ctx entity (List.rev acc))
+    | (mutation : Ent_ocaml.mutation) :: rest -> (
+        match mutation.op with
+        | Ent_ocaml.Create -> (
+            let same_entity =
+              match entity with
+              | None -> true
+              | Some entity ->
+                  entity.name = mutation.entity.name
+                  && entity.collection = mutation.entity.collection
+            in
+            if not same_entity then
+              Error (`Bad_query "insert_many_values expects one entity")
+            else
+              match document_to_bson mutation.set with
+              | Error _ as error -> error
+              | Ok doc ->
+                  loop (Some mutation.entity) (doc :: acc) rest)
+        | Update_one | Update | Delete_one | Delete ->
+            Error (`Bad_query "insert_many_values expects Create mutation ops"))
+  in
+  loop None [] mutations
 
 let update ctx (mutation : Ent_ocaml.mutation) =
   let entity = mutation.Ent_ocaml.entity in

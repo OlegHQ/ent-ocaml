@@ -59,11 +59,12 @@ The initial package scaffold already provides:
 - Core schema descriptors for fields, edges, indexes, predicates, ordering,
   queries, mutations, errors, privacy decisions, and backend signatures.
 - Mongo planning and CRUD execution for scalar filters, boolean predicates,
-  ordering, limit/offset, insert, update, delete, count, and basic value
-  translation.
+  ordering, limit/offset, insert, bulk insert, update, delete, count, and basic
+  value translation.
 - `[@@deriving ent]` generation for entity metadata, functional query helpers,
   typed field predicates, typed ordering helpers, create/update/delete mutation
-  values, and matching `.mli` signatures for generated helper modules.
+  values, create-bulk helpers, and matching `.mli` signatures for generated
+  helper modules.
 - Poster pilot integration for `User`, `Session`, `Post`, `Media`,
   `PublishState`, and `PublishAttempt` DTO entities.
 
@@ -132,7 +133,8 @@ The initial package scaffold already provides:
 4. Generated CRUD API:
    generate create, create-bulk, query, update-one, update-many, delete-one, and
    delete-many builders with result-returning APIs. Do not generate exception
-   shortcuts for Poster.
+   shortcuts for Poster. Create-bulk is implemented as an OCaml list-based API;
+   required-field validation is still pending.
 
 5. Poster pilot:
    model `User`, `Session`, `Post`, `Media`, and `PublishAttempt`; replace the

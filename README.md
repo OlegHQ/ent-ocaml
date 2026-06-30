@@ -10,6 +10,12 @@ one Git submodule that contains three packages:
 - `ent-ocaml-ppx`: PPX generator for entity-specific clients, predicates, and
   builders.
 
+The generated API is intentionally OCaml-shaped. For example, a schema record
+deriving `ent` produces a module with `query`, `create`, `create_many`,
+`update_one`, `update`, `delete_one`, `delete`, field predicates, field value
+helpers, and order helpers. Backends execute those typed values with
+`result`-returning functions such as `Ent_ocaml_mongo.insert_many_values`.
+
 The first production target is Poster, whose Mongo store code should be replaced
 by generated entity clients once the Mongo backend and PPX are complete.
 

@@ -42,7 +42,20 @@ val find_one_as :
 val count : ctx -> Ent_ocaml.query -> (int, Ent_ocaml.error) result
 val ensure_indexes : ctx -> Ent_ocaml.entity list -> (unit, Ent_ocaml.error) result
 val insert : ctx -> Ent_ocaml.entity -> Bson.t -> (Bson.t, Ent_ocaml.error) result
+val insert_many :
+  ?ordered:bool ->
+  ctx ->
+  Ent_ocaml.entity ->
+  Bson.t list ->
+  (Bson.t list, Ent_ocaml.error) result
+
 val insert_values : ctx -> Ent_ocaml.mutation -> (Bson.t, Ent_ocaml.error) result
+val insert_many_values :
+  ?ordered:bool ->
+  ctx ->
+  Ent_ocaml.mutation list ->
+  (Bson.t list, Ent_ocaml.error) result
+
 val update_one : ctx -> Ent_ocaml.mutation -> (unit, Ent_ocaml.error) result
 val update : ctx -> Ent_ocaml.mutation -> (int, Ent_ocaml.error) result
 val delete : ctx -> Ent_ocaml.mutation -> (int, Ent_ocaml.error) result

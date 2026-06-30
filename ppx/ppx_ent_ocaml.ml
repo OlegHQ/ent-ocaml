@@ -612,6 +612,16 @@ let gen_query_module td =
                   ~add:(list ~loc [])));
       ]
   in
+  let create_many =
+    A.pstr_value ~loc Nonrecursive
+      [
+        A.value_binding ~loc ~pat:(pvar ~loc "create_many")
+          ~expr:
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "rows")
+               (app ~loc (ident ~loc [ "List"; "map" ])
+                  [ evar ~loc "create"; evar ~loc "rows" ]));
+      ]
+  in
   let update_fn name op =
     A.pstr_value ~loc Nonrecursive
       [
@@ -646,7 +656,8 @@ let gen_query_module td =
       ]
   in
   let structure =
-    query :: boolean_predicates :: create :: update_fn "update_one" "Update_one"
+    query :: boolean_predicates :: create :: create_many
+    :: update_fn "update_one" "Update_one"
     :: update_fn "update" "Update"
     :: delete_fn "delete_one" "Delete_one"
     :: delete_fn "delete" "Delete"
@@ -709,6 +720,10 @@ let gen_sig_for_type td =
   in
   let create_sig =
     val_sig "create" (arrow Nolabel field_values_typ mutation_typ)
+  in
+  let create_many_sig =
+    val_sig "create_many"
+      (arrow Nolabel (list_typ field_values_typ) (list_typ mutation_typ))
   in
   let boolean_sig =
     [
@@ -798,7 +813,7 @@ let gen_sig_for_type td =
   in
   let module_items =
     query_sig :: boolean_sig
-    @ (create_sig :: update_sig "update_one" :: update_sig "update"
+    @ (create_sig :: create_many_sig :: update_sig "update_one" :: update_sig "update"
       :: delete_sig "delete_one" :: delete_sig "delete"
       :: List.concat_map field_sig_items fields)
   in

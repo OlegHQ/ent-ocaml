@@ -107,6 +107,36 @@ let test_generated_mutation_api () =
     "create op" true
     (match create.op with Ent_ocaml.Create -> true | _ -> false);
   Alcotest.(check int) "create fields" 7 (List.length create.set);
+  let create_many =
+    Post.create_many
+      [
+        [
+          Post.id "post_1";
+          Post.user_id "user_1";
+          Post.body "hello";
+          Post.media_ids [];
+          Post.status "draft";
+          Post.created_at_ms 1L;
+          Post.published_at_ms None;
+        ];
+        [
+          Post.id "post_2";
+          Post.user_id "user_1";
+          Post.body "second";
+          Post.media_ids [];
+          Post.status "draft";
+          Post.created_at_ms 2L;
+          Post.published_at_ms None;
+        ];
+      ]
+  in
+  Alcotest.(check int) "bulk create rows" 2 (List.length create_many);
+  Alcotest.(check bool)
+    "bulk create ops" true
+    (List.for_all
+       (fun mutation ->
+         match mutation.Ent_ocaml.op with Ent_ocaml.Create -> true | _ -> false)
+       create_many);
   let update =
     Post.update_one ~where:[ Post.id_eq "post_1" ]
       ~set:[ Post.body "updated" ] ~clear:[ "published_at_ms" ] ()

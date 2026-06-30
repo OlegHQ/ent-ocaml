@@ -140,6 +140,7 @@ module type BACKEND = sig
 
   val find : ctx -> query -> (doc list, error) result
   val insert : ctx -> entity -> doc -> (doc, error) result
+  val insert_many : ctx -> entity -> doc list -> (doc list, error) result
   val update : ctx -> mutation -> (int, error) result
   val delete : ctx -> mutation -> (int, error) result
   val count : ctx -> query -> (int, error) result
