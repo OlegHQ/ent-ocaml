@@ -99,6 +99,7 @@ type order_direction = Asc | Desc
 type order = {
   field : string;
   direction : order_direction;
+  value_alias : string option;
 }
 
 type cursor_term = {
@@ -168,6 +169,7 @@ module Query : sig
   val where_all : predicate list -> query -> query
   val select : string list -> query -> query
   val order_by : order list -> query -> query
+  val order_value : string -> order -> order
   val limit : int -> query -> query
   val offset : int -> query -> query
   val after :

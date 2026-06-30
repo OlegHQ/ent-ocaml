@@ -119,6 +119,15 @@ let order_field ?entity field =
               | Error _ -> field)
           | Some _ | None -> field))
 
+let order_storage_key (entity : Ent_ocaml.entity) field =
+  match field_storage_key entity field with
+  | Ok key -> Ok key
+  | Error (`Bad_schema _) -> (
+      match split_dotted_field field with
+      | Some (root, (_ :: _ as path)) -> json_path_field ~entity root path
+      | Some _ | None -> Error (`Bad_query ("field not found: " ^ field)))
+  | Error _ as error -> error
+
 let edge_storage_key (entity : Ent_ocaml.entity) name =
   match find_edge entity name with
   | None -> Error (`Bad_query ("edge not found: " ^ name))
@@ -358,17 +367,33 @@ let sort_to_bson ?entity (orders : Ent_ocaml.order list) =
       Some (doc fields)
 
 let projection_to_bson (query : Ent_ocaml.query) =
-  match query.select with
-  | [] -> Ok None
-  | fields ->
-      let rec loop acc = function
-        | [] -> Ok (Some (doc (List.rev acc)))
-        | field :: rest -> (
-            match field_storage_key query.entity field with
-            | Ok key -> loop ((key, Bson.create_int32 1l) :: acc) rest
-            | Error _ as error -> error)
-      in
-      loop [] fields
+  let add_projection acc key =
+    if List.exists (fun (existing, _) -> existing = key) acc then acc
+    else (key, Bson.create_int32 1l) :: acc
+  in
+  let rec add_select acc = function
+    | [] -> Ok acc
+    | field :: rest -> (
+        match field_storage_key query.entity field with
+        | Ok key -> add_select (add_projection acc key) rest
+        | Error _ as error -> error)
+  in
+  let rec add_order_values acc = function
+    | [] -> Ok acc
+    | ({ value_alias = None; _ } : Ent_ocaml.order) :: rest ->
+        add_order_values acc rest
+    | { field; value_alias = Some _; _ } :: rest -> (
+        match order_storage_key query.entity field with
+        | Ok key -> add_order_values (add_projection acc key) rest
+        | Error _ as error -> error)
+  in
+  match add_select [] query.select with
+  | Error _ as error -> error
+  | Ok fields -> (
+      match add_order_values fields query.orders with
+      | Error _ as error -> error
+      | Ok [] -> Ok None
+      | Ok fields -> Ok (Some (doc (List.rev fields))))
 
 let find_options (query : Ent_ocaml.query) =
   match (filter_to_bson query, projection_to_bson query) with
@@ -648,24 +673,53 @@ let value_of_bson_element element =
   in
   loop decoders
 
+let bson_element_at_path doc key =
+  let direct () = Bson.get_element key doc in
+  let nested () =
+    match String.split_on_char '.' key with
+    | [] -> raise Not_found
+    | root :: path ->
+        let rec loop current = function
+          | [] -> raise Not_found
+          | [ segment ] -> Bson.get_element segment current
+          | segment :: rest ->
+              loop (Bson.get_doc_element (Bson.get_element segment current)) rest
+        in
+        loop doc (root :: path)
+  in
+  try direct () with
+  | _ -> nested ()
+
 let selected_fields (query : Ent_ocaml.query) =
-  match query.select with
-  | [] -> Error (`Bad_query "values expects selected fields")
+  let fields =
+    List.map
+      (fun field -> (field, fun () -> field_storage_key query.entity field))
+      query.select
+  in
+  let order_values =
+    query.orders
+    |> List.filter_map (fun ({ field; value_alias; _ } : Ent_ocaml.order) ->
+           Option.map
+             (fun alias -> (alias, fun () -> order_storage_key query.entity field))
+             value_alias)
+  in
+  match fields @ order_values with
+  | [] -> Error (`Bad_query "values expects selected fields or order values")
   | fields -> Ok fields
 
 let selected_row (query : Ent_ocaml.query) doc =
   let rec loop acc = function
     | [] -> Ok (Ent_ocaml.V_doc (List.rev acc))
-    | field :: rest -> (
-        match field_storage_key query.Ent_ocaml.entity field with
+    | (label, storage_key) :: rest -> (
+        match storage_key () with
         | Error _ as error -> error
         | Ok key -> (
             try
-              match value_of_bson_element (Bson.get_element key doc) with
-              | Ok value -> loop ((field, value) :: acc) rest
+              match value_of_bson_element (bson_element_at_path doc key) with
+              | Ok value -> loop ((label, value) :: acc) rest
               | Error _ as error -> error
             with
-            | _ -> Error (`Decode ("selected field missing: " ^ field))))
+            | _ -> Error (`Decode ("selected field missing: " ^ label))))
   in
   match selected_fields query with
   | Error _ as error -> error
@@ -682,13 +736,15 @@ let selected_rows (query : Ent_ocaml.query) docs =
   loop [] docs
 
 let selected_value (query : Ent_ocaml.query) doc =
-  match query.Ent_ocaml.select with
-  | [ field ] -> (
+  match selected_fields query with
+  | Ok [ (field, _) ] -> (
       match selected_row query doc with
       | Ok (Ent_ocaml.V_doc fields) -> Ok (List.assoc field fields)
       | Ok _ -> Error (`Decode "selected row is not a document")
       | Error _ as error -> error)
-  | [] | _ :: _ :: _ -> Error (`Bad_query "value expects one selected field")
+  | Ok [] | Ok (_ :: _ :: _) ->
+      Error (`Bad_query "value expects one selected field or order value")
+  | Error _ as error -> error
 
 let values ctx query =
   match find ctx query with

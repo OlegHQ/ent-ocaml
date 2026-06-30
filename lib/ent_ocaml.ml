@@ -99,6 +99,7 @@ type order_direction = Asc | Desc
 type order = {
   field : string;
   direction : order_direction;
+  value_alias : string option;
 }
 
 type cursor_term = {
@@ -240,6 +241,7 @@ module Query = struct
 
   let select fields query = { query with select = fields }
   let order_by orders query = { query with orders }
+  let order_value alias order = { order with value_alias = Some alias }
   let limit limit query = { query with limit = Some limit }
   let offset offset query = { query with offset = Some offset }
 
@@ -252,7 +254,7 @@ module Query = struct
     List.fold_left
       (fun query term ->
         ensure_order
-          ({ field = term.field; direction = term.direction } : order)
+          ({ field = term.field; direction = term.direction; value_alias = None } : order)
           query)
       query terms
 
@@ -292,7 +294,7 @@ module Query = struct
     in
     query
     |> where predicate
-    |> ensure_order { field; direction }
+    |> ensure_order { field; direction; value_alias = None }
 
   let before ~field ~direction value query =
     let predicate =
@@ -302,7 +304,7 @@ module Query = struct
     in
     query
     |> where predicate
-    |> ensure_order { field; direction }
+    |> ensure_order { field; direction; value_alias = None }
 
   let after_cursor terms query = seek ~after:true terms query
   let before_cursor terms query = seek ~after:false terms query

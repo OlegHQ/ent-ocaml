@@ -119,6 +119,17 @@ let post_summaries ctx =
   |> Posts.values ctx
 ```
 
+Order helpers can expose the sorted value under a stable alias:
+
+```ocaml
+let recent_order_values ctx =
+  let open Post in
+  query ()
+  |> order_by [ created_at_ms_order ~direction:Ent_ocaml.Desc ~as_:"created" () ]
+  |> limit 20
+  |> Posts.values ctx
+```
+
 Mutation hooks wrap generated stores in the same module-first style:
 
 ```ocaml

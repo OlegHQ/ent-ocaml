@@ -201,7 +201,7 @@ let query_all =
       entity = post_entity;
       predicates = [];
       select = [];
-      orders = [ { field = "id"; direction = Asc } ];
+      orders = [ { field = "id"; direction = Asc; value_alias = None } ];
       limit = None;
       offset = None;
     }
@@ -212,7 +212,7 @@ let query_user_1 =
       entity = post_entity;
       predicates = [ Has_edge_with ("user", [ Eq ("id", V_string "user_1") ]) ];
       select = [];
-      orders = [ { field = "id"; direction = Asc } ];
+      orders = [ { field = "id"; direction = Asc; value_alias = None } ];
       limit = None;
       offset = None;
     }
@@ -323,6 +323,24 @@ let run_flow client =
   in
   assert_true "selected value returns first field"
     (selected_value = Some (Ent_ocaml.V_string "first"));
+  let* selected_order_value =
+    Ent_ocaml_mongo.value ctx
+      Ent_ocaml.
+        {
+          query_all with
+          orders =
+            [
+              {
+                field = "views";
+                direction = Desc;
+                value_alias = Some "ordered_views";
+              };
+            ];
+          limit = Some 1;
+        }
+  in
+  assert_true "selected order value returns sort term"
+    (selected_order_value = Some (Ent_ocaml.V_int64 20L));
   let* dynamic_user_posts =
     match
       Ent_ocaml.Query.make post_entity
@@ -354,7 +372,7 @@ let run_flow client =
           entity = post_entity;
           predicates = [];
           select = [];
-          orders = [ { field = "metadata.priority"; direction = Desc } ];
+          orders = [ { field = "metadata.priority"; direction = Desc; value_alias = None } ];
           limit = Some 2;
           offset = None;
         }
@@ -365,6 +383,24 @@ let run_flow client =
         Bson.get_string (Bson.get_element "_id" first) = "post_2b"
         && Bson.get_string (Bson.get_element "_id" second) = "post_2"
     | _ -> false);
+  let* selected_json_order_value =
+    Ent_ocaml_mongo.value ctx
+      Ent_ocaml.
+        {
+          query_all with
+          orders =
+            [
+              {
+                field = "metadata.priority";
+                direction = Desc;
+                value_alias = Some "priority";
+              };
+            ];
+          limit = Some 1;
+        }
+  in
+  assert_true "selected json order value returns sort term"
+    (selected_json_order_value = Some (Ent_ocaml.V_int64 30L));
   let* page = Ent_ocaml_mongo.find ctx query_after_post_1 in
   assert_true "seek pagination returns next row"
     (match page with

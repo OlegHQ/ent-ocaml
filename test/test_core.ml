@@ -186,11 +186,19 @@ let test_query_pipeline_api () =
     Ent_ocaml.Query.make post_entity
     |> Ent_ocaml.Query.where Ent_ocaml.(Eq ("user_id", V_string "user_1"))
     |> Ent_ocaml.Query.select [ "id"; "body" ]
-    |> Ent_ocaml.Query.order_by Ent_ocaml.[ { field = "id"; direction = Asc } ]
+    |> Ent_ocaml.Query.order_by
+         Ent_ocaml.
+           [
+             { field = "id"; direction = Asc; value_alias = None }
+             |> Query.order_value "ordered_id";
+           ]
     |> Ent_ocaml.Query.limit 5
   in
   Alcotest.(check int) "predicates" 1 (List.length query.predicates);
   Alcotest.(check (list string)) "select" [ "id"; "body" ] query.select;
+  Alcotest.(check (option string))
+    "order value alias" (Some "ordered_id")
+    (List.hd query.orders).value_alias;
   Alcotest.(check (option int)) "limit" (Some 5) query.limit
 
 let test_query_seek_pagination () =
@@ -211,7 +219,7 @@ let test_query_seek_pagination () =
     | _ -> false);
   let before_query =
     Ent_ocaml.Query.make post_entity
-    |> Ent_ocaml.Query.order_by Ent_ocaml.[ { field = "id"; direction = Desc } ]
+    |> Ent_ocaml.Query.order_by Ent_ocaml.[ { field = "id"; direction = Desc; value_alias = None } ]
     |> Ent_ocaml.Query.before ~field:"id" ~direction:Ent_ocaml.Desc
          (Ent_ocaml.V_string "post_2")
   in
@@ -448,7 +456,7 @@ let test_mongo_storage_key_planning () =
     (Bson.get_string (Bson.get_element "_id" filter));
   let sort =
     Ent_ocaml_mongo.sort_to_bson ~entity:post_entity
-      Ent_ocaml.[ { field = "id"; direction = Asc } ]
+      Ent_ocaml.[ { field = "id"; direction = Asc; value_alias = None } ]
     |> Option.get
   in
   Alcotest.(check int32)
@@ -483,7 +491,7 @@ let test_mongo_json_path_planning () =
     (Bson.get_boolean (Bson.get_element "meta.flags.pinned" filter));
   let sort =
     Ent_ocaml_mongo.sort_to_bson ~entity:post_entity
-      Ent_ocaml.[ { field = "metadata.priority"; direction = Desc } ]
+      Ent_ocaml.[ { field = "metadata.priority"; direction = Desc; value_alias = None } ]
     |> Option.get
   in
   Alcotest.(check int32)
@@ -534,7 +542,7 @@ let test_mongo_has_edge_with_id_planning () =
 let test_mongo_sort_planning () =
   let sort =
     Ent_ocaml_mongo.sort_to_bson
-      Ent_ocaml.[ { field = "created_at_ms"; direction = Desc } ]
+      Ent_ocaml.[ { field = "created_at_ms"; direction = Desc; value_alias = None } ]
     |> Option.get
   in
   Alcotest.(check int32)
@@ -543,14 +551,30 @@ let test_mongo_sort_planning () =
 
 let test_mongo_projection_planning () =
   let projection =
-    match Ent_ocaml_mongo.projection_to_bson (query ~select:[ "id" ] ()) with
+    match
+      Ent_ocaml_mongo.projection_to_bson
+        (query ~select:[ "id" ]
+           ~orders:
+             Ent_ocaml.
+               [
+                 {
+                   field = "body";
+                   direction = Desc;
+                   value_alias = Some "ordered_body";
+                 };
+               ]
+           ())
+    with
     | Ok (Some projection) -> projection
     | Ok None -> Alcotest.fail "expected projection"
     | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
   in
   Alcotest.(check int32)
     "id storage projection" 1l
-    (Bson.get_int32 (Bson.get_element "_id" projection))
+    (Bson.get_int32 (Bson.get_element "_id" projection));
+  Alcotest.(check int32)
+    "order value projection" 1l
+    (Bson.get_int32 (Bson.get_element "body" projection))
 
 let test_mongo_projection_missing_field () =
   match Ent_ocaml_mongo.projection_to_bson (query ~select:[ "missing" ] ()) with

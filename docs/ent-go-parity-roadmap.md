@@ -94,8 +94,8 @@ The initial package scaffold already provides:
   reads and mutations and expose `with_transaction` plus `Tx` operation modules
   through the backend transaction boundary.
   Generated Store/Client `values` and `value` helpers decode selected Mongo
-  projection fields to `Ent_ocaml.value` rows without requiring a full-record
-  decoder.
+  projection fields and aliased order values to `Ent_ocaml.value` rows without
+  requiring a full-record decoder.
   Generated `Store.With_policy` modules evaluate query and mutation privacy
   rule chains before delegating to the selected backend. Generated
   `Store.With_hooks` modules wrap mutation execution with typed middleware.
@@ -133,7 +133,7 @@ The initial package scaffold already provides:
 | Named edges | Generated named edge storage | Map from edge name/alias to loaded rows |
 | Bidirectional edge refs | Optional generated in-memory backrefs | Set after eager load, avoid cycles by default |
 | Pagination | Limit/offset plus single-field and composite seek cursors implemented | `limit`, `skip`, sort, stable cursor keys |
-| Ordering | Field and edge-count/edge-field ordering | sort, aggregation for edge terms |
+| Ordering | Field and JSON-path ordering implemented, including aliased selected order values; edge-count/edge-field ordering pending | sort, aggregation for edge terms |
 | Aggregation | count, filtered/grouped min/max/sum/avg, and named scans implemented | aggregation pipeline |
 | Hooks | Generated mutation middleware via `Store.With_hooks` implemented; schema/global registration pending | Around generated mutators |
 | Interceptors | Generated query middleware via `Store.With_interceptors` implemented; traversal-specific interceptors pending | Around query execution and traversal construction |
@@ -223,8 +223,9 @@ The initial package scaffold already provides:
 9. Aggregation, ordering, and pagination:
    filtered and grouped count/min/max/sum/avg, named aggregate scans, and
    single-field/composite seek cursors are implemented. Generated JSON path
-   ordering is implemented for `[@ent.json]` fields. Edge counts, edge-field
-   ordering, selected order values, and custom backend terms are still pending.
+   ordering is implemented for `[@ent.json]` fields. Aliased selected order
+   values are implemented for field and JSON-path sort terms. Edge counts,
+   edge-field ordering, and custom backend terms are still pending.
 
 10. Mongo schema/index checks:
    generate index manifests, `ensure_indexes`, drift checks, collection

@@ -690,6 +690,7 @@ let order_function ~loc field_name =
       [
         (lid ~loc [ "Ent_ocaml"; "field" ], str ~loc field_name);
         (lid ~loc [ "Ent_ocaml"; "direction" ], direction);
+        (lid ~loc [ "Ent_ocaml"; "value_alias" ], evar ~loc "as_");
       ]
       None
   in
@@ -699,7 +700,8 @@ let order_function ~loc field_name =
         ~pat:(pvar ~loc (field_name ^ "_order"))
         ~expr:
           (A.pexp_fun ~loc (Optional "direction") None (pvar ~loc "direction")
-             (A.pexp_fun ~loc Nolabel None (unit_pat ~loc) body));
+             (A.pexp_fun ~loc (Optional "as_") None (pvar ~loc "as_")
+                (A.pexp_fun ~loc Nolabel None (unit_pat ~loc) body)));
     ]
 
 let selector_function ~loc field_name =
@@ -829,6 +831,7 @@ let json_order_function ~loc field_name =
          [
            (lid ~loc [ "Ent_ocaml"; "field" ], field);
            (lid ~loc [ "Ent_ocaml"; "direction" ], evar ~loc "direction");
+           (lid ~loc [ "Ent_ocaml"; "value_alias" ], evar ~loc "as_");
          ]
          None)
   in
@@ -837,7 +840,8 @@ let json_order_function ~loc field_name =
       A.value_binding ~loc ~pat:(pvar ~loc (field_name ^ "_path_order"))
         ~expr:
           (A.pexp_fun ~loc (Optional "direction") None (pvar ~loc "direction")
-             (A.pexp_fun ~loc Nolabel None (pvar ~loc "path") body));
+             (A.pexp_fun ~loc (Optional "as_") None (pvar ~loc "as_")
+                (A.pexp_fun ~loc Nolabel None (pvar ~loc "path") body)));
     ]
 
 let field_helper_items field =
@@ -2923,7 +2927,8 @@ let gen_sig_for_type td =
     let order_sig =
       val_sig (field_name ^ "_order")
         (arrow (Optional "direction") direction_typ
-           (arrow Nolabel unit_typ order_typ))
+           (arrow (Optional "as_") string_typ
+              (arrow Nolabel unit_typ order_typ)))
     in
     let selector_sig = val_sig ("select_" ^ field_name) string_typ in
     let value_sig =
@@ -2964,7 +2969,8 @@ let gen_sig_for_type td =
             (arrow Nolabel (list_typ string_typ) predicate_typ);
           val_sig (field_name ^ "_path_order")
             (arrow (Optional "direction") direction_typ
-               (arrow Nolabel (list_typ string_typ) order_typ));
+               (arrow (Optional "as_") string_typ
+                  (arrow Nolabel (list_typ string_typ) order_typ)));
         ]
       else []
     in

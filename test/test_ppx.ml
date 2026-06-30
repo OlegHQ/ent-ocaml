@@ -76,18 +76,32 @@ module Memory_backend = struct
     | Error message -> Error (`Decode message)
 
   let values () (query : Ent_ocaml.query) =
+    let order_values =
+      query.Ent_ocaml.orders
+      |> List.filter_map (fun ({ field; value_alias; _ } : Ent_ocaml.order) ->
+             Option.map
+               (fun alias -> (alias, Ent_ocaml.V_string field))
+               value_alias)
+    in
     Ok
       [
         Ent_ocaml.V_doc
           (List.map
              (fun field -> (field, Ent_ocaml.V_string field))
-             query.Ent_ocaml.select);
+             query.Ent_ocaml.select
+          @ order_values);
       ]
 
   let value () (query : Ent_ocaml.query) =
-    match query.Ent_ocaml.select with
+    let order_values =
+      query.Ent_ocaml.orders
+      |> List.filter_map (fun ({ field; value_alias; _ } : Ent_ocaml.order) ->
+             Option.map (fun _alias -> field) value_alias)
+    in
+    match query.Ent_ocaml.select @ order_values with
     | [ field ] -> Ok (Some (Ent_ocaml.V_string field))
-    | [] | _ :: _ :: _ -> Error (`Bad_query "value expects one selected field")
+    | [] | _ :: _ :: _ ->
+        Error (`Bad_query "value expects one selected field or order value")
 
   let traverse_as () (edge_query : Ent_ocaml.edge_query) ~decode =
     match decode (Ent_ocaml.V_string edge_query.Ent_ocaml.target.name) with
@@ -238,6 +252,11 @@ let test_generated_query_api () =
   Alcotest.(check int) "predicates" 7 (List.length query.predicates);
   Alcotest.(check (list string)) "select" [ "id"; "body" ] query.select;
   Alcotest.(check int) "orders" 1 (List.length query.orders);
+  Alcotest.(check bool)
+    "order value alias" true
+    (match query.orders with
+    | [ { Ent_ocaml.field = "published_at_ms"; value_alias = None; _ } ] -> true
+    | _ -> false);
   Alcotest.(check (option int)) "limit" (Some 10) query.limit;
   Alcotest.(check bool)
     "first predicate" true
@@ -256,6 +275,32 @@ let test_generated_query_api () =
   Alcotest.(check int)
     "aggregate predicates" 1
     (List.length aggregate.query.predicates)
+
+let test_generated_order_value_api () =
+  let query =
+    let open Post in
+    query ()
+    |> order_by
+         [ created_at_ms_order ~direction:Ent_ocaml.Desc ~as_:"created" () ]
+  in
+  Alcotest.(check bool)
+    "order value alias" true
+    (match query.orders with
+    | [
+        {
+          Ent_ocaml.field = "created_at_ms";
+          direction = Desc;
+          value_alias = Some "created";
+        };
+      ] ->
+        true
+    | _ -> false);
+  let module Posts = Post.Store (Memory_backend) in
+  match Posts.values () query with
+  | Ok [ Ent_ocaml.V_doc [ ("created", Ent_ocaml.V_string "created_at_ms") ] ] ->
+      ()
+  | Ok _ -> Alcotest.fail "unexpected order value result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
 let test_generated_cursor_api () =
   let query =
@@ -854,6 +899,8 @@ let () =
             test_generated_schema_snapshot;
           Alcotest.test_case "generated query api" `Quick
             test_generated_query_api;
+          Alcotest.test_case "generated order value api" `Quick
+            test_generated_order_value_api;
           Alcotest.test_case "generated cursor api" `Quick
             test_generated_cursor_api;
           Alcotest.test_case "generated composite cursor api" `Quick
