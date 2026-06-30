@@ -56,6 +56,17 @@ let create id body =
       add = [];
     }
 
+let invalid_create_missing_body =
+  Ent_ocaml.
+    {
+      entity = post_entity;
+      op = Create;
+      predicates = [];
+      set = [ ("id", V_string "post_missing_body") ];
+      clear = [];
+      add = [];
+    }
+
 let query_all =
   Ent_ocaml.
     {
@@ -95,9 +106,20 @@ let run_flow client =
                 Ent_ocaml_mongo.insert_many_values ctx
                   [ create "post_2" "duplicate"; create "post_3" "third" ]
               with
-              | Error (`Constraint _) ->
+              | Error (`Constraint _) -> (
                   assert_true "bulk duplicate maps to constraint" true;
-                  Ok ()
+                  match
+                    Ent_ocaml_mongo.insert_many_values ctx
+                      [ invalid_create_missing_body ]
+                  with
+                  | Error (`Bad_query message) ->
+                      assert_true "bulk create validates required fields"
+                        (message = "missing required field: body");
+                      Ok ()
+                  | Error error -> Error error
+                  | Ok _ ->
+                      Error
+                        (`Bad_query "invalid bulk create unexpectedly succeeded"))
               | Error error -> Error error
               | Ok _ -> Error (`Constraint "duplicate bulk insert succeeded"))))
 

@@ -334,9 +334,12 @@ let insert_many ?(ordered = true) ctx entity docs =
 let insert_values ctx (mutation : Ent_ocaml.mutation) =
   match mutation.op with
   | Ent_ocaml.Create -> (
-      match document_to_bson mutation.set with
+      match Ent_ocaml.validate_mutation mutation with
       | Error _ as error -> error
-      | Ok doc -> insert ctx mutation.entity doc)
+      | Ok () -> (
+          match document_to_bson mutation.set with
+          | Error _ as error -> error
+          | Ok doc -> insert ctx mutation.entity doc))
   | Update_one | Update | Delete_one | Delete ->
       Error (`Bad_query "insert_values expects Create mutation op")
 
@@ -349,20 +352,23 @@ let insert_many_values ?ordered ctx mutations =
     | (mutation : Ent_ocaml.mutation) :: rest -> (
         match mutation.op with
         | Ent_ocaml.Create -> (
-            let same_entity =
-              match entity with
-              | None -> true
-              | Some entity ->
-                  entity.name = mutation.entity.name
-                  && entity.collection = mutation.entity.collection
-            in
-            if not same_entity then
-              Error (`Bad_query "insert_many_values expects one entity")
-            else
-              match document_to_bson mutation.set with
-              | Error _ as error -> error
-              | Ok doc ->
-                  loop (Some mutation.entity) (doc :: acc) rest)
+            match Ent_ocaml.validate_mutation mutation with
+            | Error _ as error -> error
+            | Ok () ->
+                let same_entity =
+                  match entity with
+                  | None -> true
+                  | Some entity ->
+                      entity.name = mutation.entity.name
+                      && entity.collection = mutation.entity.collection
+                in
+                if not same_entity then
+                  Error (`Bad_query "insert_many_values expects one entity")
+                else
+                  match document_to_bson mutation.set with
+                  | Error _ as error -> error
+                  | Ok doc ->
+                      loop (Some mutation.entity) (doc :: acc) rest)
         | Update_one | Update | Delete_one | Delete ->
             Error (`Bad_query "insert_many_values expects Create mutation ops"))
   in
@@ -374,9 +380,12 @@ let update ctx (mutation : Ent_ocaml.mutation) =
   | Create | Delete_one | Delete ->
       Error (`Bad_query "update expects Update_one or Update mutation op")
   | Update_one | Update -> (
-      match (selector mutation, update_to_bson mutation) with
-      | Error _ as error, _ | _, (Error _ as error) -> error
-      | Ok selector, Ok update_doc -> (
+      match Ent_ocaml.validate_mutation mutation with
+      | Error _ as error -> error
+      | Ok () -> (
+          match (selector mutation, update_to_bson mutation) with
+          | Error _ as error, _ | _, (Error _ as error) -> error
+          | Ok selector, Ok update_doc -> (
           let run =
             match mutation.op with
             | Ent_ocaml.Update_one ->
@@ -394,7 +403,7 @@ let update ctx (mutation : Ent_ocaml.mutation) =
               Ok
                 (Option.value result.Mongo_crud.modified_count
                    ~default:result.matched_count)
-          | Error error -> Error (backend_error "update" entity error)))
+          | Error error -> Error (backend_error "update" entity error))))
 
 let update_one ctx (mutation : Ent_ocaml.mutation) =
   let entity = mutation.Ent_ocaml.entity in
@@ -402,9 +411,12 @@ let update_one ctx (mutation : Ent_ocaml.mutation) =
   | Create | Update | Delete_one | Delete ->
       Error (`Bad_query "update_one expects Update_one mutation op")
   | Update_one -> (
-      match (selector mutation, update_to_bson mutation) with
-      | Error _ as error, _ | _, (Error _ as error) -> error
-      | Ok selector, Ok update_doc -> (
+      match Ent_ocaml.validate_mutation mutation with
+      | Error _ as error -> error
+      | Ok () -> (
+          match (selector mutation, update_to_bson mutation) with
+          | Error _ as error, _ | _, (Error _ as error) -> error
+          | Ok selector, Ok update_doc -> (
           match
             Mongo_eio.direct_update_one ctx.client ~db:ctx.config.database
               ~collection:entity.collection ~upsert:false selector update_doc
@@ -412,7 +424,7 @@ let update_one ctx (mutation : Ent_ocaml.mutation) =
           | Ok result ->
               if result.Mongo_crud.matched_count = 0 then Error `Not_found
               else Ok ()
-          | Error error -> Error (backend_error "update_one" entity error)))
+          | Error error -> Error (backend_error "update_one" entity error))))
 
 let delete ctx (mutation : Ent_ocaml.mutation) =
   let entity = mutation.Ent_ocaml.entity in
@@ -420,9 +432,12 @@ let delete ctx (mutation : Ent_ocaml.mutation) =
   | Create | Update_one | Update ->
       Error (`Bad_query "delete expects Delete_one or Delete mutation op")
   | Delete_one | Delete -> (
-      match selector mutation with
+      match Ent_ocaml.validate_mutation mutation with
       | Error _ as error -> error
-      | Ok selector -> (
+      | Ok () -> (
+          match selector mutation with
+          | Error _ as error -> error
+          | Ok selector -> (
           let run =
             match mutation.op with
             | Ent_ocaml.Delete_one ->
@@ -435,4 +450,4 @@ let delete ctx (mutation : Ent_ocaml.mutation) =
           in
           match run with
           | Ok result -> Ok result.Mongo_crud.deleted_count
-          | Error error -> Error (backend_error "delete" entity error)))
+          | Error error -> Error (backend_error "delete" entity error))))

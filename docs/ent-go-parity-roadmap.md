@@ -57,7 +57,8 @@ feel like a small typed OCaml library:
 The initial package scaffold already provides:
 
 - Core schema descriptors for fields, edges, indexes, predicates, ordering,
-  queries, mutations, errors, privacy decisions, and backend signatures.
+  queries, mutations, mutation validation, errors, privacy decisions, and
+  backend signatures.
 - Mongo planning and CRUD execution for scalar filters, boolean predicates,
   field selection/projection, ordering, limit/offset, insert, bulk insert,
   update, delete, count, and basic value translation.
@@ -134,7 +135,9 @@ The initial package scaffold already provides:
    generate create, create-bulk, query, update-one, update-many, delete-one, and
    delete-many builders with result-returning APIs. Do not generate exception
    shortcuts for Poster. Create-bulk is implemented as an OCaml list-based API;
-   required-field validation is still pending.
+   required-field, unknown-field, duplicate-field, and immutable update
+   validation are implemented in the core mutation validator. User-defined field
+   validator chains are still pending.
 
 5. Poster pilot:
    model `User`, `Session`, `Post`, `Media`, and `PublishAttempt`; replace the

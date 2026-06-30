@@ -121,6 +121,7 @@ type error =
   | `Constraint of string ]
 
 val error_to_string : error -> string
+val validate_mutation : mutation -> (unit, error) result
 
 type privacy_decision = Allow | Deny of string | Skip
 type 'ctx query_rule = 'ctx -> query -> privacy_decision

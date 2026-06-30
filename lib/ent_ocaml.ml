@@ -130,6 +130,96 @@ let error_to_string = function
   | `Not_singular -> "not singular"
   | `Constraint message -> "constraint: " ^ message
 
+let find_field (entity : entity) name =
+  List.find_opt (fun (field : field) -> field.name = name) entity.fields
+
+let rec has_duplicate = function
+  | [] -> None
+  | name :: rest ->
+      if List.mem name rest then Some name else has_duplicate rest
+
+let validate_known_fields (entity : entity) context names =
+  match List.find_opt (fun name -> Option.is_none (find_field entity name)) names with
+  | Some name -> Error (`Bad_query (context ^ " field not found: " ^ name))
+  | None -> Ok ()
+
+let validate_no_duplicate context names =
+  match has_duplicate names with
+  | None -> Ok ()
+  | Some name -> Error (`Bad_query ("duplicate " ^ context ^ " field: " ^ name))
+
+let validate_no_overlap left_name left right_name right =
+  match List.find_opt (fun name -> List.mem name right) left with
+  | None -> Ok ()
+  | Some name ->
+      Error
+        (`Bad_query
+          (Printf.sprintf "field %s appears in both %s and %s" name left_name
+             right_name))
+
+let validate_required_create (entity : entity) set =
+  let set_names = List.map fst set in
+  let missing =
+    List.find_opt
+      (fun (field : field) -> field.required && not (List.mem field.name set_names))
+      entity.fields
+  in
+  match missing with
+  | Some field -> Error (`Bad_query ("missing required field: " ^ field.name))
+  | None -> (
+      match
+        List.find_opt
+          (fun (name, value) ->
+            match (find_field entity name, value) with
+            | Some field, V_null -> field.required && not field.nillable
+            | _ -> false)
+          set
+      with
+      | Some (name, _) ->
+          Error (`Bad_query ("required field is null: " ^ name))
+      | None -> Ok ())
+
+let validate_immutable_update (entity : entity) fields =
+  match
+    List.find_opt
+      (fun name ->
+        match find_field entity name with
+        | Some field -> field.immutable
+        | None -> false)
+      fields
+  with
+  | None -> Ok ()
+  | Some name -> Error (`Bad_query ("immutable field cannot be updated: " ^ name))
+
+let ( let* ) result f = match result with Ok value -> f value | Error _ as error -> error
+
+let validate_mutation mutation =
+  let entity = mutation.entity in
+  let set_names = List.map fst mutation.set in
+  let add_names = List.map fst mutation.add in
+  let clear_names = mutation.clear in
+  let all_names = set_names @ add_names @ clear_names in
+  let* () = validate_known_fields entity "mutation" all_names in
+  let* () = validate_no_duplicate "set" set_names in
+  let* () = validate_no_duplicate "add" add_names in
+  let* () = validate_no_duplicate "clear" clear_names in
+  let* () = validate_no_overlap "set" set_names "add" add_names in
+  let* () = validate_no_overlap "set" set_names "clear" clear_names in
+  let* () = validate_no_overlap "add" add_names "clear" clear_names in
+  match mutation.op with
+  | Create ->
+      let* () = validate_required_create entity mutation.set in
+      if mutation.predicates <> [] then
+        Error (`Bad_query "create mutation cannot have predicates")
+      else if mutation.clear <> [] || mutation.add <> [] then
+        Error (`Bad_query "create mutation only supports set fields")
+      else Ok ()
+  | Update_one | Update ->
+      validate_immutable_update entity all_names
+  | Delete_one | Delete ->
+      if all_names = [] then Ok ()
+      else Error (`Bad_query "delete mutation cannot set, add, or clear fields")
+
 type privacy_decision = Allow | Deny of string | Skip
 type 'ctx query_rule = 'ctx -> query -> privacy_decision
 type 'ctx mutation_rule = 'ctx -> mutation -> privacy_decision

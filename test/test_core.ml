@@ -38,6 +38,48 @@ let test_error_to_string () =
   Alcotest.(check string)
     "not found" "not found" (Ent_ocaml.error_to_string `Not_found)
 
+let test_validate_create_missing_required () =
+  match
+    Ent_ocaml.validate_mutation
+      (mutation Ent_ocaml.Create
+         ~set:Ent_ocaml.[ ("id", V_string "post_1") ])
+  with
+  | Ok () -> Alcotest.fail "expected missing required field"
+  | Error (`Bad_query message) ->
+      Alcotest.(check string)
+        "message" "missing required field: user_id" message
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+
+let test_validate_unknown_field () =
+  match
+    Ent_ocaml.validate_mutation
+      (mutation Ent_ocaml.Create
+         ~set:
+           Ent_ocaml.
+             [
+               ("id", V_string "post_1");
+               ("user_id", V_string "user_1");
+               ("missing", V_string "bad");
+             ])
+  with
+  | Ok () -> Alcotest.fail "expected unknown field"
+  | Error (`Bad_query message) ->
+      Alcotest.(check string)
+        "message" "mutation field not found: missing" message
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+
+let test_validate_immutable_update () =
+  match
+    Ent_ocaml.validate_mutation
+      (mutation Ent_ocaml.Update_one
+         ~set:Ent_ocaml.[ ("id", V_string "post_2") ])
+  with
+  | Ok () -> Alcotest.fail "expected immutable update error"
+  | Error (`Bad_query message) ->
+      Alcotest.(check string)
+        "message" "immutable field cannot be updated: id" message
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+
 let test_mongo_eq_predicate () =
   match
     Ent_ocaml_mongo.predicate_to_bson
@@ -180,7 +222,16 @@ let test_mongo_index_missing_field () =
 let () =
   Alcotest.run "ent-ocaml"
     [
-      ("core", [ Alcotest.test_case "error strings" `Quick test_error_to_string ]);
+      ( "core",
+        [
+          Alcotest.test_case "error strings" `Quick test_error_to_string;
+          Alcotest.test_case "validate create required" `Quick
+            test_validate_create_missing_required;
+          Alcotest.test_case "validate unknown field" `Quick
+            test_validate_unknown_field;
+          Alcotest.test_case "validate immutable update" `Quick
+            test_validate_immutable_update;
+        ] );
       ( "mongo",
         [
           Alcotest.test_case "eq predicate bson" `Quick test_mongo_eq_predicate;

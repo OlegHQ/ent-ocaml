@@ -15,7 +15,9 @@ deriving `ent` produces a module with `query`, `create`, `create_many`,
 `update_one`, `update`, `delete_one`, `delete`, field predicates, field value
 helpers, field selector constants, and order helpers. Backends execute those
 typed values with `result`-returning functions such as
-`Ent_ocaml_mongo.insert_many_values`.
+`Ent_ocaml_mongo.insert_many_values`. Core mutation validation catches missing
+required create fields, unknown mutation fields, duplicate mutation fields, and
+immutable-field updates before backend execution.
 
 The first production target is Poster, whose Mongo store code should be replaced
 by generated entity clients once the Mongo backend and PPX are complete.
