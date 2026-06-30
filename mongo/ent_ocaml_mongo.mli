@@ -3,6 +3,7 @@ type config = {
 }
 
 type ctx
+type doc = Bson.t
 
 val create : client:Mongo_eio.direct_client -> config -> ctx
 val filter_to_bson : Ent_ocaml.query -> (Bson.t, Ent_ocaml.error) result

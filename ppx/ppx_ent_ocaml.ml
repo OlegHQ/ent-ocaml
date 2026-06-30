@@ -1219,6 +1219,100 @@ let gen_query_module td =
                   ~add:(list ~loc [])));
       ]
   in
+  let store_module =
+    let backend_type =
+      A.pmty_ident ~loc (lid ~loc [ "Ent_ocaml"; "STORE_BACKEND" ])
+    in
+    let backend_apply name args =
+      A.pexp_apply ~loc
+        (A.pexp_ident ~loc (lid ~loc [ "Backend"; name ]))
+        args
+    in
+    let value_fun name body =
+      A.pstr_value ~loc Nonrecursive
+        [ A.value_binding ~loc ~pat:(pvar ~loc name) ~expr:body ]
+    in
+    let structure =
+      [
+        value_fun "all"
+          (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+             (A.pexp_fun ~loc (Labelled "decode") None (pvar ~loc "decode")
+                (A.pexp_fun ~loc Nolabel None query_pat
+                   (backend_apply "find_as"
+                      [
+                        (Nolabel, evar ~loc "ctx");
+                        (Nolabel, evar ~loc "query");
+                        (Labelled "decode", evar ~loc "decode");
+                      ]))));
+        value_fun "one"
+          (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+             (A.pexp_fun ~loc (Labelled "decode") None (pvar ~loc "decode")
+                (A.pexp_fun ~loc Nolabel None query_pat
+                   (backend_apply "find_one_as"
+                      [
+                        (Nolabel, evar ~loc "ctx");
+                        (Nolabel, evar ~loc "query");
+                        (Labelled "decode", evar ~loc "decode");
+                      ]))));
+        value_fun "count"
+          (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+             (A.pexp_fun ~loc Nolabel None query_pat
+                (backend_apply "count"
+                   [
+                     (Nolabel, evar ~loc "ctx");
+                     (Nolabel, evar ~loc "query");
+                   ])));
+        value_fun "insert"
+          (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+             (A.pexp_fun ~loc Nolabel None (pvar ~loc "mutation")
+                (backend_apply "insert_values"
+                   [
+                     (Nolabel, evar ~loc "ctx");
+                     (Nolabel, evar ~loc "mutation");
+                   ])));
+        value_fun "insert_many"
+          (A.pexp_fun ~loc (Optional "ordered") None (pvar ~loc "ordered")
+             (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+                (A.pexp_fun ~loc Nolabel None (pvar ~loc "mutations")
+                   (backend_apply "insert_many_values"
+                      [
+                        (Optional "ordered", evar ~loc "ordered");
+                        (Nolabel, evar ~loc "ctx");
+                        (Nolabel, evar ~loc "mutations");
+                      ]))));
+        value_fun "update_one"
+          (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+             (A.pexp_fun ~loc Nolabel None (pvar ~loc "mutation")
+                (backend_apply "update_one"
+                   [
+                     (Nolabel, evar ~loc "ctx");
+                     (Nolabel, evar ~loc "mutation");
+                   ])));
+        value_fun "update"
+          (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+             (A.pexp_fun ~loc Nolabel None (pvar ~loc "mutation")
+                (backend_apply "update"
+                   [
+                     (Nolabel, evar ~loc "ctx");
+                     (Nolabel, evar ~loc "mutation");
+                   ])));
+        value_fun "delete"
+          (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+             (A.pexp_fun ~loc Nolabel None (pvar ~loc "mutation")
+                (backend_apply "delete"
+                   [
+                     (Nolabel, evar ~loc "ctx");
+                     (Nolabel, evar ~loc "mutation");
+                   ])));
+      ]
+    in
+    A.pstr_module ~loc
+      (A.module_binding ~loc ~name:{ loc; txt = Some "Store" }
+         ~expr:
+           (A.pmod_functor ~loc
+              (Named ({ loc; txt = Some "Backend" }, backend_type))
+              (A.pmod_structure ~loc structure)))
+  in
   let structure =
     query :: boolean_predicates :: query_pipe_helpers :: create :: create_many
     :: update_fn "update_one" "Update_one"
@@ -1229,6 +1323,7 @@ let gen_query_module td =
     :: delete_fn "delete" "Delete"
     :: delete_query_fn "delete_one_where" "Delete_one"
     :: delete_query_fn "delete_where" "Delete"
+    :: store_module
     :: (List.concat_map edge_helper_items edges
        @ List.concat_map field_helper_items fields)
   in
@@ -1238,7 +1333,8 @@ let gen_query_module td =
 
 let generate_str ~loc:_ ~path:_ (_rec_flag, tds) =
   List.concat_map
-    (fun td -> [ gen_entity td; gen_value_converter td; gen_query_module td ])
+    (fun td ->
+      [ gen_entity td; gen_value_converter td; gen_query_module td ])
     tds
 
 let gen_sig_for_type td =
@@ -1266,6 +1362,7 @@ let gen_sig_for_type td =
     A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "order_direction" ]) []
   in
   let string_typ = A.ptyp_constr ~loc (lid ~loc [ "string" ]) [] in
+  let bool_typ = A.ptyp_constr ~loc (lid ~loc [ "bool" ]) [] in
   let int_typ = A.ptyp_constr ~loc (lid ~loc [ "int" ]) [] in
   let unit_typ = A.ptyp_constr ~loc (lid ~loc [ "unit" ]) [] in
   let list_typ typ = A.ptyp_constr ~loc (lid ~loc [ "list" ]) [ typ ] in
@@ -1276,6 +1373,8 @@ let gen_sig_for_type td =
   let field_values_typ = list_typ field_value_typ in
   let predicates_typ = list_typ predicate_typ in
   let orders_typ = list_typ order_typ in
+  let error_typ = A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "error" ]) [] in
+  let result_typ ok err = A.ptyp_constr ~loc (lid ~loc [ "result" ]) [ ok; err ] in
   let arrow label arg result = A.ptyp_arrow ~loc label arg result in
   let val_sig name type_ =
     A.psig_value ~loc (A.value_description ~loc ~name:{ loc; txt = name } ~type_ ~prim:[])
@@ -1415,6 +1514,61 @@ let gen_sig_for_type td =
         in
         value_sig @ base @ comparison_helpers @ nil_helpers @ string_helpers
   in
+  let store_sig =
+    let backend_ctx = A.ptyp_constr ~loc (lid ~loc [ "Backend"; "ctx" ]) [] in
+    let backend_doc = A.ptyp_constr ~loc (lid ~loc [ "Backend"; "doc" ]) [] in
+    let decode_typ =
+      arrow Nolabel backend_doc
+        (result_typ (A.ptyp_var ~loc "a") string_typ)
+    in
+    let value_sig name type_ =
+      A.psig_value ~loc
+        (A.value_description ~loc ~name:{ loc; txt = name } ~type_ ~prim:[])
+    in
+    let doc_result = result_typ backend_doc error_typ in
+    let docs_result = result_typ (list_typ backend_doc) error_typ in
+    let int_result = result_typ int_typ error_typ in
+    let unit_result = result_typ unit_typ error_typ in
+    let store_items =
+      [
+        value_sig "all"
+          (arrow Nolabel backend_ctx
+             (arrow (Labelled "decode") decode_typ
+                (arrow Nolabel query_typ
+                   (result_typ (list_typ (A.ptyp_var ~loc "a")) error_typ))));
+        value_sig "one"
+          (arrow Nolabel backend_ctx
+             (arrow (Labelled "decode") decode_typ
+                (arrow Nolabel query_typ
+                   (result_typ
+                      (A.ptyp_constr ~loc (lid ~loc [ "option" ])
+                         [ A.ptyp_var ~loc "a" ])
+                      error_typ))));
+        value_sig "count" (arrow Nolabel backend_ctx (arrow Nolabel query_typ int_result));
+        value_sig "insert"
+          (arrow Nolabel backend_ctx (arrow Nolabel mutation_typ doc_result));
+        value_sig "insert_many"
+          (arrow (Optional "ordered") bool_typ
+             (arrow Nolabel backend_ctx
+                (arrow Nolabel (list_typ mutation_typ) docs_result)));
+        value_sig "update_one"
+          (arrow Nolabel backend_ctx (arrow Nolabel mutation_typ unit_result));
+        value_sig "update"
+          (arrow Nolabel backend_ctx (arrow Nolabel mutation_typ int_result));
+        value_sig "delete"
+          (arrow Nolabel backend_ctx (arrow Nolabel mutation_typ int_result));
+      ]
+    in
+    A.psig_module ~loc
+      (A.module_declaration ~loc ~name:{ loc; txt = Some "Store" }
+         ~type_:
+           (A.pmty_functor ~loc
+              (Named
+                 ( { loc; txt = Some "Backend" },
+                   A.pmty_ident ~loc
+                     (lid ~loc [ "Ent_ocaml"; "STORE_BACKEND" ]) ))
+              (A.pmty_signature ~loc store_items)))
+  in
   let module_items =
     query_sig :: boolean_sig @ query_pipe_sig
     @ (create_sig :: create_many_sig :: update_sig "update_one" :: update_sig "update"
@@ -1423,6 +1577,7 @@ let gen_sig_for_type td =
       :: delete_sig "delete_one" :: delete_sig "delete"
       :: delete_query_sig "delete_one_where"
       :: delete_query_sig "delete_where"
+      :: store_sig
       :: (List.concat_map edge_sig_items edges
          @ List.concat_map field_sig_items fields))
   in

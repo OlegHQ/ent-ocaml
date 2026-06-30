@@ -7,6 +7,8 @@ type ctx = {
   config : config;
 }
 
+type doc = Bson.t
+
 let create ~client config = { client; config }
 
 let backend_error operation entity error =

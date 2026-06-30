@@ -164,3 +164,30 @@ module type BACKEND = sig
   val count : ctx -> query -> (int, error) result
   val transaction : ctx -> (tx -> ('a, error) result) -> ('a, error) result
 end
+
+module type STORE_BACKEND = sig
+  type ctx
+  type doc
+
+  val find_as :
+    ctx ->
+    query ->
+    decode:(doc -> ('a, string) result) ->
+    ('a list, error) result
+
+  val find_one_as :
+    ctx ->
+    query ->
+    decode:(doc -> ('a, string) result) ->
+    ('a option, error) result
+
+  val insert_values : ctx -> mutation -> (doc, error) result
+
+  val insert_many_values :
+    ?ordered:bool -> ctx -> mutation list -> (doc list, error) result
+
+  val update_one : ctx -> mutation -> (unit, error) result
+  val update : ctx -> mutation -> (int, error) result
+  val delete : ctx -> mutation -> (int, error) result
+  val count : ctx -> query -> (int, error) result
+end

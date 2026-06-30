@@ -36,6 +36,18 @@ let mutation =
   |> Post.update_one_where ~set:[ Post.body body ]
 ```
 
+Generated entity modules also expose a backend-agnostic `Store` functor:
+
+```ocaml
+module Posts = Post.Store (Ent_ocaml_mongo)
+
+let load_drafts ctx user_id =
+  Post.query ()
+  |> Post.where (Post.user (User.id_eq user_id))
+  |> Post.where (Post.status_eq "draft")
+  |> Posts.all ctx ~decode:post_of_bson_doc_result
+```
+
 Backends execute those
 typed values with `result`-returning functions such as
 `Ent_ocaml_mongo.insert_many_values`. Core mutation validation catches missing

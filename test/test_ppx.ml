@@ -47,6 +47,36 @@ type publish_attempt = {
 [@@ent.entity "PublishAttempt"] [@@ent.collection "publish_attempts"]
 [@@deriving ent]
 
+module Memory_backend = struct
+  type ctx = unit
+  type doc = Ent_ocaml.value
+
+  let find_as () (query : Ent_ocaml.query) ~decode =
+    match decode (Ent_ocaml.V_string query.Ent_ocaml.entity.name) with
+    | Ok value -> Ok [ value ]
+    | Error message -> Error (`Decode message)
+
+  let find_one_as () (query : Ent_ocaml.query) ~decode =
+    match decode (Ent_ocaml.V_string query.Ent_ocaml.entity.name) with
+    | Ok value -> Ok (Some value)
+    | Error message -> Error (`Decode message)
+
+  let insert_values () (mutation : Ent_ocaml.mutation) =
+    Ok (Ent_ocaml.V_doc mutation.set)
+
+  let insert_many_values ?ordered:_ () mutations =
+    Ok
+      (List.map
+         (fun (mutation : Ent_ocaml.mutation) ->
+           Ent_ocaml.V_doc mutation.Ent_ocaml.set)
+         mutations)
+  let update_one () _mutation = Ok ()
+  let update () _mutation = Ok 1
+  let delete () _mutation = Ok 1
+  let count () (query : Ent_ocaml.query) =
+    Ok (List.length query.Ent_ocaml.predicates)
+end
+
 let find_field name =
   List.find
     (fun (field : Ent_ocaml.field) -> field.name = name)
@@ -273,6 +303,34 @@ let test_generated_mutation_api () =
     "delete one op" true
     (match delete.op with Ent_ocaml.Delete_one -> true | _ -> false)
 
+let test_generated_store_api () =
+  let module Store = Post.Store (Memory_backend) in
+  let decode = function
+    | Ent_ocaml.V_string value -> Ok value
+    | _ -> Error "expected string"
+  in
+  let query =
+    Post.query ()
+    |> Post.where (Post.user_id_eq "user_1")
+    |> Post.where (Post.status_eq "draft")
+  in
+  (match Store.all () ~decode query with
+  | Ok [ "Post" ] -> ()
+  | Ok _ -> Alcotest.fail "unexpected all result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  (match Store.count () query with
+  | Ok count -> Alcotest.(check int) "count" 2 count
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  let mutation = Post.create [ Post.id "post_1"; Post.user_id "user_1"; Post.body "body"; Post.media_ids []; Post.created_at_ms 1L; Post.updated_at_ms 1L; Post.published_at_ms None ] in
+  (match Store.insert () mutation with
+  | Ok (Ent_ocaml.V_doc fields) ->
+      Alcotest.(check bool) "inserted id" true (List.mem_assoc "id" fields)
+  | Ok _ -> Alcotest.fail "unexpected insert result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  match Store.update_one () (Post.update_one_where query ~set:[ Post.body "x" ]) with
+  | Ok () -> ()
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+
 let test_generated_nested_value_api () =
   let state = { kind = "confirmed"; external_id = Some "ext_1" } in
   let value = publish_state_to_ent_value state in
@@ -309,6 +367,8 @@ let () =
             test_generated_query_api;
           Alcotest.test_case "generated mutation api" `Quick
             test_generated_mutation_api;
+          Alcotest.test_case "generated store api" `Quick
+            test_generated_store_api;
           Alcotest.test_case "generated nested value api" `Quick
             test_generated_nested_value_api;
         ] );

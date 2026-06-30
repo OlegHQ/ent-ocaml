@@ -52,6 +52,9 @@ feel like a small typed OCaml library:
   `Entity.query () |> Entity.where (...) |> Entity.select [...] |> Entity.limit n`.
   Predicate lists remain available for bulk composition, but ordinary call sites
   should not need to construct AST-looking lists by hand.
+- Generated entity modules expose `Store (Backend)` functors for execution so
+  backend use stays typed, local, and discoverable: `module Posts =
+  Post.Store (Ent_ocaml_mongo)`.
 - Do not translate Go builder chains mechanically. A generated OCaml API should
   look like compact modules, labeled arguments, typed records/variants, small
   combinators, and `result`-returning execution functions.
@@ -62,7 +65,8 @@ The initial package scaffold already provides:
 
 - Core schema descriptors for fields, edges, indexes, predicates, ordering,
   queries, mutations, mutation validation, field validators, errors, privacy
-  decisions, backend signatures, generic query combinators, and result syntax.
+  decisions, backend signatures, generic query combinators, result syntax, and
+  a store backend signature for generated entity-local executors.
 - Mongo planning and CRUD execution for scalar filters, boolean predicates,
   field selection/projection, ordering, limit/offset, insert, bulk insert,
   update, delete, count, stored-FK edge predicates, and basic value translation.
