@@ -1830,6 +1830,24 @@ let gen_query_module td =
                              (Nolabel, evar ~loc "query");
                              (Labelled "decode", evar ~loc "decode");
                            ])))));
+          value_fun "values"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc Nolabel None query_pat
+                  (guarded `Query (evar ~loc "query")
+                     (backend_apply "values"
+                        [
+                          (Nolabel, evar ~loc "ctx");
+                          (Nolabel, evar ~loc "query");
+                        ]))));
+          value_fun "value"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc Nolabel None query_pat
+                  (guarded `Query (evar ~loc "query")
+                     (backend_apply "value"
+                        [
+                          (Nolabel, evar ~loc "ctx");
+                          (Nolabel, evar ~loc "query");
+                        ]))));
           value_fun "traverse"
             (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
                (A.pexp_fun ~loc (Labelled "decode") None (pvar ~loc "decode")
@@ -2020,6 +2038,22 @@ let gen_query_module td =
                           (Nolabel, evar ~loc "query");
                           (Labelled "decode", evar ~loc "decode");
                         ]))));
+          value_fun "values"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc Nolabel None query_pat
+                  (backend_apply "values"
+                     [
+                       (Nolabel, evar ~loc "ctx");
+                       (Nolabel, evar ~loc "query");
+                     ])));
+          value_fun "value"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc Nolabel None query_pat
+                  (backend_apply "value"
+                     [
+                       (Nolabel, evar ~loc "ctx");
+                       (Nolabel, evar ~loc "query");
+                     ])));
           value_fun "traverse"
             (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
                (A.pexp_fun ~loc (Labelled "decode") None (pvar ~loc "decode")
@@ -2182,6 +2216,24 @@ let gen_query_module td =
                              (Nolabel, evar ~loc "query");
                              (Labelled "decode", evar ~loc "decode");
                            ])))));
+          value_fun "values"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc Nolabel None query_pat
+                  (run_query (evar ~loc "query")
+                     (backend_apply "values"
+                        [
+                          (Nolabel, evar ~loc "ctx");
+                          (Nolabel, evar ~loc "query");
+                        ]))));
+          value_fun "value"
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+               (A.pexp_fun ~loc Nolabel None query_pat
+                  (run_query (evar ~loc "query")
+                     (backend_apply "value"
+                        [
+                          (Nolabel, evar ~loc "ctx");
+                          (Nolabel, evar ~loc "query");
+                        ]))));
           value_fun "traverse"
             (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
                (A.pexp_fun ~loc (Labelled "decode") None (pvar ~loc "decode")
@@ -2337,6 +2389,22 @@ let gen_query_module td =
                         (Nolabel, evar ~loc "query");
                         (Labelled "decode", evar ~loc "decode");
                       ]))));
+        value_fun "values"
+          (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+             (A.pexp_fun ~loc Nolabel None query_pat
+                (backend_apply "values"
+                   [
+                     (Nolabel, evar ~loc "ctx");
+                     (Nolabel, evar ~loc "query");
+                   ])));
+        value_fun "value"
+          (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+             (A.pexp_fun ~loc Nolabel None query_pat
+                (backend_apply "value"
+                   [
+                     (Nolabel, evar ~loc "ctx");
+                     (Nolabel, evar ~loc "query");
+                   ])));
         value_fun "traverse"
           (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
              (A.pexp_fun ~loc (Labelled "decode") None (pvar ~loc "decode")
@@ -2515,6 +2583,8 @@ let gen_query_module td =
       [
         value_fun "all" (client_decode_call "all");
         value_fun "one" (client_decode_call "one");
+        value_fun "values" (client_call "values");
+        value_fun "value" (client_call "value");
         value_fun "traverse" (client_decode_call "traverse");
         value_fun "load_edge" client_load_edge_call;
         value_fun "count" (client_call "count");
@@ -3017,6 +3087,16 @@ let gen_sig_for_type td =
                       (A.ptyp_constr ~loc (lid ~loc [ "option" ])
                          [ A.ptyp_var ~loc "a" ])
                       error_typ))));
+        value_sig "values"
+          (arrow Nolabel backend_ctx
+             (arrow Nolabel query_typ
+                (result_typ (list_typ value_typ) error_typ)));
+        value_sig "value"
+          (arrow Nolabel backend_ctx
+             (arrow Nolabel query_typ
+                (result_typ
+                   (A.ptyp_constr ~loc (lid ~loc [ "option" ]) [ value_typ ])
+                   error_typ)));
         value_sig "traverse"
           (arrow Nolabel backend_ctx
              (arrow (Labelled "decode") decode_typ
@@ -3186,6 +3266,16 @@ let gen_sig_for_type td =
                       (A.ptyp_constr ~loc (lid ~loc [ "option" ])
                          [ A.ptyp_var ~loc "a" ])
                       error_typ))));
+        value_sig "values"
+          (arrow Nolabel receiver_t
+             (arrow Nolabel query_typ
+                (result_typ (list_typ value_typ) error_typ)));
+        value_sig "value"
+          (arrow Nolabel receiver_t
+             (arrow Nolabel query_typ
+                (result_typ
+                   (A.ptyp_constr ~loc (lid ~loc [ "option" ]) [ value_typ ])
+                   error_typ)));
         value_sig "traverse"
           (arrow Nolabel receiver_t
              (arrow (Labelled "decode") decode_typ

@@ -51,6 +51,9 @@ val find_one_as :
   decode:(Bson.t -> ('a, string) result) ->
   ('a option, Ent_ocaml.error) result
 
+val values : ctx -> Ent_ocaml.query -> (Ent_ocaml.value list, Ent_ocaml.error) result
+val value : ctx -> Ent_ocaml.query -> (Ent_ocaml.value option, Ent_ocaml.error) result
+
 val traverse_as :
   ctx ->
   Ent_ocaml.edge_query ->

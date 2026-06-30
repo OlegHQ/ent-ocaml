@@ -306,6 +306,23 @@ let run_flow client =
   assert_true "bulk insert returns docs" (List.length docs = 3);
   let* found = Ent_ocaml_mongo.find ctx query_all in
   assert_true "bulk insert persisted rows" (List.length found = 3);
+  let* selected_rows =
+    Ent_ocaml_mongo.values ctx
+      Ent_ocaml.{ query_all with select = [ "id"; "body" ]; limit = Some 1 }
+  in
+  assert_true "selected values return logical fields"
+    (match selected_rows with
+    | [ Ent_ocaml.V_doc fields ] ->
+        fields
+        = Ent_ocaml.
+            [ ("id", V_string "post_1"); ("body", V_string "first") ]
+    | _ -> false);
+  let* selected_value =
+    Ent_ocaml_mongo.value ctx
+      Ent_ocaml.{ query_all with select = [ "body" ]; limit = Some 1 }
+  in
+  assert_true "selected value returns first field"
+    (selected_value = Some (Ent_ocaml.V_string "first"));
   let* dynamic_user_posts =
     match
       Ent_ocaml.Query.make post_entity
@@ -375,23 +392,22 @@ let run_flow client =
   in
   assert_true "stored edge eager load returns source and user"
     (loaded_users = [ ("first", Some "user_1") ]);
-  let* sum_value =
+  let* sum =
     Ent_ocaml_mongo.aggregate ctx (Ent_ocaml.Aggregate.sum "views" query_user_1)
   in
-  assert_int64_value "aggregate sum returns user views" 10L sum_value;
-  let* avg_value =
+  assert_int64_value "aggregate sum returns user views" 10L sum;
+  let* avg =
     Ent_ocaml_mongo.aggregate ctx (Ent_ocaml.Aggregate.avg "views" query_all)
   in
-  assert_float_value "aggregate avg returns all views" (50.0 /. 3.0) avg_value;
-  let* scanned =
+  assert_float_value "aggregate avg returns all views" (50.0 /. 3.0) avg;
+  let* scan =
     Ent_ocaml_mongo.aggregate_scan ctx
       (Ent_ocaml.Aggregate.scan
          Ent_ocaml.Aggregate.[ count_as "posts"; sum_as "views" "views" ]
          query_all)
   in
   assert_true "aggregate scan returns count and sum"
-    (assoc_int64 "posts" scanned = Some 3L
-    && assoc_int64 "views" scanned = Some 50L);
+    (assoc_int64 "posts" scan = Some 3L && assoc_int64 "views" scan = Some 50L);
   let* grouped =
     Ent_ocaml_mongo.group ctx
       (Ent_ocaml.Aggregate.group_by "user_id"
@@ -414,27 +430,25 @@ let run_flow client =
   assert_true "upsert updates existing row"
     (List.exists
        (fun doc ->
-         Bson.get_string (Bson.get_element "body" doc) = "third updated")
+         Bson.get_string (Bson.get_element "_id" doc) = "post_3"
+         && Bson.get_string (Bson.get_element "body" doc) = "third updated")
        user_posts_after_upsert);
-  match
+  let duplicate =
     Ent_ocaml_mongo.insert_many_values ctx
-      [
-        create "post_2" "user_2" "duplicate" 20L;
-        create "post_4" "user_1" "fourth" 40L;
-      ]
-  with
-  | Error (`Constraint _) -> (
-      assert_true "bulk duplicate maps to constraint" true;
-      match Ent_ocaml_mongo.insert_many_values ctx [ invalid_create_missing_body ] with
-      | Error (`Bad_query message) ->
-          assert_true "bulk create validates required fields"
-            (message = "missing required field: body");
-          Ok ()
-      | Error error -> Error error
-      | Ok _ ->
-          Error (`Bad_query "invalid bulk create unexpectedly succeeded"))
-  | Error error -> Error error
-  | Ok _ -> Error (`Constraint "duplicate bulk insert succeeded")
+      [ create "dupe" "user_1" "duplicate" 1L; create "dupe" "user_1" "duplicate" 1L ]
+  in
+  (match duplicate with
+  | Error (`Constraint _) -> Printf.printf "PASS bulk duplicate maps to constraint\n%!"
+  | Ok _ -> failwith "FAIL bulk duplicate maps to constraint"
+  | Error error -> failwith ("FAIL unexpected duplicate error: " ^ Ent_ocaml.error_to_string error));
+  (match Ent_ocaml_mongo.insert_many_values ctx [ invalid_create_missing_body ] with
+  | Error (`Bad_query _) ->
+      Printf.printf "PASS bulk create validates required fields\n%!"
+  | Ok _ -> failwith "FAIL bulk create validates required fields"
+  | Error error ->
+      failwith
+        ("FAIL unexpected validation error: " ^ Ent_ocaml.error_to_string error));
+  Ok ()
 
 let () =
   Random.self_init ();

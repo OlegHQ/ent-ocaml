@@ -75,6 +75,20 @@ module Memory_backend = struct
     | Ok value -> Ok (Some value)
     | Error message -> Error (`Decode message)
 
+  let values () (query : Ent_ocaml.query) =
+    Ok
+      [
+        Ent_ocaml.V_doc
+          (List.map
+             (fun field -> (field, Ent_ocaml.V_string field))
+             query.Ent_ocaml.select);
+      ]
+
+  let value () (query : Ent_ocaml.query) =
+    match query.Ent_ocaml.select with
+    | [ field ] -> Ok (Some (Ent_ocaml.V_string field))
+    | [] | _ :: _ :: _ -> Error (`Bad_query "value expects one selected field")
+
   let traverse_as () (edge_query : Ent_ocaml.edge_query) ~decode =
     match decode (Ent_ocaml.V_string edge_query.Ent_ocaml.target.name) with
     | Ok value -> Ok [ value ]
@@ -491,6 +505,25 @@ let test_generated_store_api () =
   (match Store.count () draft_query with
   | Ok count -> Alcotest.(check int) "count" 2 count
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  let selected_query =
+    let open Post in
+    query () |> select [ select_id; select_body ]
+  in
+  (match Store.values () selected_query with
+  | Ok [ Ent_ocaml.V_doc fields ] ->
+      Alcotest.(check bool) "selected id" true (List.mem_assoc "id" fields);
+      Alcotest.(check bool) "selected body" true
+        (List.mem_assoc "body" fields)
+  | Ok _ -> Alcotest.fail "unexpected selected values result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  let selected_value_query =
+    let open Post in
+    query () |> select [ select_body ]
+  in
+  (match Store.value () selected_value_query with
+  | Ok (Some (Ent_ocaml.V_string "body")) -> ()
+  | Ok _ -> Alcotest.fail "unexpected selected value result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
   let aggregate =
     let open Post in
     query ()
@@ -588,6 +621,14 @@ let test_generated_client_api () =
   (match Client.all client ~decode query with
   | Ok [ "Post" ] -> ()
   | Ok _ -> Alcotest.fail "unexpected client all result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  let selected_query =
+    let open Post in
+    query () |> select [ select_id ]
+  in
+  (match Client.value client selected_query with
+  | Ok (Some (Ent_ocaml.V_string "id")) -> ()
+  | Ok _ -> Alcotest.fail "unexpected client selected value result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
   let mutation =
     let open Post in

@@ -93,6 +93,9 @@ The initial package scaffold already provides:
   Generated `Client (Backend)` modules capture backend context for entity-local
   reads and mutations and expose `with_transaction` plus `Tx` operation modules
   through the backend transaction boundary.
+  Generated Store/Client `values` and `value` helpers decode selected Mongo
+  projection fields to `Ent_ocaml.value` rows without requiring a full-record
+  decoder.
   Generated `Store.With_policy` modules evaluate query and mutation privacy
   rule chains before delegating to the selected backend. Generated
   `Store.With_hooks` modules wrap mutation execution with typed middleware.
@@ -116,7 +119,7 @@ The initial package scaffold already provides:
 | Create builders | Generated create records/builders with required-field checks | `insertOne`, optional upsert later |
 | Create bulk | Generated bulk create with ordered/unordered option | `insertMany` |
 | Query builders | Generated typed query modules | Mongo find options and filters |
-| Field selection | Generated selector constants and query projection API; decoded partial helpers pending | Mongo projections |
+| Field selection | Generated selector constants, projection API, and selected-value helpers implemented | Mongo projections |
 | Update one/by ID | Generated update-one builder and entity update helper | `updateOne` with matched-count handling |
 | Update many | Generated update builder returning modified count | `updateMany` |
 | Delete one/many | Generated delete builders | `deleteOne` / `deleteMany` |

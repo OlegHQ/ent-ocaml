@@ -822,6 +822,9 @@ module type STORE_BACKEND = sig
     decode:(doc -> ('a, string) result) ->
     ('a option, error) result
 
+  val values : ctx -> query -> (value list, error) result
+  val value : ctx -> query -> (value option, error) result
+
   val traverse_as :
     ctx ->
     edge_query ->

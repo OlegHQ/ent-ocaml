@@ -109,6 +109,16 @@ let save_post ctx mutation =
       Post_client.Tx.insert tx mutation)
 ```
 
+Selected values decode projected rows without a full-record decoder:
+
+```ocaml
+let post_summaries ctx =
+  let open Post in
+  query ()
+  |> select [ select_id; select_body ]
+  |> Posts.values ctx
+```
+
 Mutation hooks wrap generated stores in the same module-first style:
 
 ```ocaml

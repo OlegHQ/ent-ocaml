@@ -648,6 +648,59 @@ let value_of_bson_element element =
   in
   loop decoders
 
+let selected_fields (query : Ent_ocaml.query) =
+  match query.select with
+  | [] -> Error (`Bad_query "values expects selected fields")
+  | fields -> Ok fields
+
+let selected_row (query : Ent_ocaml.query) doc =
+  let rec loop acc = function
+    | [] -> Ok (Ent_ocaml.V_doc (List.rev acc))
+    | field :: rest -> (
+        match field_storage_key query.Ent_ocaml.entity field with
+        | Error _ as error -> error
+        | Ok key -> (
+            try
+              match value_of_bson_element (Bson.get_element key doc) with
+              | Ok value -> loop ((field, value) :: acc) rest
+              | Error _ as error -> error
+            with
+            | _ -> Error (`Decode ("selected field missing: " ^ field))))
+  in
+  match selected_fields query with
+  | Error _ as error -> error
+  | Ok fields -> loop [] fields
+
+let selected_rows (query : Ent_ocaml.query) docs =
+  let rec loop acc = function
+    | [] -> Ok (List.rev acc)
+    | doc :: rest -> (
+        match selected_row query doc with
+        | Ok row -> loop (row :: acc) rest
+        | Error _ as error -> error)
+  in
+  loop [] docs
+
+let selected_value (query : Ent_ocaml.query) doc =
+  match query.Ent_ocaml.select with
+  | [ field ] -> (
+      match selected_row query doc with
+      | Ok (Ent_ocaml.V_doc fields) -> Ok (List.assoc field fields)
+      | Ok _ -> Error (`Decode "selected row is not a document")
+      | Error _ as error -> error)
+  | [] | _ :: _ :: _ -> Error (`Bad_query "value expects one selected field")
+
+let values ctx query =
+  match find ctx query with
+  | Error _ as error -> error
+  | Ok docs -> selected_rows query docs
+
+let value ctx query =
+  match find_one ctx query with
+  | Error _ as error -> error
+  | Ok None -> Ok None
+  | Ok (Some doc) -> selected_value query doc |> Result.map Option.some
+
 let stored_to_one_edge (edge_query : Ent_ocaml.edge_query) =
   let open Ent_ocaml in
   let source_entity = edge_query.source.entity in
