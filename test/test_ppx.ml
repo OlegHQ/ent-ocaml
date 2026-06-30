@@ -9,7 +9,9 @@ type post = {
 [@@ent.entity "Post"] [@@ent.collection "posts"] [@@deriving ent]
 
 let find_field name =
-  List.find (fun field -> field.Ent_ocaml.name = name) post_entity.fields
+  List.find
+    (fun (field : Ent_ocaml.field) -> field.name = name)
+    post_entity.fields
 
 let test_entity_metadata () =
   Alcotest.(check string) "entity name" "Post" post_entity.name;

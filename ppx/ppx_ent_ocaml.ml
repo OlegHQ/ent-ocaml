@@ -18,6 +18,7 @@ let lid_of_parts = function
 let lid ~loc parts = { loc; txt = lid_of_parts parts }
 let ident ~loc parts = A.pexp_ident ~loc (lid ~loc parts)
 let constr ~loc parts = A.pexp_construct ~loc (lid ~loc parts) None
+let constr_arg ~loc parts arg = A.pexp_construct ~loc (lid ~loc parts) (Some arg)
 
 let app ~loc fn args =
   A.pexp_apply ~loc fn (List.map (fun arg -> (Nolabel, arg)) args)
@@ -86,9 +87,11 @@ let type_path_parts path =
   in
   loop [] path
 
-let field_type_expr ~loc field =
+let rec field_type_expr ~loc field =
   match Attribute.get ent_enum_attr field with
-  | Some values -> app ~loc (constr ~loc [ "Ent_ocaml"; "Enum" ]) [ list ~loc (List.map (str ~loc) values) ]
+  | Some values ->
+      constr_arg ~loc [ "Ent_ocaml"; "Enum" ]
+        (list ~loc (List.map (str ~loc) values))
   | None -> (
       match field.pld_type.ptyp_desc with
       | Ptyp_constr ({ txt = Longident.Lident "string"; _ }, []) ->
@@ -109,19 +112,19 @@ let field_type_expr ~loc field =
           constr ~loc [ "Ent_ocaml"; "Bytes" ]
       | Ptyp_constr ({ txt = Longident.Lident "option"; _ }, [ inner ])
       | Ptyp_constr ({ txt = Longident.Ldot (Longident.Lident "Option", "t"); _ }, [ inner ]) ->
-          app ~loc (constr ~loc [ "Ent_ocaml"; "Option" ])
-            [ field_type_expr ~loc { field with pld_type = inner } ]
+          constr_arg ~loc [ "Ent_ocaml"; "Option" ]
+            (field_type_expr ~loc { field with pld_type = inner })
       | Ptyp_constr ({ txt = Longident.Lident "list"; _ }, [ inner ])
       | Ptyp_constr ({ txt = Longident.Ldot (Longident.Lident "List", "t"); _ }, [ inner ]) ->
-          app ~loc (constr ~loc [ "Ent_ocaml"; "List" ])
-            [ field_type_expr ~loc { field with pld_type = inner } ]
+          constr_arg ~loc [ "Ent_ocaml"; "List" ]
+            (field_type_expr ~loc { field with pld_type = inner })
       | Ptyp_constr ({ txt = path; _ }, []) ->
           let name = String.concat "." (type_path_parts path) in
           if name = "Ptime.t" then constr ~loc [ "Ent_ocaml"; "Time_ms" ]
           else if name = "Uuidm.t" then constr ~loc [ "Ent_ocaml"; "Uuid" ]
           else if name = "Yojson.Safe.t" || name = "Yojson.t" then
             constr ~loc [ "Ent_ocaml"; "Json" ]
-          else app ~loc (constr ~loc [ "Ent_ocaml"; "Custom" ]) [ str ~loc name ]
+          else constr_arg ~loc [ "Ent_ocaml"; "Custom" ] (str ~loc name)
       | _ ->
           Location.raise_errorf ~loc:field.pld_type.ptyp_loc
             "ent deriving supports primitive fields, option fields, enum fields, or named custom types")
@@ -198,8 +201,8 @@ let generate_sig ~loc:_ ~path:_ (_rec_flag, tds) =
 
 let deriver =
   Deriving.add "ent"
-    ~str_type_decl:(Deriving.Generator.V2.make_noarg generate_str)
-    ~sig_type_decl:(Deriving.Generator.V2.make_noarg generate_sig)
+    ~str_type_decl:(Deriving.Generator.make_noarg generate_str)
+    ~sig_type_decl:(Deriving.Generator.make_noarg generate_sig)
 
 let expand_entity ~ctxt:_ name =
   let loc = name.pexp_loc in
