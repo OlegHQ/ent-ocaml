@@ -169,7 +169,8 @@ The initial package scaffold already provides:
   equality, comparison, membership, and null checks, plus nested path ordering.
   Generated schema snapshots expose stable `Ent_ocaml.value` metadata documents
   for drift/debug tooling, including `[@ent.sensitive]`,
-  `[@ent.deprecated "..."]`, and `[@ent.comment "..."]` field metadata.
+  `[@ent.deprecated "..."]`, `[@ent.comment "..."]` field metadata, and
+  `[@@ent.global_id]` entity metadata.
   Repository-wide schema manifests are supported with
   `Ent_ocaml.Schema_snapshot.manifest ~name entities`.
   Type-level `[@@ent.indexes ...]` descriptors support compound, unique, and
@@ -213,7 +214,7 @@ The initial package scaffold already provides:
 | Hooks | Generated mutation middleware via `Store.With_hooks`, `Client.With_hooks`, `Store.Schema_hooks`, `Client.Schema_hooks`, `Store.With_schema_hooks`, and `Client.With_schema_hooks` implemented with stable schema-then-caller composition | Around generated mutators |
 | Interceptors | Generated query middleware via `Store.With_interceptors`, `Client.With_interceptors`, `Store.Schema_interceptors`, `Client.Schema_interceptors`, `Store.With_schema_interceptors`, and `Client.With_schema_interceptors` implemented; traversal, traversal-chain first-hop, and eager-load edge middleware via `Store.With_edge_interceptors`, `Client.With_edge_interceptors`, `Store.Schema_edge_interceptors`, `Client.Schema_edge_interceptors`, `Store.With_schema_edge_interceptors`, and `Client.With_schema_edge_interceptors` implemented | Around query execution and traversal construction |
 | Privacy | Query/mutation rule-chain evaluation, generated policy-aware Store/Client modules, schema `Store.Schema_policy`/`Client.Schema_policy`, stable schema-then-caller `With_schema_policy` modules, and mixin-provided privacy rule registration implemented | Evaluated before backend execution |
-| Mixins | Mixin-provided policy, hook, query-interceptor, edge-interceptor, and index registration implemented through `[@@ent.mixins [ Module ]]`; reusable field and generated-edge helper composition pending | PPX composition step |
+| Mixins | Mixin-provided policy, hook, query-interceptor, edge-interceptor, and index registration implemented through `[@@ent.mixins [ Module ]]`; generated field injection is intentionally not pursued for OCaml record types | Ordinary OCaml modules plus PPX composition for runtime metadata |
 | Field defaults | Generated `[@ent.default expr]`, `[@ent.update_default expr]`, `[@ent.default_result expr]`, and `[@ent.update_default_result expr]` | OCaml expressions evaluated in create/update APIs |
 | Field validators | Generated `[@ent.validate [fn1; fn2]]` wrappers for primitive, enum, option, list, JSON, and nested custom record fields | Checked before backend mutation |
 | Sensitive/deprecated/comments | Generated schema metadata implemented with `[@ent.sensitive]`, `[@ent.deprecated "..."]`, and `[@ent.comment "..."]` | Snapshot/display metadata |
@@ -222,14 +223,61 @@ The initial package scaffold already provides:
 | Transactions | Generated `with_transaction` and `Tx` clients plus session-backed Mongo transaction execution, transaction hooks, typed read/write concern options, and commit-time budget option implemented | Mongo sessions/transactions where deployment supports them |
 | Schema/index checks | Mongo index ensure/drift verification and collection validator ensure/drift verification implemented | `createIndexes`, `listIndexes`, `collMod`, `listCollections` |
 | Schema migrations | Out of scope for Poster; do not build migration planners/generators for this roadmap | Use explicit deployment/admin operations outside ent-ocaml |
-| Global IDs | Optional globally unique ID configuration | App-generated IDs or ObjectId strategy |
-| Schema views | Read-only entity descriptors and generated query modules | Mongo views/aggregation-backed collections where useful |
+| Global IDs | `[@@ent.global_id]` metadata implemented in entity descriptors and schema snapshots; no hidden allocator | App-generated IDs or ObjectId strategy |
+| Schema views | Low priority for Poster; use ordinary read-only DTO entities if needed | Mongo views/aggregation-backed collections only after a concrete app need |
 | Schema snapshot | PPX-generated per-entity schema snapshots and repository-wide manifests implemented | Checked-in `.ml` manifest or JSON snapshot |
 | Local custom code | Hand-written modules beside generated code | Ordinary OCaml modules |
-| Dynamic EntQL | Metadata-validated runtime field filters, result-returning boolean expression parser, stored-FK edge ID paths, generated edge target-field paths, and JSON subpaths implemented; deeper cross-entity traversal paths pending | Runtime predicate AST parser/builder |
+| Dynamic EntQL | Metadata-validated runtime field filters, result-returning boolean expression parser, stored-FK edge ID paths, generated edge target-field paths, nested stored-FK target paths, and JSON subpaths implemented; broader cross-collection grammar deferred until Poster needs user-authored filters | Runtime predicate AST parser/builder |
 | Extension/plugin systems | Out of scope for Poster; do not add extension registration/checklist work | Prefer ordinary OCaml modules and typed backend metadata only when needed |
-| SQL-only features | Backend-specific optional capabilities | Provide Mongo-specific analogs, keep SQL names out of core |
-| GraphQL/gRPC integrations | Out of core for first release | Future packages, not required for Poster |
+| SQL-only features | Out of scope for the Mongo-first Poster roadmap | Keep SQL names out of core |
+| GraphQL/gRPC integrations | Out of scope for Poster | Future packages only if explicitly requested |
+
+## Scoped Remaining Work
+
+The roadmap is now scoped around Poster's actual objective: replace handwritten
+Mongo store code with generated, idiomatic OCaml entity APIs and keep the
+Mongo-backed product reliable. Ent Go remains a capability reference, not a
+mandate to clone every framework surface.
+
+Required before calling the Poster-oriented EntoCaml cutover complete:
+
+- Keep Poster using generated entity modules for all ordinary user, session,
+  post, media, and publish-attempt persistence paths.
+- Preserve the current generated functional API shape: local opens, pipelines,
+  record helpers, result-returning defaults, generated Store/Client modules,
+  and no Go-style builder translation.
+- Maintain Mongo coverage for CRUD, bulk create, upsert, update/delete over
+  composed predicates, projections, selected values, indexes, collection
+  validators, aggregation, seek pagination, stored-FK edges, join-backed edges,
+  traversal chains, eager loading, hooks, privacy, interceptors, and EntQL paths
+  already used by Poster or needed for near-term UI flows.
+- Keep schema/index/validator drift checks documented and exercised by e2e
+  tests.
+- Keep the submodule pushed to `OlegHQ/ent-ocaml` and the parent repo pinned to
+  the pushed SHA.
+
+Defer unless a concrete Poster feature needs them:
+
+- Full nested eager-loading trees with intermediate-node materialization and
+  optional in-memory backrefs. The current flat, grouped, named, heterogeneous,
+  and chain eager loaders cover Poster-style reads.
+- Broader non-stored-FK traversal planning beyond stored-FK and explicit
+  Mongo join collections.
+- More EntQL relationship grammar for arbitrary user-authored cross-collection
+  filters. Typed generated predicates should remain preferred for app code.
+- Schema views or aggregation-backed read-only entities.
+- Replica-set transaction verification beyond the current session-backed
+  implementation and graceful standalone skip, unless production deployment
+  requires replica-set semantics.
+
+Out of scope for this Poster roadmap:
+
+- Migration planners/generators.
+- Ent Go extension/plugin registration systems.
+- SQL-only features and SQL naming in core APIs.
+- GraphQL/gRPC integration packages.
+- Hidden global ID allocation. `[@@ent.global_id]` is metadata; the app or
+  backend strategy owns actual ID creation.
 
 ## Milestones
 
@@ -329,8 +377,9 @@ The initial package scaffold already provides:
    caller-provided middleware without a mutable global registry. Schema
    `[@@ent.mixins [ Module ]]` registers reusable policy, hook, query
    interceptor, edge interceptor, and index modules before schema-local
-   middleware/indexes. Reusable field and generated-edge helper mixin
-   composition remains.
+   middleware/indexes. Go-style reusable field injection is not pursued because
+   OCaml record fields must stay explicit in the user-written type; share field
+   conventions with ordinary modules and record helpers instead.
 
 9. Aggregation, ordering, and pagination:
    filtered and grouped count/min/max/sum/avg, named aggregate scans, and
@@ -360,9 +409,9 @@ The initial package scaffold already provides:
    JSON field subpaths; generated JSON path predicates are implemented for JSON
    fields, and generated per-entity schema snapshots plus repository-wide
    snapshot manifests are implemented. Richer nested cross-entity traversal
-   grammar, custom annotations when they directly support a backend feature, and
-   typed backend-specific escape hatches remain. Migrations and extension/plugin
-   systems are not on the
+   grammar is deferred until Poster has user-authored filter requirements;
+   custom annotations should only be added when they directly support a concrete
+   backend feature. Migrations and extension/plugin systems are not on the
    Poster roadmap; add typed backend metadata only when a concrete backend
    feature requires it.
 

@@ -41,6 +41,11 @@ let ent_collection_attr =
     Ast_pattern.(single_expr_payload (estring __))
     (fun collection -> collection)
 
+let ent_global_id_attr =
+  Attribute.declare "ent.global_id" Attribute.Context.type_declaration
+    Ast_pattern.(pstr nil)
+    ()
+
 let ent_key_attr =
   Attribute.declare "ent.key" Attribute.Context.label_declaration
     Ast_pattern.(single_expr_payload (estring __))
@@ -1552,6 +1557,7 @@ let gen_entity td =
         (lid ~loc [ "Ent_ocaml"; "fields" ], list ~loc (List.map field_expr fields));
         (lid ~loc [ "Ent_ocaml"; "edges" ], list ~loc edges);
         (lid ~loc [ "Ent_ocaml"; "indexes" ], indexes_expr);
+        (lid ~loc [ "Ent_ocaml"; "global_id" ], bool ~loc (has_attr ent_global_id_attr td));
       ]
       None
   in

@@ -584,6 +584,21 @@ type post = {
 [@@deriving ent]
 ```
 
+Use `[@@ent.global_id]` only when an entity participates in a shared ID space
+managed by the application. EntoCaml records that flag in schema metadata and
+schema snapshots; it does not invent an ID allocator:
+
+```ocaml
+type event = {
+  id : string [@ent.key "_id"];
+  metadata : Ent_ocaml.value [@ent.json] [@ent.optional];
+}
+[@@ent.entity "Event"]
+[@@ent.collection "events"]
+[@@ent.global_id]
+[@@deriving ent]
+```
+
 Indexes are schema metadata, and partial indexes reuse normal typed predicates:
 
 ```ocaml

@@ -104,6 +104,7 @@ and entity = {
   fields : field list;
   edges : edge list;
   indexes : index list;
+  global_id : bool;
 }
 
 type order_direction = Asc | Desc
@@ -408,6 +409,7 @@ module Schema_snapshot = struct
         ("version", V_int 1);
         string "name" entity.name;
         string "collection" entity.collection;
+        bool "global_id" entity.global_id;
         ("fields", V_list (List.map field entity.fields));
         ("edges", V_list (List.map edge entity.edges));
         ("indexes", V_list (List.map index entity.indexes));

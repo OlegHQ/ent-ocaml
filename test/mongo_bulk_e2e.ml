@@ -43,6 +43,7 @@ let org_entity =
         ];
       edges = [];
       indexes = [];
+      global_id = false;
     }
 
 let user_entity =
@@ -123,6 +124,7 @@ let user_entity =
             partial_filter = [];
           };
         ];
+      global_id = false;
     }
 
 let tag_entity =
@@ -161,6 +163,7 @@ let tag_entity =
         ];
       edges = [];
       indexes = [];
+      global_id = false;
     }
 
 let post_entity =
@@ -280,6 +283,7 @@ let post_entity =
             partial_filter = [ Eq ("user_id", V_string "user_1") ];
           };
         ];
+      global_id = false;
     }
 
 let create_org id slug =

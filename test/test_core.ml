@@ -34,6 +34,7 @@ let org_entity =
         ];
       edges = [];
       indexes = [];
+      global_id = false;
     }
 
 let user_entity =
@@ -103,8 +104,9 @@ let user_entity =
             storage_key = Some "user_id";
             join = None;
           };
-        ];
+      ];
       indexes = [];
+      global_id = false;
     }
 
 let post_entity =
@@ -197,8 +199,9 @@ let post_entity =
             storage_key = Some "user_id";
             join = None;
           };
-        ];
+      ];
       indexes = [];
+      global_id = false;
     }
 
 let query ?(predicates = []) ?(select = []) ?(orders = []) ?limit ?offset () =

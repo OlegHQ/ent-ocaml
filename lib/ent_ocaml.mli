@@ -104,6 +104,7 @@ and entity = {
   fields : field list;
   edges : edge list;
   indexes : index list;
+  global_id : bool;
 }
 
 type order_direction = Asc | Desc

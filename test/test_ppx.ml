@@ -266,6 +266,7 @@ type event = {
   metadata : Ent_ocaml.value [@ent.json] [@ent.optional];
 }
 [@@ent.entity "Event"] [@@ent.collection "events"]
+[@@ent.global_id]
 [@@deriving ent]
 
 type task = {
@@ -429,6 +430,8 @@ let find_field name =
 let test_entity_metadata () =
   Alcotest.(check string) "entity name" "Post" post_entity.name;
   Alcotest.(check string) "collection" "posts" post_entity.collection;
+  Alcotest.(check bool) "post local id" false post_entity.global_id;
+  Alcotest.(check bool) "event global id" true event_entity.global_id;
   Alcotest.(check int) "field count" 8 (List.length post_entity.fields);
   Alcotest.(check int) "index count" 2 (List.length post_entity.indexes);
   Alcotest.(check int) "edge count" 2 (List.length post_entity.edges);
@@ -509,6 +512,9 @@ let test_generated_schema_snapshot () =
            (function Ent_ocaml.V_string value -> value | _ -> "")
            (List.assoc_opt "name" fields));
       Alcotest.(check bool)
+        "global id snapshot" true
+        (List.assoc_opt "global_id" fields = Some (Ent_ocaml.V_bool false));
+      Alcotest.(check bool)
         "fields" true
         (match List.assoc_opt "fields" fields with
         | Some (Ent_ocaml.V_list fields) -> List.length fields = 8
@@ -546,6 +552,14 @@ let test_generated_schema_snapshot () =
                   indexes
             | _ -> false)
       | _ -> Alcotest.fail "expected ordered schema snapshot document")
+      ;
+      (match event_schema_snapshot with
+      | Ent_ocaml.V_doc event_fields ->
+          Alcotest.(check bool)
+            "event global id snapshot" true
+            (List.assoc_opt "global_id" event_fields
+            = Some (Ent_ocaml.V_bool true))
+      | _ -> Alcotest.fail "expected event schema snapshot document")
   | _ -> Alcotest.fail "expected generated schema snapshot document"
 
 let test_generated_schema_manifest () =
