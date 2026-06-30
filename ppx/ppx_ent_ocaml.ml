@@ -1077,6 +1077,24 @@ let gen_query_module td =
             (A.pexp_fun ~loc Nolabel None (pvar ~loc "predicate")
                (constr_arg ~loc [ "Ent_ocaml"; "Not" ]
                   (evar ~loc "predicate")));
+        A.value_binding ~loc ~pat:(pvar ~loc "dynamic_filter")
+          ~expr:
+            (A.pexp_fun ~loc (Optional "value") None (pvar ~loc "value")
+               (A.pexp_fun ~loc (Labelled "field") None (pvar ~loc "field")
+                  (A.pexp_fun ~loc Nolabel None (pvar ~loc "op")
+                     (A.pexp_apply ~loc
+                        (ident ~loc [ "Ent_ocaml"; "Dynamic_filter"; "make" ])
+                        [
+                          (Optional "value", evar ~loc "value");
+                          (Labelled "field", evar ~loc "field");
+                          (Nolabel, evar ~loc "op");
+                        ]))));
+        A.value_binding ~loc ~pat:(pvar ~loc "dynamic_predicate")
+          ~expr:
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "filter")
+               (app ~loc
+                  (ident ~loc [ "Ent_ocaml"; "Dynamic_filter"; "predicate" ])
+                  [ evar ~loc (type_name ^ "_entity"); evar ~loc "filter" ]));
       ]
   in
   let query_pipe_helpers =
@@ -1112,6 +1130,20 @@ let gen_query_module td =
                            ] );
                      ]
                      (Some (evar ~loc "query")))));
+        A.value_binding ~loc ~pat:(pvar ~loc "where_dynamic")
+          ~expr:
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "filter")
+               (A.pexp_fun ~loc Nolabel None query_pat
+                  (app ~loc
+                     (ident ~loc [ "Ent_ocaml"; "Dynamic_filter"; "where" ])
+                     [ evar ~loc "filter"; evar ~loc "query" ])));
+        A.value_binding ~loc ~pat:(pvar ~loc "where_dynamic_all")
+          ~expr:
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "filters")
+               (A.pexp_fun ~loc Nolabel None query_pat
+                  (app ~loc
+                     (ident ~loc [ "Ent_ocaml"; "Dynamic_filter"; "where_all" ])
+                     [ evar ~loc "filters"; evar ~loc "query" ])));
         A.value_binding ~loc ~pat:(pvar ~loc "select")
           ~expr:
             (A.pexp_fun ~loc Nolabel None (pvar ~loc "fields")
@@ -2367,6 +2399,12 @@ let gen_sig_for_type td =
   let group_result_typ =
     A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "group_result" ]) []
   in
+  let dynamic_filter_typ =
+    A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "Dynamic_filter"; "t" ]) []
+  in
+  let dynamic_filter_op_typ =
+    A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "Dynamic_filter"; "op" ]) []
+  in
   let mutation_typ =
     A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "mutation" ]) []
   in
@@ -2436,6 +2474,13 @@ let gen_sig_for_type td =
       val_sig "and_" (arrow Nolabel predicates_typ predicate_typ);
       val_sig "or_" (arrow Nolabel predicates_typ predicate_typ);
       val_sig "not_" (arrow Nolabel predicate_typ predicate_typ);
+      val_sig "dynamic_filter"
+        (arrow (Optional "value") value_typ
+           (arrow (Labelled "field") string_typ
+              (arrow Nolabel dynamic_filter_op_typ dynamic_filter_typ)));
+      val_sig "dynamic_predicate"
+        (arrow Nolabel dynamic_filter_typ
+           (result_typ predicate_typ error_typ));
     ]
   in
   let query_pipe_sig =
@@ -2443,6 +2488,12 @@ let gen_sig_for_type td =
       val_sig "where" (arrow Nolabel predicate_typ (arrow Nolabel query_typ query_typ));
       val_sig "where_all"
         (arrow Nolabel predicates_typ (arrow Nolabel query_typ query_typ));
+      val_sig "where_dynamic"
+        (arrow Nolabel dynamic_filter_typ
+           (arrow Nolabel query_typ (result_typ query_typ error_typ)));
+      val_sig "where_dynamic_all"
+        (arrow Nolabel (list_typ dynamic_filter_typ)
+           (arrow Nolabel query_typ (result_typ query_typ error_typ)));
       val_sig "select"
         (arrow Nolabel (list_typ string_typ) (arrow Nolabel query_typ query_typ));
       val_sig "order_by"

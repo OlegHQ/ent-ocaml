@@ -230,6 +230,34 @@ module Result_syntax : sig
   val ( let+ ) : ('a, 'e) result -> ('a -> 'b) -> ('b, 'e) result
 end
 
+module Dynamic_filter : sig
+  type op =
+    | Equal
+    | Not_equal
+    | Greater_than
+    | Greater_or_equal
+    | Less_than
+    | Less_or_equal
+    | In_list
+    | Not_in_list
+    | Contains
+    | Has_prefix
+    | Has_suffix
+    | Is_null
+    | Not_null
+
+  type t = {
+    field : string;
+    op : op;
+    value : value option;
+  }
+
+  val make : ?value:value -> field:string -> op -> t
+  val predicate : entity -> t -> (predicate, error) result
+  val where : t -> query -> (query, error) result
+  val where_all : t list -> query -> (query, error) result
+end
+
 type privacy_decision = Allow | Deny of string | Skip
 type 'ctx query_rule = 'ctx -> query -> privacy_decision
 type 'ctx mutation_rule = 'ctx -> mutation -> privacy_decision

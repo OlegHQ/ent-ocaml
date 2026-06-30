@@ -288,6 +288,19 @@ let run_flow client =
   assert_true "bulk insert returns docs" (List.length docs = 3);
   let* found = Ent_ocaml_mongo.find ctx query_all in
   assert_true "bulk insert persisted rows" (List.length found = 3);
+  let* dynamic_user_posts =
+    match
+      Ent_ocaml.Query.make post_entity
+      |> Ent_ocaml.Dynamic_filter.where
+           (Ent_ocaml.Dynamic_filter.make ~field:"user_id"
+              ~value:(Ent_ocaml.V_string "user_2")
+              Ent_ocaml.Dynamic_filter.Equal)
+    with
+    | Ok query -> Ent_ocaml_mongo.find ctx query
+    | Error _ as error -> error
+  in
+  assert_true "dynamic filter returns user posts"
+    (List.length dynamic_user_posts = 2);
   let* page = Ent_ocaml_mongo.find ctx query_after_post_1 in
   assert_true "seek pagination returns next row"
     (match page with

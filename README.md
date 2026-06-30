@@ -121,6 +121,22 @@ let load_scoped ctx query =
   Scoped_posts.all ctx ~decode:post_of_bson_doc_result query
 ```
 
+Runtime dynamic filters validate against entity metadata and then become normal
+typed predicates:
+
+```ocaml
+let load_filtered ctx =
+  let open Ent_ocaml.Result_syntax in
+  let open Post in
+  let filter =
+    dynamic_filter ~field:select_status
+      ~value:(Ent_ocaml.V_string "draft")
+      Ent_ocaml.Dynamic_filter.Equal
+  in
+  let* query = query () |> where_dynamic filter in
+  Posts.all ctx ~decode:post_of_bson_doc_result query
+```
+
 Aggregates compose from queries too:
 
 ```ocaml

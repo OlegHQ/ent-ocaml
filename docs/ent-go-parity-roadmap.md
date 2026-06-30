@@ -68,8 +68,8 @@ The initial package scaffold already provides:
   mutation validation, field validators, errors, privacy decisions, backend
   signatures, generic query combinators, result syntax, polymorphic query
   interceptor middleware, polymorphic mutation hook middleware, privacy
-  rule-chain evaluation, and a store backend signature for generated
-  entity-local executors.
+  rule-chain evaluation, metadata-validated dynamic filters, and a store backend
+  signature for generated entity-local executors.
 - Mongo planning and CRUD execution for scalar filters, boolean predicates,
   field selection/projection, ordering, limit/offset, insert, bulk insert,
   update, upsert-one with `$setOnInsert`, delete, count, filtered and grouped
@@ -94,6 +94,8 @@ The initial package scaffold already provides:
   rule chains before delegating to the selected backend. Generated
   `Store.With_hooks` modules wrap mutation execution with typed middleware.
   Generated `Store.With_interceptors` modules wrap read-path query execution.
+  Generated dynamic filter helpers validate runtime field/operator/value terms
+  against the entity descriptor and then compose through normal query pipelines.
 - Poster pilot integration for `User`, `Session`, `Post`, `Media`,
   `PublishState`, and `PublishAttempt` DTO entities.
 
@@ -138,7 +140,7 @@ The initial package scaffold already provides:
 | Schema views | Read-only entity descriptors and generated query modules | Mongo views/aggregation-backed collections where useful |
 | Schema snapshot | PPX-generated schema manifest for conflict/debugging | Checked-in `.ml` manifest or JSON snapshot |
 | Local custom code | Hand-written modules beside generated code | Ordinary OCaml modules |
-| Dynamic EntQL | Runtime generic filters | Runtime predicate AST parser/builder |
+| Dynamic EntQL | Metadata-validated runtime field filters implemented; parsing/string expression language pending | Runtime predicate AST parser/builder |
 | SQL-only features | Backend-specific optional capabilities | Provide Mongo-specific analogs, keep SQL names out of core |
 | GraphQL/gRPC integrations | Out of core for first release | Future packages, not required for Poster |
 
@@ -216,9 +218,11 @@ The initial package scaffold already provides:
    validators where useful, and audit docs for production rollout.
 
 11. EntQL and backend-specific metadata:
-   add runtime dynamic filters, schema snapshots, custom annotations when they
-   directly support a backend feature, and typed backend-specific escape
-   hatches. Do not add generator plugins unless a concrete user need appears.
+   metadata-validated runtime dynamic filters are implemented for field
+   predicates. String parsing/expression syntax, schema snapshots, custom
+   annotations when they directly support a backend feature, and typed
+   backend-specific escape hatches remain. Do not add generator plugins unless a
+   concrete user need appears.
 
 12. Poster cutover and e2e:
    run unit tests, PPX expansion tests, Mongo driver e2e, Poster HTTP e2e, and

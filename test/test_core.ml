@@ -41,6 +41,16 @@ let post_entity =
                 | _ -> Error "expected string");
               ];
           };
+          {
+            name = "published_at_ms";
+            storage_key = "published_at_ms";
+            typ = Option Int64;
+            required = false;
+            unique = false;
+            immutable = false;
+            nillable = true;
+            validators = [];
+          };
         ];
       edges =
         [
@@ -322,6 +332,47 @@ let test_query_interceptor_chain () =
   | Ok 1 -> ()
   | Ok count -> Alcotest.failf "expected one predicate, got %d" count
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+
+let test_dynamic_filter_api () =
+  let open Ent_ocaml in
+  let status =
+    Dynamic_filter.make ~field:"body" ~value:(V_string "draft")
+      Dynamic_filter.Contains
+  in
+  (match Dynamic_filter.predicate post_entity status with
+  | Ok (Contains ("body", "draft")) -> ()
+  | Ok _ -> Alcotest.fail "unexpected dynamic predicate"
+  | Error error -> Alcotest.fail (error_to_string error));
+  let query =
+    Query.make post_entity
+    |> Dynamic_filter.where
+         (Dynamic_filter.make ~field:"user_id" ~value:(V_string "user_1")
+            Dynamic_filter.Equal)
+  in
+  (match query with
+  | Ok query -> Alcotest.(check int) "dynamic where" 1 (List.length query.predicates)
+  | Error error -> Alcotest.fail (error_to_string error));
+  (match
+     Dynamic_filter.predicate post_entity
+       (Dynamic_filter.make ~field:"user_id" ~value:(V_int 1) Dynamic_filter.Equal)
+   with
+  | Error (`Bad_query "dynamic filter value has wrong type for field: user_id") -> ()
+  | Ok _ -> Alcotest.fail "expected dynamic type error"
+  | Error error -> Alcotest.fail (error_to_string error));
+  (match
+     Dynamic_filter.predicate post_entity
+       (Dynamic_filter.make ~field:"missing" ~value:(V_string "x") Dynamic_filter.Equal)
+   with
+  | Error (`Bad_query "dynamic filter field not found on Post: missing") -> ()
+  | Ok _ -> Alcotest.fail "expected dynamic field error"
+  | Error error -> Alcotest.fail (error_to_string error));
+  (match
+     Dynamic_filter.predicate post_entity
+       (Dynamic_filter.make ~field:"published_at_ms" Dynamic_filter.Is_null)
+   with
+  | Ok (Is_nil "published_at_ms") -> ()
+  | Ok _ -> Alcotest.fail "unexpected nil predicate"
+  | Error error -> Alcotest.fail (error_to_string error))
 
 let test_mongo_eq_predicate () =
   match
@@ -657,6 +708,7 @@ let () =
           Alcotest.test_case "mutation hook chain" `Quick test_mutation_hook_chain;
           Alcotest.test_case "query interceptor chain" `Quick
             test_query_interceptor_chain;
+          Alcotest.test_case "dynamic filter api" `Quick test_dynamic_filter_api;
         ] );
       ( "mongo",
         [

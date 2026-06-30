@@ -324,6 +324,158 @@ end
 let find_field (entity : entity) name =
   List.find_opt (fun (field : field) -> field.name = name) entity.fields
 
+module Dynamic_filter = struct
+  type op =
+    | Equal
+    | Not_equal
+    | Greater_than
+    | Greater_or_equal
+    | Less_than
+    | Less_or_equal
+    | In_list
+    | Not_in_list
+    | Contains
+    | Has_prefix
+    | Has_suffix
+    | Is_null
+    | Not_null
+
+  type t = {
+    field : string;
+    op : op;
+    value : value option;
+  }
+
+  let make ?value ~field op = { field; op; value }
+
+  let rec unwrap_option = function
+    | Option typ -> unwrap_option typ
+    | typ -> typ
+
+  let rec value_matches typ value =
+    match (typ, value) with
+    | Option _, V_null -> true
+    | Option typ, value -> value_matches typ value
+    | List typ, V_list values -> List.for_all (value_matches typ) values
+    | String, V_string _ -> true
+    | Int, V_int _ -> true
+    | Int32, V_int32 _ -> true
+    | Int64, V_int64 _ -> true
+    | Time_ms, V_int64 _ -> true
+    | Float, V_float _ -> true
+    | Bool, V_bool _ -> true
+    | Uuid, V_string _ -> true
+    | Bytes, V_string _ -> true
+    | Json, _ -> true
+    | Enum values, V_string value -> List.mem value values
+    | Custom _, _ -> true
+    | _ -> false
+
+  let comparable = function
+    | String | Int | Int32 | Int64 | Time_ms | Float | Uuid | Enum _ -> true
+    | Bool | Bytes | Json | List _ | Option _ | Custom _ -> false
+
+  let string_like = function
+    | String | Uuid | Bytes | Enum _ -> true
+    | Int | Int32 | Int64 | Float | Bool | Time_ms | Json | List _ | Option _
+    | Custom _ ->
+        false
+
+  let field_error entity field =
+    `Bad_query ("dynamic filter field not found on " ^ entity.name ^ ": " ^ field)
+
+  let value_error (field : field) =
+    `Bad_query ("dynamic filter value has wrong type for field: " ^ field.name)
+
+  let missing_value (field : field) =
+    `Bad_query ("dynamic filter requires value for field: " ^ field.name)
+
+  let unexpected_value (field : field) =
+    `Bad_query ("dynamic filter does not accept value for field: " ^ field.name)
+
+  let bad_operator (field : field) =
+    `Bad_query ("dynamic filter operator is not valid for field: " ^ field.name)
+
+  let value (field : field) = function
+    | None -> Error (missing_value field)
+    | Some value ->
+        if value_matches field.typ value then Ok value else Error (value_error field)
+
+  let list_value (field : field) = function
+    | None -> Error (missing_value field)
+    | Some (V_list values) ->
+        if List.for_all (value_matches field.typ) values then Ok values
+        else Error (value_error field)
+    | Some _ -> Error (value_error field)
+
+  let no_value (field : field) = function
+    | None -> Ok ()
+    | Some _ -> Error (unexpected_value field)
+
+  let predicate entity filter =
+    let open Result_syntax in
+    match find_field entity filter.field with
+    | None -> Error (field_error entity filter.field)
+    | Some field -> (
+        match filter.op with
+        | Equal ->
+            let+ value = value field filter.value in
+            Eq (field.name, value)
+        | Not_equal ->
+            let+ value = value field filter.value in
+            Neq (field.name, value)
+        | Greater_than | Greater_or_equal | Less_than | Less_or_equal ->
+            if comparable (unwrap_option field.typ) then
+              let+ value = value field filter.value in
+              match filter.op with
+              | Greater_than -> Gt (field.name, value)
+              | Greater_or_equal -> Gte (field.name, value)
+              | Less_than -> Lt (field.name, value)
+              | Less_or_equal -> Lte (field.name, value)
+              | _ -> assert false
+            else Error (bad_operator field)
+        | In_list ->
+            let+ values = list_value field filter.value in
+            In (field.name, values)
+        | Not_in_list ->
+            let+ values = list_value field filter.value in
+            Not_in (field.name, values)
+        | Contains | Has_prefix | Has_suffix -> (
+            if string_like (unwrap_option field.typ) then
+              match filter.value with
+              | Some (V_string value) ->
+                  Ok
+                    (match filter.op with
+                    | Contains -> Contains (field.name, value)
+                    | Has_prefix -> Has_prefix (field.name, value)
+                    | Has_suffix -> Has_suffix (field.name, value)
+                    | _ -> assert false)
+              | None -> Error (missing_value field)
+              | Some _ -> Error (value_error field)
+            else Error (bad_operator field))
+        | Is_null ->
+            let* () = no_value field filter.value in
+            if field.nillable then Ok (Is_nil field.name) else Error (bad_operator field)
+        | Not_null ->
+            let* () = no_value field filter.value in
+            if field.nillable then Ok (Not_nil field.name) else Error (bad_operator field))
+
+  let where filter (query : query) =
+    let open Result_syntax in
+    let+ predicate = predicate query.entity filter in
+    Query.where predicate query
+
+  let where_all filters (query : query) =
+    let rec loop query = function
+      | [] -> Ok query
+      | filter :: rest -> (
+          match where filter query with
+          | Ok query -> loop query rest
+          | Error _ as error -> error)
+    in
+    loop query filters
+end
+
 let rec has_duplicate = function
   | [] -> None
   | name :: rest ->
