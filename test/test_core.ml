@@ -382,7 +382,14 @@ let test_edge_query_alias () =
   Alcotest.(check string) "loaded name" "author" loaded.loaded_name;
   Alcotest.(check string) "loaded source" "post" loaded.loaded_source;
   Alcotest.(check (option string))
-    "loaded target" (Some "user") loaded.loaded_target
+    "loaded target" (Some "user") loaded.loaded_target;
+  let group = Ent_ocaml.Edge_load.group edge_query [ loaded ] in
+  Alcotest.(check string) "loaded group edge" "user" group.loaded_group_edge;
+  Alcotest.(check (option string))
+    "loaded group alias" (Some "author") group.loaded_group_alias;
+  Alcotest.(check string) "loaded group name" "author" group.loaded_group_name;
+  Alcotest.(check int)
+    "loaded group rows" 1 (List.length group.loaded_group_rows)
 
 let test_transaction_hooks () =
   let events = ref [] in

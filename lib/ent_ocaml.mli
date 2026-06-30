@@ -137,6 +137,13 @@ type ('source, 'target) loaded_edge = {
   loaded_target : 'target option;
 }
 
+type ('source, 'target) loaded_edge_group = {
+  loaded_group_edge : string;
+  loaded_group_alias : string option;
+  loaded_group_name : string;
+  loaded_group_rows : ('source, 'target) loaded_edge list;
+}
+
 type aggregate_op = Count | Min of string | Max of string | Sum of string | Avg of string
 
 type aggregate = {
@@ -225,6 +232,16 @@ module Edge_load : sig
     edge_query ->
     ('source * 'target option) list ->
     ('source, 'target) loaded_edge list
+
+  val group :
+    edge_query ->
+    ('source, 'target) loaded_edge list ->
+    ('source, 'target) loaded_edge_group
+
+  val group_of_pairs :
+    edge_query ->
+    ('source * 'target option) list ->
+    ('source, 'target) loaded_edge_group
 end
 
 module Aggregate : sig

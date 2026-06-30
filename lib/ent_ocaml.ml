@@ -137,6 +137,13 @@ type ('source, 'target) loaded_edge = {
   loaded_target : 'target option;
 }
 
+type ('source, 'target) loaded_edge_group = {
+  loaded_group_edge : string;
+  loaded_group_alias : string option;
+  loaded_group_name : string;
+  loaded_group_rows : ('source, 'target) loaded_edge list;
+}
+
 type aggregate_op = Count | Min of string | Max of string | Sum of string | Avg of string
 
 type aggregate = {
@@ -464,6 +471,16 @@ module Edge_load = struct
     }
 
   let of_pairs edge_query rows = List.map (of_pair edge_query) rows
+
+  let group edge_query rows =
+    {
+      loaded_group_edge = edge_query.edge;
+      loaded_group_alias = edge_query.edge_alias;
+      loaded_group_name = name edge_query;
+      loaded_group_rows = rows;
+    }
+
+  let group_of_pairs edge_query rows = group edge_query (of_pairs edge_query rows)
 end
 
 module Aggregate = struct

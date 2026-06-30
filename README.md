@@ -469,6 +469,22 @@ let named_authors ctx =
        ~decode_target:user_of_bson_doc_result
 ```
 
+When a page needs several named loads with the same source and target decoders,
+compose the edge queries and keep the grouped result order explicit:
+
+```ocaml
+let named_people ctx =
+  let open Post in
+  let drafts = query () |> where (status_eq "draft") in
+  Posts.load_edges_named ctx
+    ~decode_source:post_of_bson_doc_result
+    ~decode_target:user_of_bson_doc_result
+    [
+      drafts |> with_user ~as_:"author" ~target:User.user_entity;
+      drafts |> with_user ~as_:"editor" ~target:User.user_entity;
+    ]
+```
+
 Backends execute those
 typed values with `result`-returning functions such as
 `Ent_ocaml_mongo.insert_many_values`. Core mutation validation catches missing

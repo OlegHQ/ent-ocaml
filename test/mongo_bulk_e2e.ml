@@ -588,6 +588,32 @@ let run_flow client =
   in
   assert_true "stored edge eager load returns source and user"
     (loaded_users = [ ("first", Some "user_1") ]);
+  let editor_edge =
+    Ent_ocaml.Edge_query.make ~as_:"editor" ~edge:"user" ~target:user_entity
+      query_user_1
+  in
+  let* editor_users =
+    Ent_ocaml_mongo.load_edge_as ctx editor_edge
+      ~decode_source:(fun doc ->
+        Ok (Bson.get_string (Bson.get_element "body" doc)))
+      ~decode_target:(fun doc ->
+        Ok (Bson.get_string (Bson.get_element "_id" doc)))
+  in
+  let groups =
+    [
+      Ent_ocaml.Edge_load.group_of_pairs query_user_from_posts loaded_users;
+      Ent_ocaml.Edge_load.group_of_pairs editor_edge editor_users;
+    ]
+  in
+  assert_true "multi-edge named groups preserve aliases"
+    (match groups with
+    | [
+     { Ent_ocaml.loaded_group_name = "author"; loaded_group_rows = [ author ] };
+     { Ent_ocaml.loaded_group_name = "editor"; loaded_group_rows = [ editor ] };
+    ] ->
+        author.loaded_target = Some "user_1"
+        && editor.loaded_target = Some "user_1"
+    | _ -> false);
   let* sum =
     Ent_ocaml_mongo.aggregate ctx (Ent_ocaml.Aggregate.sum "views" query_user_1)
   in

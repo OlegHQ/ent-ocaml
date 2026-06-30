@@ -532,9 +532,53 @@ let test_generated_traversal_api () =
       ()
   | Ok _ -> Alcotest.fail "unexpected named load_edge result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  let second_edge_query =
+    let open Post in
+    query () |> with_user ~as_:"editor" ~target:user_entity
+  in
+  (match
+     Store.load_edges_named () ~decode_source:decode ~decode_target:decode
+       [ edge_query; second_edge_query ]
+   with
+  | Ok
+      [
+        {
+          Ent_ocaml.loaded_group_edge = "user";
+          loaded_group_alias = Some "author";
+          loaded_group_name = "author";
+          loaded_group_rows =
+            [
+              {
+                Ent_ocaml.loaded_edge = "user";
+                loaded_alias = Some "author";
+                loaded_name = "author";
+                loaded_source = "Post";
+                loaded_target = Some "User";
+              };
+            ];
+        };
+        {
+          Ent_ocaml.loaded_group_edge = "user";
+          loaded_group_alias = Some "editor";
+          loaded_group_name = "editor";
+          loaded_group_rows =
+            [
+              {
+                Ent_ocaml.loaded_edge = "user";
+                loaded_alias = Some "editor";
+                loaded_name = "editor";
+                loaded_source = "Post";
+                loaded_target = Some "User";
+              };
+            ];
+        };
+      ] ->
+      ()
+  | Ok _ -> Alcotest.fail "unexpected named load_edges result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
   let module Client = Post.Client (Memory_backend) in
   let client = Client.make () in
-  match
+  (match
     Client.load_edge_named client ~decode_source:decode ~decode_target:decode
       edge_query
   with
@@ -550,6 +594,17 @@ let test_generated_traversal_api () =
       ] ->
       ()
   | Ok _ -> Alcotest.fail "unexpected client named load_edge result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  match
+    Client.load_edges_named client ~decode_source:decode ~decode_target:decode
+      [ edge_query; second_edge_query ]
+  with
+  | Ok [ author_group; editor_group ] ->
+      Alcotest.(check string)
+        "client first edge group" "author" author_group.loaded_group_name;
+      Alcotest.(check string)
+        "client second edge group" "editor" editor_group.loaded_group_name
+  | Ok _ -> Alcotest.fail "unexpected client named load_edges result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
 let test_generated_mutation_api () =
