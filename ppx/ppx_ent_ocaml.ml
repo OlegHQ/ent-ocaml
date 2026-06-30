@@ -2059,6 +2059,26 @@ let gen_query_module td =
         ];
       A.pstr_value ~loc Nonrecursive
         [
+          A.value_binding ~loc ~pat:(pvar ~loc ("then_" ^ edge_name))
+            ~expr:
+              (A.pexp_fun ~loc (Optional "as_") None (pvar ~loc "as_")
+                 (A.pexp_fun ~loc (Optional "target_query") None
+                    (pvar ~loc "target_query")
+                    (A.pexp_fun ~loc (Labelled "target") None
+                       (pvar ~loc "target")
+                       (A.pexp_fun ~loc Nolabel None (pvar ~loc "edge_chain")
+                          (A.pexp_apply ~loc
+                             (ident ~loc [ "Ent_ocaml"; "Edge_chain"; "then_" ])
+                             [
+                               (Optional "as_", evar ~loc "as_");
+                               (Optional "target_query", evar ~loc "target_query");
+                               (Labelled "edge", str ~loc edge_name);
+                               (Labelled "target", evar ~loc "target");
+                               (Nolabel, evar ~loc "edge_chain");
+                             ])))));
+        ];
+      A.pstr_value ~loc Nonrecursive
+        [
           A.value_binding ~loc ~pat:(pvar ~loc (edge_name ^ "_field_order"))
             ~expr:
               (A.pexp_fun ~loc (Optional "direction")
@@ -4512,6 +4532,9 @@ let gen_sig_for_type td =
   let edge_query_typ =
     A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "edge_query" ]) []
   in
+  let edge_chain_typ =
+    A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "edge_chain" ]) []
+  in
   let loaded_edge_typ source target =
     A.ptyp_constr ~loc
       (lid ~loc [ "Ent_ocaml"; "loaded_edge" ])
@@ -4728,6 +4751,11 @@ let gen_sig_for_type td =
            (arrow (Optional "target_query") query_typ
               (arrow (Labelled "target") entity_typ
                  (arrow Nolabel query_typ edge_query_typ))));
+      val_sig ("then_" ^ edge_name)
+        (arrow (Optional "as_") string_typ
+           (arrow (Optional "target_query") query_typ
+              (arrow (Labelled "target") entity_typ
+                 (arrow Nolabel edge_chain_typ edge_chain_typ))));
       val_sig (edge_name ^ "_field_order")
         (arrow (Optional "direction")
            (A.ptyp_constr ~loc

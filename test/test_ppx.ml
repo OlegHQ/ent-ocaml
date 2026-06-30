@@ -779,6 +779,31 @@ let test_generated_traversal_api () =
   Alcotest.(check (option string))
     "join edge alias" (Some "labels") tags_edge_query.edge_alias;
   Alcotest.(check string) "join target entity" "Tag" tags_edge_query.target.name;
+  let tag_target_query =
+    let open Tag in
+    query () |> where (name_eq "ocaml")
+  in
+  let tag_chain =
+    edge_query
+    |> Ent_ocaml.Edge_chain.start
+    |> Post.then_tags ~as_:"labels" ~target:tag_entity
+         ~target_query:tag_target_query
+  in
+  Alcotest.(check string)
+    "generated chain source" "Post"
+    (Ent_ocaml.Edge_chain.source tag_chain).Ent_ocaml.entity.name;
+  Alcotest.(check string)
+    "generated chain target" "Tag"
+    (Ent_ocaml.Edge_chain.target tag_chain).Ent_ocaml.name;
+  (match tag_chain.Ent_ocaml.chain_rest with
+  | [ step ] ->
+      Alcotest.(check string) "generated chain edge" "tags" step.chain_edge;
+      Alcotest.(check (option string))
+        "generated chain alias" (Some "labels") step.chain_edge_alias;
+      Alcotest.(check int)
+        "generated chain target predicates" 1
+        (List.length step.chain_target_query.predicates)
+  | _ -> Alcotest.fail "unexpected generated chain rest");
   let target_predicate =
     let open Post in
     user ~target:user_entity (User.username_eq "alice")

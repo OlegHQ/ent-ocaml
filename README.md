@@ -722,8 +722,7 @@ let user_post_tags ctx user_id =
   by_id user_id
   |> query_posts ~target:Post.post_entity
   |> Ent_ocaml.Edge_chain.start
-  |> Ent_ocaml.Edge_chain.then_ ~as_:"labels" ~edge:"tags"
-       ~target:Tag.tag_entity
+  |> Post.then_tags ~as_:"labels" ~target:Tag.tag_entity
   |> Users.traverse_chain ctx ~decode:tag_of_bson_doc_result
 ```
 
