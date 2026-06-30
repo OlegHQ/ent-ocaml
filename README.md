@@ -484,9 +484,10 @@ metadata-validated boolean expressions into the same typed predicates and
 compose through `result`. Stored foreign-key edge IDs can be referenced with an
 edge path such as `user.id`; generated modules also register their edge target
 descriptors so related target fields can be referenced as `user.username`.
-Nested stored foreign-key ID paths can be written as ordinary relationship
-paths, for example `user.org.id == "org_1"`, when the intermediate target
-entities are registered.
+Nested stored foreign-key target paths can be written as ordinary relationship
+paths, for example `user.org.id == "org_1"` or
+`user.org.slug == "engineering"`, when the intermediate target entities are
+registered.
 JSON fields declared with `[@ent.json]` can be referenced through nested
 subpaths such as `metadata.flags.pinned`:
 

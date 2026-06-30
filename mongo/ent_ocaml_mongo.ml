@@ -570,6 +570,9 @@ let backend_order_temp index = "__ent_backend_order_" ^ string_of_int index
 let edge_predicate_temp index = "__ent_edge_pred_" ^ string_of_int index
 let join_predicate_temp index = "__ent_join_pred_" ^ string_of_int index
 let join_target_temp index = "__ent_join_target_" ^ string_of_int index
+let nested_edge_target_temp index depth =
+  "__ent_nested_edge_target_" ^ string_of_int index ^ "_" ^ string_of_int depth
+
 let dedup_root_temp index = "__ent_dedup_root_" ^ string_of_int index
 
 let find_join_edge (entity : Ent_ocaml.entity) edge_name =
@@ -682,6 +685,100 @@ let join_edge_predicate_lookup_pipeline query join_predicates =
   in
   loop 0 [] join_predicates
 
+let partition_nested_target_predicates predicates =
+  let rec loop nested normal = function
+    | [] -> (List.rev nested, List.rev normal)
+    | Ent_ocaml.Has_edge_with_target { edge; target; predicates } :: rest ->
+        loop ((edge, target, predicates) :: nested) normal rest
+    | predicate :: rest -> loop nested (predicate :: normal) rest
+  in
+  loop [] [] predicates
+
+let match_prefixed_target_predicates target ~prefix predicates =
+  match prefix_target_predicates target ~prefix predicates with
+  | Error _ as error -> error
+  | Ok [] -> Ok []
+  | Ok [ predicate ] -> (
+      match predicate_to_bson predicate with
+      | Error _ as error -> error
+      | Ok filter -> Ok [ doc [ ("$match", Bson.create_doc_element filter) ] ])
+  | Ok predicates -> (
+      match predicate_to_bson (Ent_ocaml.And predicates) with
+      | Error _ as error -> error
+      | Ok filter -> Ok [ doc [ ("$match", Bson.create_doc_element filter) ] ])
+
+let rec nested_target_predicate_stages index depth target ~prefix predicates =
+  let nested, normal = partition_nested_target_predicates predicates in
+  match match_prefixed_target_predicates target ~prefix normal with
+  | Error _ as error -> error
+  | Ok normal_stages -> (
+      let rec loop depth acc = function
+        | [] -> Ok (normal_stages @ List.rev acc)
+        | (edge, nested_target, predicates) :: rest -> (
+            match
+              nested_edge_target_lookup_stage index depth ~source_prefix:prefix
+                ~source_entity:target ~edge ~target:nested_target ~predicates
+            with
+            | Ok stages -> loop (depth + 1) (List.rev_append stages acc) rest
+            | Error _ as error -> error)
+      in
+      loop depth [] nested)
+
+and nested_edge_target_lookup_stage index depth ~source_prefix ~source_entity
+    ~edge ~target ~predicates =
+  match find_edge source_entity edge with
+  | None -> Error (`Bad_query ("edge not found: " ^ edge))
+  | Some edge_desc when edge_desc.target <> target.Ent_ocaml.name ->
+      Error
+        (`Bad_query
+          (Printf.sprintf "edge %s targets %s, not %s" edge_desc.name
+             edge_desc.target target.name))
+  | Some { direction = From _; _ } ->
+      Error (`Bad_query "nested target edge predicates currently support to-edges")
+  | Some edge_desc -> (
+      match
+        ( edge_desc.cardinality,
+          edge_desc.storage_key,
+          edge_desc.join,
+          field_storage_key target "id" )
+      with
+      | Ent_ocaml.One, Some local_key, None, Ok foreign_key -> (
+          let temp = nested_edge_target_temp index depth in
+          let lookup =
+            doc
+              [
+                ("from", Bson.create_string target.collection);
+                ("localField", Bson.create_string (source_prefix ^ "." ^ local_key));
+                ("foreignField", Bson.create_string foreign_key);
+                ("as", Bson.create_string temp);
+              ]
+          in
+          let unwind = doc [ ("path", Bson.create_string ("$" ^ temp)) ] in
+          match
+            nested_target_predicate_stages index (depth + 1) target ~prefix:temp
+              predicates
+          with
+          | Error _ as error -> error
+          | Ok stages ->
+              Ok
+                (doc [ ("$lookup", Bson.create_doc_element lookup) ]
+                :: doc [ ("$unwind", Bson.create_doc_element unwind) ]
+                :: stages))
+      | Ent_ocaml.Many, _, _, _ ->
+          Error
+            (`Bad_query
+              "nested target edge predicates currently support to-one stored-FK edges")
+      | Ent_ocaml.One, _, Some _, _ ->
+          Error
+            (`Bad_query
+              ("edge " ^ edge_desc.name ^ " has join metadata but is not to-one"))
+      | Ent_ocaml.One, None, None, _ ->
+          Error
+            (`Bad_query
+              ("edge " ^ edge_desc.name
+             ^ " does not have a stored foreign-key field"))
+      | _, _, _, (Error _ as error) -> error)
+
 let edge_target_predicate_lookup_stage (query : Ent_ocaml.query) index ~edge
     ~target ~predicates =
   match find_edge query.Ent_ocaml.entity edge with
@@ -713,29 +810,16 @@ let edge_target_predicate_lookup_stage (query : Ent_ocaml.query) index ~edge
               ]
           in
           let unwind = doc [ ("path", Bson.create_string ("$" ^ temp)) ] in
-          match prefix_target_predicates target ~prefix:temp predicates with
-          | Error _ as error -> error
-          | Ok [] -> Ok [ doc [ ("$lookup", Bson.create_doc_element lookup) ] ]
-          | Ok [ predicate ] -> (
-              match predicate_to_bson predicate with
-              | Error _ as error -> error
-              | Ok filter ->
-                  Ok
-                    [
-                      doc [ ("$lookup", Bson.create_doc_element lookup) ];
-                      doc [ ("$unwind", Bson.create_doc_element unwind) ];
-                      doc [ ("$match", Bson.create_doc_element filter) ];
-                    ])
-          | Ok predicates -> (
-              match predicate_to_bson (Ent_ocaml.And predicates) with
-              | Error _ as error -> error
-              | Ok filter ->
-                  Ok
-                    [
-                      doc [ ("$lookup", Bson.create_doc_element lookup) ];
-                      doc [ ("$unwind", Bson.create_doc_element unwind) ];
-                      doc [ ("$match", Bson.create_doc_element filter) ];
-                    ]))
+          if predicates = [] then
+            Ok [ doc [ ("$lookup", Bson.create_doc_element lookup) ] ]
+          else
+            match nested_target_predicate_stages index 0 target ~prefix:temp predicates with
+            | Error _ as error -> error
+            | Ok stages ->
+                Ok
+                  (doc [ ("$lookup", Bson.create_doc_element lookup) ]
+                  :: doc [ ("$unwind", Bson.create_doc_element unwind) ]
+                  :: stages))
       | Many, None, Some join, Ok foreign_key, Ok source_id_key -> (
           let join_temp = join_predicate_temp index in
           let target_temp = join_target_temp index in
@@ -791,25 +875,12 @@ let edge_target_predicate_lookup_stage (query : Ent_ocaml.query) index ~edge
               doc [ ("$replaceRoot", Bson.create_doc_element replace_root) ];
             ]
           in
-          match prefix_target_predicates target ~prefix:target_temp predicates with
+          match
+            nested_target_predicate_stages index 0 target ~prefix:target_temp
+              predicates
+          with
           | Error _ as error -> error
-          | Ok [] -> Ok (base_stages @ dedup_stages)
-          | Ok [ predicate ] -> (
-              match predicate_to_bson predicate with
-              | Error _ as error -> error
-              | Ok filter ->
-                  Ok
-                    (base_stages
-                    @ [ doc [ ("$match", Bson.create_doc_element filter) ] ]
-                    @ dedup_stages))
-          | Ok predicates -> (
-              match predicate_to_bson (Ent_ocaml.And predicates) with
-              | Error _ as error -> error
-              | Ok filter ->
-                  Ok
-                    (base_stages
-                    @ [ doc [ ("$match", Bson.create_doc_element filter) ] ]
-                    @ dedup_stages)))
+          | Ok stages -> Ok (base_stages @ stages @ dedup_stages))
       | Many, Some _, Some _, _, _ ->
           Error
             (`Bad_query

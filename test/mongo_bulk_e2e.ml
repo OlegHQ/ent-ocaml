@@ -1082,6 +1082,19 @@ let run_flow client =
     (match entql_engineering_posts with
     | [ doc ] -> Bson.get_string (Bson.get_element "_id" doc) = "post_1"
     | _ -> false);
+  let* entql_engineering_slug_posts =
+    match
+      Ent_ocaml.Query.make post_entity
+      |> Ent_ocaml.Entql.where ~targets:[ user_entity; org_entity ]
+           {|user.org.slug == "engineering"|}
+    with
+    | Ok query -> Ent_ocaml_mongo.find ctx query
+    | Error _ as error -> error
+  in
+  assert_true "entql nested edge target field path returns engineering posts"
+    (match entql_engineering_slug_posts with
+    | [ doc ] -> Bson.get_string (Bson.get_element "_id" doc) = "post_1"
+    | _ -> false);
   let* alice_posts =
     Ent_ocaml_mongo.find ctx
       (Ent_ocaml.Query.make post_entity
@@ -1125,7 +1138,9 @@ let run_flow client =
       Ent_ocaml.Query.make post_entity
       |> Ent_ocaml.Entql.where ~targets:[ tag_entity ] {|tags.name == "ocaml"|}
     with
-    | Ok query -> Ent_ocaml_mongo.find ctx query
+    | Ok query ->
+        Ent_ocaml_mongo.find ctx
+          Ent_ocaml.{ query with orders = [ Order.field ~direction:Asc "id" ] }
     | Error _ as error -> error
   in
   assert_true "entql join target edge path returns tagged posts"
