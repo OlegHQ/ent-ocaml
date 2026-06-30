@@ -1002,6 +1002,86 @@ let test_generated_client_hook_api () =
   check_hooked "client hook tx insert"
     (Hooked.with_transaction client (fun tx -> Hooked.Tx.insert tx mutation))
 
+let test_generated_client_policy_api () =
+  let module Client = Post.Client (Memory_backend) in
+  let module Deny_reads = struct
+    let query_rules = [ (fun () _ -> Ent_ocaml.Deny "client no reads") ]
+    let mutation_rules = []
+  end in
+  let module Deny_writes = struct
+    let query_rules = []
+    let mutation_rules = [ (fun () _ -> Ent_ocaml.Deny "client no writes") ]
+  end in
+  let module Read_client = Client.With_policy (Deny_reads) in
+  let module Write_client = Client.With_policy (Deny_writes) in
+  let decode = function
+    | Ent_ocaml.V_string value -> Ok value
+    | _ -> Error "expected string"
+  in
+  let query =
+    let open Post in
+    query () |> where (status_eq "draft")
+  in
+  let mutation =
+    let open Post in
+    create ()
+    |> set (id "post_1")
+    |> set (user_id "user_1")
+    |> set (body "body")
+    |> set (media_ids [])
+    |> set (created_at_ms 1L)
+    |> set (updated_at_ms 1L)
+    |> set (published_at_ms None)
+  in
+  let read_client = Read_client.make () in
+  let write_client = Write_client.make () in
+  (match Read_client.all read_client ~decode query with
+  | Error (`Denied "client no reads") -> ()
+  | Ok _ -> Alcotest.fail "expected client read denial"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  (match Write_client.insert write_client mutation with
+  | Error (`Denied "client no writes") -> ()
+  | Ok _ -> Alcotest.fail "expected client write denial"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  match
+    Write_client.with_transaction write_client (fun tx ->
+        Write_client.Tx.insert tx mutation)
+  with
+  | Error (`Denied "client no writes") -> ()
+  | Ok _ -> Alcotest.fail "expected client tx write denial"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+
+let test_generated_client_interceptor_api () =
+  let module Client = Post.Client (Memory_backend) in
+  let module Intercepted =
+    Client.With_interceptors (struct
+      let query_interceptors =
+        [
+          {
+            Ent_ocaml.wrap_query =
+              (fun next ctx intercepted_query ->
+                let query =
+                  let open Post in
+                  intercepted_query |> where (status_eq "client intercepted")
+                in
+                next ctx query);
+          };
+        ]
+    end)
+  in
+  let client = Intercepted.make () in
+  let query = Post.query () in
+  (match Intercepted.count client query with
+  | Ok 1 -> ()
+  | Ok count -> Alcotest.failf "expected intercepted client count, got %d" count
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  match
+    Intercepted.with_transaction client (fun tx -> Intercepted.Tx.count tx query)
+  with
+  | Ok 1 -> ()
+  | Ok count -> Alcotest.failf "expected intercepted tx count, got %d" count
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+
 let test_generated_policy_store_api () =
   let module Store = Post.Store (Memory_backend) in
   let module Deny_reads = struct
@@ -1326,6 +1406,10 @@ let () =
             test_generated_client_transaction_hooks;
           Alcotest.test_case "generated client hook api" `Quick
             test_generated_client_hook_api;
+          Alcotest.test_case "generated client policy api" `Quick
+            test_generated_client_policy_api;
+          Alcotest.test_case "generated client interceptor api" `Quick
+            test_generated_client_interceptor_api;
           Alcotest.test_case "generated policy store api" `Quick
             test_generated_policy_store_api;
           Alcotest.test_case "generated hook store api" `Quick

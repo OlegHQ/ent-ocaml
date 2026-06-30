@@ -3353,6 +3353,31 @@ let gen_query_module td =
                              [ (Nolabel, evar ~loc "tx_ctx") ]) );
                     ]))))
     in
+    let policy_type =
+      let backend_ctx =
+        A.ptyp_constr ~loc (lid ~loc [ "Backend"; "ctx" ]) []
+      in
+      let query_rule_typ =
+        A.ptyp_constr ~loc
+          (lid ~loc [ "Ent_ocaml"; "query_rule" ])
+          [ backend_ctx ]
+      in
+      let mutation_rule_typ =
+        A.ptyp_constr ~loc
+          (lid ~loc [ "Ent_ocaml"; "mutation_rule" ])
+          [ backend_ctx ]
+      in
+      let value_sig name type_ =
+        A.psig_value ~loc
+          (A.value_description ~loc ~name:{ loc; txt = name } ~type_ ~prim:[])
+      in
+      let list_typ typ = A.ptyp_constr ~loc (lid ~loc [ "list" ]) [ typ ] in
+      A.pmty_signature ~loc
+        [
+          value_sig "query_rules" (list_typ query_rule_typ);
+          value_sig "mutation_rules" (list_typ mutation_rule_typ);
+        ]
+    in
     let hooks_type =
       let backend_ctx =
         A.ptyp_constr ~loc (lid ~loc [ "Backend"; "ctx" ]) []
@@ -3370,16 +3395,34 @@ let gen_query_module td =
       A.pmty_signature ~loc
         [ value_sig "mutation_hooks" (list_typ mutation_hook_typ) ]
     in
-    let with_hooks_module =
+    let interceptors_type =
+      let backend_ctx =
+        A.ptyp_constr ~loc (lid ~loc [ "Backend"; "ctx" ]) []
+      in
+      let query_interceptor_typ =
+        A.ptyp_constr ~loc
+          (lid ~loc [ "Ent_ocaml"; "query_interceptor" ])
+          [ backend_ctx ]
+      in
+      let value_sig name type_ =
+        A.psig_value ~loc
+          (A.value_description ~loc ~name:{ loc; txt = name } ~type_ ~prim:[])
+      in
+      let list_typ typ = A.ptyp_constr ~loc (lid ~loc [ "list" ]) [ typ ] in
+      A.pmty_signature ~loc
+        [ value_sig "query_interceptors" (list_typ query_interceptor_typ) ]
+    in
+    let wrapped_client_module ~module_name ~param_name ~param_type
+        ~store_functor ~store_module_name =
       let structure =
         [
           A.pstr_module ~loc
-            (A.module_binding ~loc ~name:{ loc; txt = Some "Hooked_store" }
+            (A.module_binding ~loc ~name:{ loc; txt = Some store_module_name }
                ~expr:
                  (A.pmod_apply ~loc
                     (A.pmod_ident ~loc
-                       (lid ~loc [ "Entity_store"; "With_hooks" ]))
-                    (A.pmod_ident ~loc (lid ~loc [ "Hooks" ]))));
+                       (lid ~loc [ "Entity_store"; store_functor ]))
+                    (A.pmod_ident ~loc (lid ~loc [ param_name ]))));
           A.pstr_type ~loc Recursive
             [
               A.type_declaration ~loc ~name:{ loc; txt = "t" } ~params:[]
@@ -3395,17 +3438,33 @@ let gen_query_module td =
           value_fun "ctx"
             (A.pexp_fun ~loc Nolabel None (pvar ~loc "client")
                (evar ~loc "client"));
-          tx_module_for "Hooked_store";
+          tx_module_for store_module_name;
           with_transaction_value;
         ]
-        @ client_values "Hooked_store"
+        @ client_values store_module_name
       in
       A.pstr_module ~loc
-        (A.module_binding ~loc ~name:{ loc; txt = Some "With_hooks" }
+        (A.module_binding ~loc ~name:{ loc; txt = Some module_name }
            ~expr:
              (A.pmod_functor ~loc
-                (Named ({ loc; txt = Some "Hooks" }, hooks_type))
+                (Named ({ loc; txt = Some param_name }, param_type))
                 (A.pmod_structure ~loc structure)))
+    in
+    let with_policy_module =
+      wrapped_client_module ~module_name:"With_policy" ~param_name:"Policy"
+        ~param_type:policy_type ~store_functor:"With_policy"
+        ~store_module_name:"Policy_store"
+    in
+    let with_hooks_module =
+      wrapped_client_module ~module_name:"With_hooks" ~param_name:"Hooks"
+        ~param_type:hooks_type ~store_functor:"With_hooks"
+        ~store_module_name:"Hooked_store"
+    in
+    let with_interceptors_module =
+      wrapped_client_module ~module_name:"With_interceptors"
+        ~param_name:"Interceptors" ~param_type:interceptors_type
+        ~store_functor:"With_interceptors"
+        ~store_module_name:"Intercepted_store"
     in
     let structure =
       [
@@ -3430,7 +3489,9 @@ let gen_query_module td =
              (evar ~loc "client"));
         tx_module_for "Entity_store";
         with_transaction_value;
+        with_policy_module;
         with_hooks_module;
+        with_interceptors_module;
       ]
       @ client_values "Entity_store"
     in
@@ -4100,6 +4161,23 @@ let gen_sig_for_type td =
         (lid ~loc [ "Ent_ocaml"; "transaction_hook" ])
         [ backend_ctx ]
     in
+    let policy_type =
+      let query_rule_typ =
+        A.ptyp_constr ~loc
+          (lid ~loc [ "Ent_ocaml"; "query_rule" ])
+          [ backend_ctx ]
+      in
+      let mutation_rule_typ =
+        A.ptyp_constr ~loc
+          (lid ~loc [ "Ent_ocaml"; "mutation_rule" ])
+          [ backend_ctx ]
+      in
+      A.pmty_signature ~loc
+        [
+          value_sig "query_rules" (list_typ query_rule_typ);
+          value_sig "mutation_rules" (list_typ mutation_rule_typ);
+        ]
+    in
     let hooks_type =
       let mutation_hook_typ =
         A.ptyp_constr ~loc
@@ -4108,6 +4186,15 @@ let gen_sig_for_type td =
       in
       A.pmty_signature ~loc
         [ value_sig "mutation_hooks" (list_typ mutation_hook_typ) ]
+    in
+    let interceptors_type =
+      let query_interceptor_typ =
+        A.ptyp_constr ~loc
+          (lid ~loc [ "Ent_ocaml"; "query_interceptor" ])
+          [ backend_ctx ]
+      in
+      A.pmty_signature ~loc
+        [ value_sig "query_interceptors" (list_typ query_interceptor_typ) ]
     in
     let doc_result = result_typ backend_doc error_typ in
     let docs_result = result_typ (list_typ backend_doc) error_typ in
@@ -4230,10 +4317,25 @@ let gen_sig_for_type td =
       client_base_items
       @ [
           A.psig_module ~loc
+            (A.module_declaration ~loc ~name:{ loc; txt = Some "With_policy" }
+               ~type_:
+                 (A.pmty_functor ~loc
+                    (Named ({ loc; txt = Some "Policy" }, policy_type))
+                    (A.pmty_signature ~loc client_base_items)));
+          A.psig_module ~loc
             (A.module_declaration ~loc ~name:{ loc; txt = Some "With_hooks" }
                ~type_:
                  (A.pmty_functor ~loc
                     (Named ({ loc; txt = Some "Hooks" }, hooks_type))
+                    (A.pmty_signature ~loc client_base_items)));
+          A.psig_module ~loc
+            (A.module_declaration ~loc
+               ~name:{ loc; txt = Some "With_interceptors" }
+               ~type_:
+                 (A.pmty_functor ~loc
+                    (Named
+                       ( { loc; txt = Some "Interceptors" },
+                         interceptors_type ))
                     (A.pmty_signature ~loc client_base_items)));
         ]
     in

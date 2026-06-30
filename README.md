@@ -138,6 +138,20 @@ let load_private ctx query =
   Private_posts.all ctx ~decode:post_of_bson_doc_result query
 ```
 
+The same policy module style is available on generated clients:
+
+```ocaml
+module Private_post_client =
+  Post_client.With_policy (struct
+    let query_rules = [ require_user_can_read_posts ]
+    let mutation_rules = [ require_user_can_write_posts ]
+  end)
+
+let load_private ctx query =
+  let client = Private_post_client.make ctx in
+  Private_post_client.all client ~decode:post_of_bson_doc_result query
+```
+
 Generated clients capture backend context when an app wants an Ent-style client
 value instead of passing `ctx` to every operation:
 
@@ -229,6 +243,20 @@ module Scoped_posts =
 
 let load_scoped ctx query =
   Scoped_posts.all ctx ~decode:post_of_bson_doc_result query
+```
+
+Client interceptors use the same module shape and apply to `Tx` operations too:
+
+```ocaml
+module Scoped_post_client =
+  Post_client.With_interceptors (struct
+    let query_interceptors = [ scope_posts_to_current_user ]
+  end)
+
+let count_scoped ctx query =
+  let client = Scoped_post_client.make ctx in
+  Scoped_post_client.with_transaction client (fun tx ->
+      Scoped_post_client.Tx.count tx query)
 ```
 
 Schemas can register policy, hook, and interceptor lists directly and expose
