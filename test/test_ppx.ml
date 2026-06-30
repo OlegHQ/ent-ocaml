@@ -5,6 +5,7 @@ type post = {
   media_ids : string list;
   status : string [@ent.enum [ "draft"; "published" ]] [@ent.default "draft"];
   created_at_ms : int64;
+  updated_at_ms : int64 [@ent.update_default 42L];
   published_at_ms : int64 option;
 }
 [@@ent.entity "Post"] [@@ent.collection "posts"] [@@deriving ent]
@@ -31,7 +32,7 @@ let find_field name =
 let test_entity_metadata () =
   Alcotest.(check string) "entity name" "Post" post_entity.name;
   Alcotest.(check string) "collection" "posts" post_entity.collection;
-  Alcotest.(check int) "field count" 7 (List.length post_entity.fields);
+  Alcotest.(check int) "field count" 8 (List.length post_entity.fields);
   Alcotest.(check int) "index count" 2 (List.length post_entity.indexes);
   let id = find_field "id" in
   Alcotest.(check string) "id storage key" "_id" id.storage_key;
@@ -102,13 +103,14 @@ let test_generated_mutation_api () =
         Post.media_ids [ "media_1"; "media_2" ];
         Post.status "draft";
         Post.created_at_ms 1_700_000_000L;
+        Post.updated_at_ms 1_700_000_000L;
         Post.published_at_ms None;
       ]
   in
   Alcotest.(check bool)
     "create op" true
     (match create.op with Ent_ocaml.Create -> true | _ -> false);
-  Alcotest.(check int) "create fields" 7 (List.length create.set);
+  Alcotest.(check int) "create fields" 8 (List.length create.set);
   let create_many =
     Post.create_many
       [
@@ -119,6 +121,7 @@ let test_generated_mutation_api () =
           Post.media_ids [];
           Post.status "draft";
           Post.created_at_ms 1L;
+          Post.updated_at_ms 1L;
           Post.published_at_ms None;
         ];
         [
@@ -128,6 +131,7 @@ let test_generated_mutation_api () =
           Post.media_ids [];
           Post.status "draft";
           Post.created_at_ms 2L;
+          Post.updated_at_ms 2L;
           Post.published_at_ms None;
         ];
       ]
@@ -147,6 +151,7 @@ let test_generated_mutation_api () =
         Post.body "default status";
         Post.media_ids [];
         Post.created_at_ms 3L;
+        Post.updated_at_ms 3L;
         Post.published_at_ms None;
       ]
   in
@@ -168,8 +173,26 @@ let test_generated_mutation_api () =
     "update one op" true
     (match update.op with Ent_ocaml.Update_one -> true | _ -> false);
   Alcotest.(check int) "update predicates" 1 (List.length update.predicates);
-  Alcotest.(check int) "update set" 1 (List.length update.set);
+  Alcotest.(check int) "update set" 2 (List.length update.set);
+  Alcotest.(check bool)
+    "update default" true
+    (List.exists
+       (function
+         | "updated_at_ms", Ent_ocaml.V_int64 42L -> true
+         | _ -> false)
+       update.set);
   Alcotest.(check int) "update clear" 1 (List.length update.clear);
+  let clear_updated =
+    Post.update_one ~where:[ Post.id_eq "post_1" ]
+      ~clear:[ "updated_at_ms" ] ()
+  in
+  Alcotest.(check bool)
+    "cleared update default omitted" false
+    (List.exists
+       (function
+         | "updated_at_ms", Ent_ocaml.V_int64 42L -> true
+         | _ -> false)
+       clear_updated.set);
   let delete = Post.delete_one ~where:[ Post.id_eq "post_1" ] () in
   Alcotest.(check bool)
     "delete one op" true

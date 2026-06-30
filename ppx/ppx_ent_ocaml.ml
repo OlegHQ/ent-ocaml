@@ -75,6 +75,11 @@ let ent_default_attr =
     Ast_pattern.(single_expr_payload __)
     (fun expr -> expr)
 
+let ent_update_default_attr =
+  Attribute.declare "ent.update_default" Attribute.Context.label_declaration
+    Ast_pattern.(single_expr_payload __)
+    (fun expr -> expr)
+
 let has_attr attr item = Attribute.get attr item |> Option.is_some
 
 let snake_to_pascal name =
@@ -531,6 +536,44 @@ let default_binding ~loc field body =
 let apply_default_bindings ~loc fields body =
   List.fold_right (default_binding ~loc) fields body
 
+let update_default_binding ~loc field body =
+  match Attribute.get ent_update_default_attr field with
+  | None -> body
+  | Some default ->
+      if has_attr ent_unique_attr field then
+        Location.raise_errorf ~loc:field.pld_loc
+          "ent update_default fields cannot be unique";
+      if has_attr ent_immutable_attr field then
+        Location.raise_errorf ~loc:field.pld_loc
+          "ent update_default fields cannot be immutable";
+      let field_name = field.pld_name.txt in
+      let default_pair =
+        A.pexp_tuple ~loc
+          [ str ~loc field_name; value_expr ~loc field default ]
+      in
+      let default_set =
+        A.pexp_construct ~loc (lid ~loc [ "::" ])
+          (Some (A.pexp_tuple ~loc [ default_pair; evar ~loc "set" ]))
+      in
+      let touched =
+        app ~loc (ident ~loc [ "||" ])
+          [
+            app ~loc (ident ~loc [ "List"; "mem_assoc" ])
+              [ str ~loc field_name; evar ~loc "set" ];
+            app ~loc (ident ~loc [ "List"; "mem" ])
+              [ str ~loc field_name; evar ~loc "clear" ];
+          ]
+      in
+      let set =
+        A.pexp_ifthenelse ~loc touched (evar ~loc "set") (Some default_set)
+      in
+      A.pexp_let ~loc Nonrecursive
+        [ A.value_binding ~loc ~pat:(pvar ~loc "set") ~expr:set ]
+        body
+
+let apply_update_default_bindings ~loc fields body =
+  List.fold_right (update_default_binding ~loc) fields body
+
 let gen_entity td =
   let loc = loc_of_type_decl td in
   let fields = ensure_record td in
@@ -676,6 +719,12 @@ let gen_query_module td =
       ]
   in
   let update_fn name op =
+    let body =
+      mutation_record ~op ~predicates:(evar ~loc "where")
+        ~set:(evar ~loc "set")
+        ~clear:(evar ~loc "clear")
+        ~add:(evar ~loc "add")
+    in
     A.pstr_value ~loc Nonrecursive
       [
         A.value_binding ~loc ~pat:(pvar ~loc name)
@@ -689,10 +738,7 @@ let gen_query_module td =
                      (A.pexp_fun ~loc (Optional "add") (Some (list ~loc []))
                         (pvar ~loc "add")
                         (A.pexp_fun ~loc Nolabel None (unit_pat ~loc)
-                           (mutation_record ~op ~predicates:(evar ~loc "where")
-                              ~set:(evar ~loc "set")
-                              ~clear:(evar ~loc "clear")
-                              ~add:(evar ~loc "add")))))));
+                           (apply_update_default_bindings ~loc fields body))))));
       ]
   in
   let delete_fn name op =
