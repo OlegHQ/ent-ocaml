@@ -7,6 +7,10 @@ This roadmap is based on the upstream Ent Go repository and docs at
 `interceptors.mdx`, `transactions.md`, `features.md`, `schema-indexes.md`, and
 `schema-mixin.md`.
 
+Latest audit: upstream `ent/ent` commit
+`69d5d4deb19599f129166634e09d33addcf3f2cc`, read on 2026-06-30 from the
+repository docs under `doc/md/`.
+
 ## Package Shape
 
 Keep one Git submodule, `vendor/ent-ocaml`, with three opam packages:
@@ -44,6 +48,24 @@ feel like a small typed OCaml library:
 - Provide composable functional helpers for filters, ordering, transactions,
   hooks, privacy, and interceptors, with backend-specific escape hatches kept
   typed and local.
+- Do not translate Go builder chains mechanically. A generated OCaml API should
+  look like compact modules, labeled arguments, typed records/variants, small
+  combinators, and `result`-returning execution functions.
+
+## Current Slice
+
+The initial package scaffold already provides:
+
+- Core schema descriptors for fields, edges, indexes, predicates, ordering,
+  queries, mutations, errors, privacy decisions, and backend signatures.
+- Mongo planning and CRUD execution for scalar filters, boolean predicates,
+  ordering, limit/offset, insert, update, delete, count, and basic value
+  translation.
+- `[@@deriving ent]` generation for entity metadata, functional query helpers,
+  typed field predicates, typed ordering helpers, create/update/delete mutation
+  values, and matching `.mli` signatures for generated helper modules.
+- Poster pilot integration for `User`, `Session`, `Post`, `Media`,
+  `PublishState`, and `PublishAttempt` DTO entities.
 
 ## Ent Go Capability Matrix
 
@@ -55,6 +77,7 @@ feel like a small typed OCaml library:
 | Create builders | Generated create records/builders with required-field checks | `insertOne`, optional upsert later |
 | Create bulk | Generated bulk create with ordered/unordered option | `insertMany` |
 | Query builders | Generated typed query modules | Mongo find options and filters |
+| Field selection | Generated projection/selection API returning decoded partials | Mongo projections |
 | Update one/by ID | Generated update-one builder and entity update helper | `updateOne` with matched-count handling |
 | Update many | Generated update builder returning modified count | `updateMany` |
 | Delete one/many | Generated delete builders | `deleteOne` / `deleteMany` |
@@ -74,11 +97,16 @@ feel like a small typed OCaml library:
 | Interceptors | Query middleware and traversal interceptors | Around query execution and traversal construction |
 | Privacy | Query/mutation rule chains with allow/deny/skip | Evaluated before backend execution |
 | Mixins | Reusable fields, edges, indexes, hooks, policies | PPX composition step |
+| Field defaults | Generated default/default-func application before insert | OCaml functions evaluated in create API |
+| Field validators | Generated validator chains for create/update values | Checked before backend mutation |
+| Sensitive/deprecated/comments | Schema metadata and generated output controls | Hidden from display/debug helpers |
 | Indexes | Field, edge, compound, unique, partial/specialized annotations | Mongo indexes with options and partial filters |
 | Annotations | Backend/codegen metadata extension point | OCaml attributes and extensible annotation records |
 | Transactions | Tx client, with-tx helper, commit/rollback hooks | Mongo sessions/transactions where deployment supports them |
 | Migrations | Auto/versioned migration equivalent | Index/schema validation first; collection validators later |
+| Data migrations | Versioned scripts with test helpers | Explicit migration modules using Mongo client |
 | Global IDs | Optional globally unique ID configuration | App-generated IDs or ObjectId strategy |
+| Schema views | Read-only entity descriptors and generated query modules | Mongo views/aggregation-backed collections where useful |
 | Schema snapshot | PPX-generated schema manifest for conflict/debugging | Checked-in `.ml` manifest or JSON snapshot |
 | External templates/extensions | Generator hooks and extension output | PPX extension modules/templates later |
 | Dynamic EntQL | Runtime generic filters | Runtime predicate AST parser/builder |
