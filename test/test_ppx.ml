@@ -382,6 +382,35 @@ let test_generated_order_value_api () =
   | Ok _ -> Alcotest.fail "unexpected order value result"
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
+let test_generated_id_api () =
+  let query =
+    let open Post in
+    by_id "post_1"
+  in
+  Alcotest.(check bool)
+    "by id predicate" true
+    (match query.predicates with
+    | [ Ent_ocaml.Eq ("id", V_string "post_1") ] -> true
+    | _ -> false);
+  let update =
+    let open Post in
+    update_id "post_1" |> set (body "updated")
+  in
+  Alcotest.(check bool)
+    "update id op" true
+    (match update.op with Ent_ocaml.Update_one -> true | _ -> false);
+  Alcotest.(check int) "update id predicates" 1
+    (List.length update.predicates);
+  let delete =
+    let open Post in
+    delete_id "post_1"
+  in
+  Alcotest.(check bool)
+    "delete id op" true
+    (match delete.op with Ent_ocaml.Delete_one -> true | _ -> false);
+  Alcotest.(check int) "delete id predicates" 1
+    (List.length delete.predicates)
+
 let test_generated_cursor_api () =
   let query =
     let open Post in
@@ -1005,6 +1034,8 @@ let () =
             test_generated_query_api;
           Alcotest.test_case "generated order value api" `Quick
             test_generated_order_value_api;
+          Alcotest.test_case "generated id api" `Quick
+            test_generated_id_api;
           Alcotest.test_case "generated cursor api" `Quick
             test_generated_cursor_api;
           Alcotest.test_case "generated composite cursor api" `Quick

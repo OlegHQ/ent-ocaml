@@ -104,6 +104,9 @@ The initial package scaffold already provides:
   `[@@ent.mutation_hooks ...]`, and `[@@ent.query_interceptors ...]`
   attributes generate `Store.Schema_policy`, `Store.Schema_hooks`, and
   `Store.Schema_interceptors` modules.
+  Entities with a supported `id` field also generate entity-local `by_id`,
+  `update_id`, and `delete_id` helpers for clean primary-key query and mutation
+  paths.
   Generated dynamic filter helpers validate runtime field/operator/value terms
   against the entity descriptor and then compose through normal query pipelines.
   Generated JSON path predicate helpers for `[@ent.json]` fields support nested
@@ -192,9 +195,10 @@ The initial package scaffold already provides:
    shortcuts for Poster. The preferred generated API is functional:
    `create () |> set ...`, `query () |> where ... |> update_one_where |> set ...`,
    `query () |> where ... |> upsert_where |> set ... |> on_insert ...`,
-   record-based `create_record`, and record-list `create_many`. Explicit
-   `create_values`, `create_many_values`, `where_all`, and `set_all` helpers
-   remain available for bulk/mechanical composition. Required-field,
+   `by_id id`, `update_id id |> set ...`, `delete_id id`, record-based
+   `create_record`, and record-list `create_many`. Explicit `create_values`,
+   `create_many_values`, `where_all`, and `set_all` helpers remain available
+   for bulk/mechanical composition. Required-field,
    unknown-field, duplicate-field, unsafe upsert-overlap, and immutable update
    validation are implemented in the core mutation validator. Generated create
    helpers apply `[@ent.default expr]` for omitted fields and generated update

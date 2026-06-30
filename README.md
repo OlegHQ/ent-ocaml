@@ -32,11 +32,26 @@ The same composed query value can feed mutations:
 ```ocaml
 let mutation =
   let open Post in
-  query ()
-  |> where (id_eq post_id)
+  by_id post_id
   |> where (user (User.id_eq user_id))
   |> update_one_where
   |> set (body body)
+```
+
+Entities with an `id` field also get primary-key helpers for the unscoped path:
+
+```ocaml
+let query =
+  let open Post in
+  by_id post_id
+
+let mutation =
+  let open Post in
+  update_id post_id |> set (body body)
+
+let delete =
+  let open Post in
+  delete_id post_id
 ```
 
 Upserts use the same shape, with insert-only fields kept separate:
@@ -44,8 +59,7 @@ Upserts use the same shape, with insert-only fields kept separate:
 ```ocaml
 let mutation =
   let open Post in
-  query ()
-  |> where (id_eq post.id)
+  by_id post.id
   |> upsert_where
   |> set (body post.body)
   |> on_insert (id post.id)

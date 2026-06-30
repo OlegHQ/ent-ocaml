@@ -19,6 +19,7 @@ let lid ~loc parts = { loc; txt = lid_of_parts parts }
 let ident ~loc parts = A.pexp_ident ~loc (lid ~loc parts)
 let constr ~loc parts = A.pexp_construct ~loc (lid ~loc parts) None
 let constr_arg ~loc parts arg = A.pexp_construct ~loc (lid ~loc parts) (Some arg)
+let unit ~loc = A.pexp_construct ~loc (lid ~loc [ "()" ]) None
 let unit_pat ~loc = A.ppat_construct ~loc (lid ~loc [ "()" ]) None
 
 let app ~loc fn args =
@@ -1743,6 +1744,49 @@ let gen_query_module td =
                   ~add:(list ~loc []) ~on_insert:(list ~loc [])));
       ]
   in
+  let id_helper_items =
+    match
+      List.find_opt
+        (fun field ->
+          field.pld_name.txt = "id" && Option.is_some (value_constructor field))
+        fields
+    with
+    | None -> []
+    | Some _ ->
+        let by_id_expr =
+          app ~loc
+            (app ~loc (evar ~loc "where")
+               [
+                 app ~loc (evar ~loc "id_eq") [ evar ~loc "value" ];
+               ])
+            [ app ~loc (evar ~loc "query") [ unit ~loc ] ]
+        in
+        [
+          A.pstr_value ~loc Nonrecursive
+            [
+              A.value_binding ~loc ~pat:(pvar ~loc "by_id")
+                ~expr:
+                  (A.pexp_fun ~loc Nolabel None (pvar ~loc "value")
+                     by_id_expr);
+            ];
+          A.pstr_value ~loc Nonrecursive
+            [
+              A.value_binding ~loc ~pat:(pvar ~loc "update_id")
+                ~expr:
+                  (A.pexp_fun ~loc Nolabel None (pvar ~loc "value")
+                     (app ~loc (evar ~loc "update_one_where")
+                        [ app ~loc (evar ~loc "by_id") [ evar ~loc "value" ] ]));
+            ];
+          A.pstr_value ~loc Nonrecursive
+            [
+              A.value_binding ~loc ~pat:(pvar ~loc "delete_id")
+                ~expr:
+                  (A.pexp_fun ~loc Nolabel None (pvar ~loc "value")
+                     (app ~loc (evar ~loc "delete_one_where")
+                        [ app ~loc (evar ~loc "by_id") [ evar ~loc "value" ] ]));
+            ];
+        ]
+  in
   let store_module =
     let backend_type =
       A.pmty_ident ~loc (lid ~loc [ "Ent_ocaml"; "STORE_BACKEND" ])
@@ -2777,7 +2821,8 @@ let gen_query_module td =
     :: store_module
     :: client_module
     :: (List.concat_map edge_helper_items edges
-       @ List.concat_map field_helper_items fields)
+       @ List.concat_map field_helper_items fields
+       @ id_helper_items)
   in
   A.pstr_module ~loc
     (A.module_binding ~loc ~name:{ loc; txt = Some module_name }
@@ -3010,6 +3055,21 @@ let gen_sig_for_type td =
   in
   let delete_query_sig name =
     val_sig name (arrow Nolabel query_typ mutation_typ)
+  in
+  let id_sig_items =
+    match
+      List.find_opt
+        (fun field ->
+          field.pld_name.txt = "id" && Option.is_some (value_constructor field))
+        fields
+    with
+    | None -> []
+    | Some field ->
+        [
+          val_sig "by_id" (arrow Nolabel field.pld_type query_typ);
+          val_sig "update_id" (arrow Nolabel field.pld_type mutation_typ);
+          val_sig "delete_id" (arrow Nolabel field.pld_type mutation_typ);
+        ]
   in
   let field_sig_items field =
     let field_name = field.pld_name.txt in
@@ -3491,6 +3551,7 @@ let gen_sig_for_type td =
         store_sig;
         client_sig;
       ]
+    @ id_sig_items
     @ List.concat_map edge_sig_items edges
     @ List.concat_map field_sig_items fields
   in
