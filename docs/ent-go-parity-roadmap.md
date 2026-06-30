@@ -116,7 +116,9 @@ The initial package scaffold already provides:
   Type-level `[@@ent.indexes ...]` descriptors support compound, unique, and
   typed partial-filter indexes using ordinary `Ent_ocaml.predicate` values; the
   Mongo backend maps logical fields through storage keys and emits
-  `partialFilterExpression`.
+  `partialFilterExpression`. Mongo index drift checks compare declared index
+  descriptors with live `listIndexes` output through typed
+  `check_indexes`/`verify_indexes` reports.
 - Poster pilot integration for `User`, `Session`, `Post`, `Media`,
   `PublishState`, and `PublishAttempt` DTO entities.
 
@@ -156,7 +158,7 @@ The initial package scaffold already provides:
 | Indexes | Field, edge, compound, unique, and typed partial-filter index descriptors implemented | Mongo indexes with options and `partialFilterExpression` |
 | Annotations | Backend/codegen metadata, only when needed by concrete backend features | OCaml attributes and typed metadata records |
 | Transactions | Generated `with_transaction` and `Tx` clients implemented; commit/rollback hooks and session-backed Mongo transactions pending | Mongo sessions/transactions where deployment supports them |
-| Schema/index checks | Runtime schema/index verification | Index manifests and optional collection validators |
+| Schema/index checks | Mongo index ensure and drift verification implemented; collection validators pending | `createIndexes`, `listIndexes`, optional collection validators |
 | Global IDs | Optional globally unique ID configuration | App-generated IDs or ObjectId strategy |
 | Schema views | Read-only entity descriptors and generated query modules | Mongo views/aggregation-backed collections where useful |
 | Schema snapshot | PPX-generated per-entity schema snapshots and repository-wide manifests implemented | Checked-in `.ml` manifest or JSON snapshot |
@@ -242,8 +244,10 @@ The initial package scaffold already provides:
 
 10. Mongo schema/index checks:
    generated index descriptors and `ensure_indexes` are implemented for field,
-   compound, unique, and typed partial-filter indexes. Drift checks, collection
-   validators where useful, and audit docs for production rollout remain.
+   compound, unique, and typed partial-filter indexes. `check_indexes` and
+   `verify_indexes` compare expected keys, uniqueness, and partial filters
+   against live Mongo `listIndexes` output. Collection validators where useful
+   and audit docs for production rollout remain.
 
 11. EntQL and backend-specific metadata:
    metadata-validated runtime dynamic filters are implemented for field

@@ -5,6 +5,18 @@ type config = {
 type ctx
 type doc = Bson.t
 
+type index_check_status =
+  | Present
+  | Missing
+  | Mismatched of string list
+
+type index_check = {
+  entity : string;
+  collection : string;
+  name : string;
+  status : index_check_status;
+}
+
 val create : client:Mongo_eio.direct_client -> config -> ctx
 val filter_to_bson : Ent_ocaml.query -> (Bson.t, Ent_ocaml.error) result
 val sort_to_bson : ?entity:Ent_ocaml.entity -> Ent_ocaml.order list -> Bson.t option
@@ -28,6 +40,11 @@ val index_storage_fields :
 
 val index_to_bson :
   Ent_ocaml.entity -> Ent_ocaml.index -> (Bson.t, Ent_ocaml.error) result
+
+val index_check_ok : index_check -> bool
+val index_check_to_string : index_check -> string
+val check_indexes : ctx -> Ent_ocaml.entity list -> (index_check list, Ent_ocaml.error) result
+val verify_indexes : ctx -> Ent_ocaml.entity list -> (unit, Ent_ocaml.error) result
 
 val decode_document :
   decode:(Bson.t -> ('a, string) result) ->

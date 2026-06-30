@@ -342,10 +342,48 @@ let check_partial_index client =
       assert_true "partial index created" has_partial;
       Ok ()
 
+let check_index_drift ctx =
+  let open Ent_ocaml.Result_syntax in
+  let* checks = Ent_ocaml_mongo.check_indexes ctx [ user_entity; post_entity ] in
+  assert_true "index drift check passes"
+    (List.for_all Ent_ocaml_mongo.index_check_ok checks);
+  let drift_entity =
+    Ent_ocaml.
+      {
+        post_entity with
+        indexes =
+          post_entity.indexes
+          @ [
+              {
+                name = Some "missing_index_for_drift_check";
+                fields = [ "views" ];
+                edges = [];
+                unique = false;
+                partial_filter = [];
+              };
+            ];
+      }
+  in
+  let* drift_checks = Ent_ocaml_mongo.check_indexes ctx [ drift_entity ] in
+  assert_true "index drift check reports missing"
+    (List.exists
+       (fun (check : Ent_ocaml_mongo.index_check) ->
+         check.name = "missing_index_for_drift_check"
+         &&
+         match check.status with
+         | Ent_ocaml_mongo.Missing -> true
+         | Ent_ocaml_mongo.Present | Ent_ocaml_mongo.Mismatched _ -> false)
+       drift_checks);
+  match Ent_ocaml_mongo.verify_indexes ctx [ drift_entity ] with
+  | Ok () -> Error (`Bad_query "expected index drift verification failure")
+  | Error (`Bad_schema _) -> Ok ()
+  | Error _ as error -> error
+
 let run_flow client =
   let open Ent_ocaml.Result_syntax in
   let ctx = Ent_ocaml_mongo.create ~client { database = db } in
   let* () = Ent_ocaml_mongo.ensure_indexes ctx [ user_entity; post_entity ] in
+  let* () = check_index_drift ctx in
   let* () = check_partial_index client in
   let* _users =
     Ent_ocaml_mongo.insert_many_values ctx

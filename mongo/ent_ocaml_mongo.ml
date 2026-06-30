@@ -9,6 +9,18 @@ type ctx = {
 
 type doc = Bson.t
 
+type index_check_status =
+  | Present
+  | Missing
+  | Mismatched of string list
+
+type index_check = {
+  entity : string;
+  collection : string;
+  name : string;
+  status : index_check_status;
+}
+
 let create ~client config = { client; config }
 
 let backend_error operation entity error =
@@ -577,6 +589,118 @@ let ensure_indexes ctx entities =
         index_loop entity.Ent_ocaml.indexes)
   in
   entity_loop entities
+
+let index_check_ok check =
+  match check.status with
+  | Present -> true
+  | Missing | Mismatched _ -> false
+
+let index_check_to_string check =
+  match check.status with
+  | Present ->
+      Printf.sprintf "%s.%s present" check.collection check.name
+  | Missing ->
+      Printf.sprintf "%s.%s missing" check.collection check.name
+  | Mismatched reasons ->
+      Printf.sprintf "%s.%s mismatched: %s" check.collection check.name
+        (String.concat "; " reasons)
+
+let index_actuals ctx (entity : Ent_ocaml.entity) =
+  match
+    Mongo_eio.direct_run_command ctx.client ctx.config.database
+      [ ("listIndexes", Bson.create_string entity.collection) ]
+  with
+  | Error error -> Error (backend_error "list_indexes" entity error)
+  | Ok response -> Ok (Mongo_command.cursor_batch response.Mongo_command.body)
+
+let index_name bson = Bson.get_string (Bson.get_element "name" bson)
+
+let index_doc name bson =
+  try Some (Bson.get_doc_element (Bson.get_element name bson)) with
+  | Not_found | Bson.Wrong_bson_type -> None
+
+let index_bool ~default name bson =
+  try Bson.get_boolean (Bson.get_element name bson) with
+  | Not_found | Bson.Wrong_bson_type -> default
+
+let doc_equal left right = Bson.to_simple_json left = Bson.to_simple_json right
+
+let compare_index_bson expected actual =
+  let mismatches = ref [] in
+  let check name condition =
+    if not condition then mismatches := name :: !mismatches
+  in
+  let expected_key = index_doc "key" expected in
+  let actual_key = index_doc "key" actual in
+  check "key"
+    (match (expected_key, actual_key) with
+    | Some expected, Some actual -> doc_equal expected actual
+    | None, None -> true
+    | Some _, None | None, Some _ -> false);
+  check "unique"
+    (index_bool ~default:false "unique" expected
+    = index_bool ~default:false "unique" actual);
+  let expected_partial = index_doc "partialFilterExpression" expected in
+  let actual_partial = index_doc "partialFilterExpression" actual in
+  check "partialFilterExpression"
+    (match (expected_partial, actual_partial) with
+    | Some expected, Some actual -> doc_equal expected actual
+    | None, None -> true
+    | Some _, None | None, Some _ -> false);
+  List.rev !mismatches
+
+let check_entity_indexes ctx (entity : Ent_ocaml.entity) =
+  match index_actuals ctx entity with
+  | Error _ as error -> error
+  | Ok actuals ->
+      let rec loop acc = function
+        | [] -> Ok (List.rev acc)
+        | index :: indexes -> (
+            match index_to_bson entity index with
+            | Error _ as error -> error
+            | Ok expected ->
+                let name = index_name expected in
+                let status =
+                  match List.find_opt (fun actual -> index_name actual = name) actuals with
+                  | None -> Missing
+                  | Some actual -> (
+                      match compare_index_bson expected actual with
+                      | [] -> Present
+                      | mismatches -> Mismatched mismatches)
+                in
+                loop
+                  ({
+                     entity = entity.name;
+                     collection = entity.collection;
+                     name;
+                     status;
+                   }
+                  :: acc)
+                  indexes)
+      in
+      loop [] entity.indexes
+
+let check_indexes ctx entities =
+  let rec loop acc = function
+    | [] -> Ok (List.rev acc)
+    | entity :: rest -> (
+        match check_entity_indexes ctx entity with
+        | Error _ as error -> error
+        | Ok checks -> loop (List.rev_append checks acc) rest)
+  in
+  loop [] entities
+
+let verify_indexes ctx entities =
+  match check_indexes ctx entities with
+  | Error _ as error -> error
+  | Ok checks -> (
+      match List.filter (fun check -> not (index_check_ok check)) checks with
+      | [] -> Ok ()
+      | failed ->
+          Error
+            (`Bad_schema
+              ("Mongo index drift: "
+              ^ String.concat ", " (List.map index_check_to_string failed))))
 
 let document_to_bson ?entity fields =
   let rec loop doc = function

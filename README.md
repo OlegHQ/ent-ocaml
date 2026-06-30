@@ -261,6 +261,12 @@ type post = {
 The Mongo backend creates those indexes through `ensure_indexes` and maps
 logical field names through storage keys before sending `partialFilterExpression`.
 Use predicates that the target MongoDB server accepts for partial indexes.
+Operational checks can compare schema-declared indexes with live MongoDB state:
+
+```ocaml
+let verify_schema ctx =
+  Ent_ocaml_mongo.verify_indexes ctx [ user_entity; post_entity ]
+```
 
 Aggregates compose from queries too:
 
