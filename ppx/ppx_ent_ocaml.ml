@@ -70,6 +70,11 @@ let ent_enum_attr =
     Ast_pattern.(single_expr_payload (elist (estring __)))
     (fun values -> values)
 
+let ent_default_attr =
+  Attribute.declare "ent.default" Attribute.Context.label_declaration
+    Ast_pattern.(single_expr_payload __)
+    (fun expr -> expr)
+
 let has_attr attr item = Attribute.get attr item |> Option.is_some
 
 let snake_to_pascal name =
@@ -494,6 +499,38 @@ let ensure_record td =
   | Ptype_record fields -> fields
   | _ -> Location.raise_errorf ~loc:td.ptype_loc "ent deriving supports record entity types only"
 
+let default_binding ~loc field body =
+  match Attribute.get ent_default_attr field with
+  | None -> body
+  | Some default ->
+      if has_attr ent_unique_attr field then
+        Location.raise_errorf ~loc:field.pld_loc
+          "ent default fields cannot be unique";
+      let field_name = field.pld_name.txt in
+      let default_pair =
+        A.pexp_tuple ~loc
+          [ str ~loc field_name; value_expr ~loc field default ]
+      in
+      let default_fields =
+        A.pexp_construct ~loc (lid ~loc [ "::" ])
+          (Some (A.pexp_tuple ~loc [ default_pair; evar ~loc "fields" ]))
+      in
+      let fields =
+        A.pexp_ifthenelse ~loc
+          (app ~loc (ident ~loc [ "List"; "mem_assoc" ])
+             [ str ~loc field_name; evar ~loc "fields" ])
+          (evar ~loc "fields") (Some default_fields)
+      in
+      A.pexp_let ~loc Nonrecursive
+        [
+          A.value_binding ~loc ~pat:(pvar ~loc "fields")
+            ~expr:fields;
+        ]
+        body
+
+let apply_default_bindings ~loc fields body =
+  List.fold_right (default_binding ~loc) fields body
+
 let gen_entity td =
   let loc = loc_of_type_decl td in
   let fields = ensure_record td in
@@ -615,14 +652,17 @@ let gen_query_module td =
       None
   in
   let create =
+    let body =
+      mutation_record ~op:"Create" ~predicates:(list ~loc [])
+        ~set:(evar ~loc "fields") ~clear:(list ~loc [])
+        ~add:(list ~loc [])
+    in
     A.pstr_value ~loc Nonrecursive
       [
         A.value_binding ~loc ~pat:(pvar ~loc "create")
           ~expr:
             (A.pexp_fun ~loc Nolabel None (pvar ~loc "fields")
-               (mutation_record ~op:"Create" ~predicates:(list ~loc [])
-                  ~set:(evar ~loc "fields") ~clear:(list ~loc [])
-                  ~add:(list ~loc [])));
+               (apply_default_bindings ~loc fields body));
       ]
   in
   let create_many =

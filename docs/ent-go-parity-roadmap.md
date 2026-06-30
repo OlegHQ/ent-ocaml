@@ -64,8 +64,8 @@ The initial package scaffold already provides:
   update, delete, count, and basic value translation.
 - `[@@deriving ent]` generation for entity metadata, functional query helpers,
   typed field predicates, typed ordering helpers, create/update/delete mutation
-  values, create-bulk helpers, field selector constants, and matching `.mli`
-  signatures for generated helper modules.
+  values, create-bulk helpers, field selector constants, create-time default
+  values, and matching `.mli` signatures for generated helper modules.
 - Poster pilot integration for `User`, `Session`, `Post`, `Media`,
   `PublishState`, and `PublishAttempt` DTO entities.
 
@@ -99,7 +99,7 @@ The initial package scaffold already provides:
 | Interceptors | Query middleware and traversal interceptors | Around query execution and traversal construction |
 | Privacy | Query/mutation rule chains with allow/deny/skip | Evaluated before backend execution |
 | Mixins | Reusable fields, edges, indexes, hooks, policies | PPX composition step |
-| Field defaults | Generated default/default-func application before insert | OCaml functions evaluated in create API |
+| Field defaults | Generated `[@ent.default expr]` application before insert; update defaults and error-returning default funcs pending | OCaml expressions evaluated in create API |
 | Field validators | Generated validator chains for create/update values | Checked before backend mutation |
 | Sensitive/deprecated/comments | Schema metadata and generated output controls | Hidden from display/debug helpers |
 | Indexes | Field, edge, compound, unique, partial/specialized annotations | Mongo indexes with options and partial filters |
@@ -137,7 +137,9 @@ The initial package scaffold already provides:
    shortcuts for Poster. Create-bulk is implemented as an OCaml list-based API;
    required-field, unknown-field, duplicate-field, and immutable update
    validation are implemented in the core mutation validator. User-defined field
-   validator chains are still pending.
+   validator chains are still pending. Generated create helpers apply
+   `[@ent.default expr]` for omitted fields; update defaults and defaults that
+   return errors are still pending.
 
 5. Poster pilot:
    model `User`, `Session`, `Post`, `Media`, and `PublishAttempt`; replace the

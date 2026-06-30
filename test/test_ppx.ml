@@ -3,7 +3,7 @@ type post = {
   user_id : string [@ent.index "posts_by_user"];
   body : string;
   media_ids : string list;
-  status : string [@ent.enum [ "draft"; "published" ]];
+  status : string [@ent.enum [ "draft"; "published" ]] [@ent.default "draft"];
   created_at_ms : int64;
   published_at_ms : int64 option;
 }
@@ -139,6 +139,27 @@ let test_generated_mutation_api () =
        (fun mutation ->
          match mutation.Ent_ocaml.op with Ent_ocaml.Create -> true | _ -> false)
        create_many);
+  let create_with_default =
+    Post.create
+      [
+        Post.id "post_3";
+        Post.user_id "user_1";
+        Post.body "default status";
+        Post.media_ids [];
+        Post.created_at_ms 3L;
+        Post.published_at_ms None;
+      ]
+  in
+  Alcotest.(check bool)
+    "default status" true
+    (List.exists
+       (function
+         | "status", Ent_ocaml.V_string "draft" -> true
+         | _ -> false)
+       create_with_default.set);
+  (match Ent_ocaml.validate_mutation create_with_default with
+  | Ok () -> ()
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
   let update =
     Post.update_one ~where:[ Post.id_eq "post_1" ]
       ~set:[ Post.body "updated" ] ~clear:[ "published_at_ms" ] ()

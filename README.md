@@ -17,7 +17,8 @@ helpers, field selector constants, and order helpers. Backends execute those
 typed values with `result`-returning functions such as
 `Ent_ocaml_mongo.insert_many_values`. Core mutation validation catches missing
 required create fields, unknown mutation fields, duplicate mutation fields, and
-immutable-field updates before backend execution.
+immutable-field updates before backend execution. Fields annotated with
+`[@ent.default expr]` are inserted by generated create helpers when omitted.
 
 The first production target is Poster, whose Mongo store code should be replaced
 by generated entity clients once the Mongo backend and PPX are complete.
