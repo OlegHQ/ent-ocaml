@@ -61,6 +61,7 @@ let query_all =
     {
       entity = post_entity;
       predicates = [];
+      select = [];
       orders = [ { field = "id"; direction = Asc } ];
       limit = None;
       offset = None;

@@ -59,12 +59,12 @@ The initial package scaffold already provides:
 - Core schema descriptors for fields, edges, indexes, predicates, ordering,
   queries, mutations, errors, privacy decisions, and backend signatures.
 - Mongo planning and CRUD execution for scalar filters, boolean predicates,
-  ordering, limit/offset, insert, bulk insert, update, delete, count, and basic
-  value translation.
+  field selection/projection, ordering, limit/offset, insert, bulk insert,
+  update, delete, count, and basic value translation.
 - `[@@deriving ent]` generation for entity metadata, functional query helpers,
   typed field predicates, typed ordering helpers, create/update/delete mutation
-  values, create-bulk helpers, and matching `.mli` signatures for generated
-  helper modules.
+  values, create-bulk helpers, field selector constants, and matching `.mli`
+  signatures for generated helper modules.
 - Poster pilot integration for `User`, `Session`, `Post`, `Media`,
   `PublishState`, and `PublishAttempt` DTO entities.
 
@@ -78,7 +78,7 @@ The initial package scaffold already provides:
 | Create builders | Generated create records/builders with required-field checks | `insertOne`, optional upsert later |
 | Create bulk | Generated bulk create with ordered/unordered option | `insertMany` |
 | Query builders | Generated typed query modules | Mongo find options and filters |
-| Field selection | Generated projection/selection API returning decoded partials | Mongo projections |
+| Field selection | Generated selector constants and query projection API; decoded partial helpers pending | Mongo projections |
 | Update one/by ID | Generated update-one builder and entity update helper | `updateOne` with matched-count handling |
 | Update many | Generated update builder returning modified count | `updateMany` |
 | Delete one/many | Generated delete builders | `deleteOne` / `deleteMany` |

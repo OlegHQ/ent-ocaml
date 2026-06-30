@@ -361,10 +361,18 @@ let order_function ~loc field_name =
              (A.pexp_fun ~loc Nolabel None (unit_pat ~loc) body));
     ]
 
+let selector_function ~loc field_name =
+  A.pstr_value ~loc Nonrecursive
+    [
+      A.value_binding ~loc ~pat:(pvar ~loc ("select_" ^ field_name))
+        ~expr:(str ~loc field_name);
+    ]
+
 let field_helper_items field =
   let loc = field.pld_loc in
   let field_name = field.pld_name.txt in
   let order = order_function ~loc field_name in
+  let selector = selector_function ~loc field_name in
   let value_item =
     match value_constructor field with
     | None -> []
@@ -384,7 +392,7 @@ let field_helper_items field =
         ]
   in
   match value_constructor field with
-  | None -> value_item @ [ order ]
+  | None -> value_item @ [ selector; order ]
   | Some value_path ->
       let base =
         [
@@ -396,6 +404,7 @@ let field_helper_items field =
             [ "Ent_ocaml"; "In" ] field_name field;
           list_predicate_function ~loc (field_name ^ "_not_in")
             [ "Ent_ocaml"; "Not_in" ] field_name field;
+          selector;
           order;
         ]
       in
@@ -547,6 +556,7 @@ let gen_query_module td =
       [
         (lid ~loc [ "Ent_ocaml"; "entity" ], evar ~loc (type_name ^ "_entity"));
         (lid ~loc [ "Ent_ocaml"; "predicates" ], evar ~loc "where");
+        (lid ~loc [ "Ent_ocaml"; "select" ], evar ~loc "select");
         (lid ~loc [ "Ent_ocaml"; "orders" ], evar ~loc "order");
         (lid ~loc [ "Ent_ocaml"; "limit" ], evar ~loc "limit");
         (lid ~loc [ "Ent_ocaml"; "offset" ], evar ~loc "offset");
@@ -560,13 +570,16 @@ let gen_query_module td =
           ~expr:
             (A.pexp_fun ~loc (Optional "where") (Some (list ~loc []))
                (pvar ~loc "where")
-               (A.pexp_fun ~loc (Optional "order") (Some (list ~loc []))
-                  (pvar ~loc "order")
-                  (A.pexp_fun ~loc (Optional "limit") None (pvar ~loc "limit")
-                     (A.pexp_fun ~loc (Optional "offset") None
-                        (pvar ~loc "offset")
-                        (A.pexp_fun ~loc Nolabel None (unit_pat ~loc)
-                           query_body)))));
+               (A.pexp_fun ~loc (Optional "select") (Some (list ~loc []))
+                  (pvar ~loc "select")
+                  (A.pexp_fun ~loc (Optional "order") (Some (list ~loc []))
+                     (pvar ~loc "order")
+                     (A.pexp_fun ~loc (Optional "limit") None
+                        (pvar ~loc "limit")
+                        (A.pexp_fun ~loc (Optional "offset") None
+                           (pvar ~loc "offset")
+                           (A.pexp_fun ~loc Nolabel None (unit_pat ~loc)
+                              query_body))))));
       ]
   in
   let boolean_predicates =
@@ -713,10 +726,11 @@ let gen_sig_for_type td =
   let query_sig =
     val_sig "query"
       (arrow (Optional "where") predicates_typ
-         (arrow (Optional "order") orders_typ
-            (arrow (Optional "limit") int_typ
-               (arrow (Optional "offset") int_typ
-                  (arrow Nolabel unit_typ query_typ)))))
+         (arrow (Optional "select") (list_typ string_typ)
+            (arrow (Optional "order") orders_typ
+               (arrow (Optional "limit") int_typ
+                  (arrow (Optional "offset") int_typ
+                     (arrow Nolabel unit_typ query_typ))))))
   in
   let create_sig =
     val_sig "create" (arrow Nolabel field_values_typ mutation_typ)
@@ -753,13 +767,14 @@ let gen_sig_for_type td =
         (arrow (Optional "direction") direction_typ
            (arrow Nolabel unit_typ order_typ))
     in
+    let selector_sig = val_sig ("select_" ^ field_name) string_typ in
     let value_sig =
       match value_constructor field with
       | None -> []
       | Some _ -> [ val_sig field_name (arrow Nolabel field_typ field_value_typ) ]
     in
     match value_constructor field with
-    | None -> value_sig @ [ order_sig ]
+    | None -> value_sig @ [ selector_sig; order_sig ]
     | Some value_path ->
         let base =
           [
@@ -769,6 +784,7 @@ let gen_sig_for_type td =
               (arrow Nolabel (list_typ field_typ) predicate_typ);
             val_sig (field_name ^ "_not_in")
               (arrow Nolabel (list_typ field_typ) predicate_typ);
+            selector_sig;
             order_sig;
           ]
         in

@@ -28,8 +28,8 @@ let post_entity =
       indexes = [];
     }
 
-let query ?(predicates = []) ?(orders = []) ?limit ?offset () =
-  Ent_ocaml.{ entity = post_entity; predicates; orders; limit; offset }
+let query ?(predicates = []) ?(select = []) ?(orders = []) ?limit ?offset () =
+  Ent_ocaml.{ entity = post_entity; predicates; select; orders; limit; offset }
 
 let mutation ?(predicates = []) ?(set = []) ?(clear = []) ?(add = []) op =
   Ent_ocaml.{ entity = post_entity; op; predicates; set; clear; add }
@@ -77,6 +77,24 @@ let test_mongo_sort_planning () =
   Alcotest.(check int32)
     "descending sort" (-1l)
     (Bson.get_int32 (Bson.get_element "created_at_ms" sort))
+
+let test_mongo_projection_planning () =
+  let projection =
+    match Ent_ocaml_mongo.projection_to_bson (query ~select:[ "id" ] ()) with
+    | Ok (Some projection) -> projection
+    | Ok None -> Alcotest.fail "expected projection"
+    | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+  in
+  Alcotest.(check int32)
+    "id storage projection" 1l
+    (Bson.get_int32 (Bson.get_element "_id" projection))
+
+let test_mongo_projection_missing_field () =
+  match Ent_ocaml_mongo.projection_to_bson (query ~select:[ "missing" ] ()) with
+  | Ok _ -> Alcotest.fail "expected missing projection field error"
+  | Error (`Bad_schema message) ->
+      Alcotest.(check string) "message" "field not found: missing" message
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
 let test_mongo_update_planning () =
   let update =
@@ -168,6 +186,10 @@ let () =
           Alcotest.test_case "eq predicate bson" `Quick test_mongo_eq_predicate;
           Alcotest.test_case "filter planning" `Quick test_mongo_filter_planning;
           Alcotest.test_case "sort planning" `Quick test_mongo_sort_planning;
+          Alcotest.test_case "projection planning" `Quick
+            test_mongo_projection_planning;
+          Alcotest.test_case "projection missing field" `Quick
+            test_mongo_projection_missing_field;
           Alcotest.test_case "update planning" `Quick test_mongo_update_planning;
           Alcotest.test_case "document planning" `Quick
             test_mongo_document_planning;

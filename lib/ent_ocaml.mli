@@ -93,6 +93,7 @@ type order = {
 type query = {
   entity : entity;
   predicates : predicate list;
+  select : string list;
   orders : order list;
   limit : int option;
   offset : int option;

@@ -138,26 +138,43 @@ let sort_to_bson orders =
       |> List.map (fun order -> (order.Ent_ocaml.field, direction order.direction))
       |> doc |> Option.some
 
+let field_storage_key ?(missing = "field not found: ") (entity : Ent_ocaml.entity)
+    name =
+  match List.find_opt (fun (field : Ent_ocaml.field) -> field.name = name) entity.fields with
+  | Some field -> Ok field.storage_key
+  | None -> Error (`Bad_schema (missing ^ name))
+
+let projection_to_bson (query : Ent_ocaml.query) =
+  match query.select with
+  | [] -> Ok None
+  | fields ->
+      let rec loop acc = function
+        | [] -> Ok (Some (doc (List.rev acc)))
+        | field :: rest -> (
+            match field_storage_key query.entity field with
+            | Ok key -> loop ((key, Bson.create_int32 1l) :: acc) rest
+            | Error _ as error -> error)
+      in
+      loop [] fields
+
 let find_options (query : Ent_ocaml.query) =
-  filter_to_bson query
-  |> Result.map (fun filter ->
+  match (filter_to_bson query, projection_to_bson query) with
+  | Error _ as error, _ | _, (Error _ as error) -> error
+  | Ok filter, Ok projection ->
+      Ok
          {
            (Mongo_crud.default_find query.Ent_ocaml.entity.collection filter) with
+           projection;
            sort = sort_to_bson query.orders;
            skip = query.offset;
            limit = query.limit;
-         })
+         }
 
 let index_storage_fields (entity : Ent_ocaml.entity) (index : Ent_ocaml.index) =
-  let storage_key name =
-    match List.find_opt (fun (field : Ent_ocaml.field) -> field.name = name) entity.fields with
-    | Some field -> Ok field.storage_key
-    | None -> Error (`Bad_schema ("index field not found: " ^ name))
-  in
   let rec loop acc = function
     | [] -> Ok (List.rev acc)
     | field :: rest -> (
-        match storage_key field with
+        match field_storage_key ~missing:"index field not found: " entity field with
         | Ok key -> loop (key :: acc) rest
         | Error _ as error -> error)
   in
