@@ -752,8 +752,8 @@ module Entql = struct
           if in_string then depth
           else
             match s.[index] with
-            | '[' -> depth + 1
-            | ']' -> max 0 (depth - 1)
+            | '[' | '(' -> depth + 1
+            | ']' | ')' -> max 0 (depth - 1)
             | _ -> depth
         in
         if
@@ -781,8 +781,8 @@ module Entql = struct
           if in_string then depth
           else
             match s.[index] with
-            | '[' -> depth + 1
-            | ']' -> max 0 (depth - 1)
+            | '[' | '(' -> depth + 1
+            | ']' | ')' -> max 0 (depth - 1)
             | _ -> depth
         in
         if
@@ -792,6 +792,39 @@ module Entql = struct
         else loop (index + 1) in_string depth
     in
     loop 0 false 0
+
+  let enclosed_by_outer_parens s =
+    let s = trim s in
+    let len = String.length s in
+    if len < 2 || s.[0] <> '(' || s.[len - 1] <> ')' then false
+    else
+      let rec loop index in_string depth =
+        if index >= len then true
+        else
+          let in_string =
+            if s.[index] = '"' && (index = 0 || s.[index - 1] <> '\\') then
+              not in_string
+            else in_string
+          in
+          let depth =
+            if in_string then depth
+            else
+              match s.[index] with
+              | '(' -> depth + 1
+              | ')' -> depth - 1
+              | _ -> depth
+          in
+          if (not in_string) && depth = 0 && index < len - 1 then false
+          else loop (index + 1) in_string depth
+      in
+      loop 0 false 0
+
+  let rec strip_outer_parens expression =
+    let expression = trim expression in
+    if enclosed_by_outer_parens expression then
+      strip_outer_parens
+        (String.sub expression 1 (String.length expression - 2))
+    else expression
 
   let parse_list s =
     let s = trim s in
@@ -921,21 +954,51 @@ module Entql = struct
     in
     loop [] parts
 
-  let predicate entity expression =
+  let rec predicate entity expression =
     let open Result_syntax in
-    let* filters = parse entity expression in
-    match filters with
+    let expression = strip_outer_parens expression in
+    let parts = split_top_level ~sep:"||" expression in
+    match parts with
     | [] -> bad "empty expression"
-    | [ filter ] -> Dynamic_filter.predicate entity filter
-    | filters ->
+    | _ :: _ :: _ ->
         let rec loop acc = function
-          | [] -> Ok (And (List.rev acc))
-          | filter :: rest -> (
-              match Dynamic_filter.predicate entity filter with
+          | [] -> Ok (Or (List.rev acc))
+          | part :: rest -> (
+              match predicate entity part with
               | Ok predicate -> loop (predicate :: acc) rest
               | Error _ as error -> error)
         in
-        loop [] filters
+        loop [] parts
+    | [ expression ] -> (
+        let parts = split_top_level ~sep:"&&" expression in
+        match parts with
+        | [] -> bad "empty expression"
+        | _ :: _ :: _ ->
+            let rec loop acc = function
+              | [] -> Ok (And (List.rev acc))
+              | part :: rest -> (
+                  match predicate entity part with
+                  | Ok predicate -> loop (predicate :: acc) rest
+                  | Error _ as error -> error)
+            in
+            loop [] parts
+        | [ expression ] ->
+            let expression = strip_outer_parens expression in
+            if starts_with expression "!" then
+              let+ predicate =
+                predicate entity
+                  (String.sub expression 1 (String.length expression - 1))
+              in
+              Not predicate
+            else if starts_with expression "not " then
+              let+ predicate =
+                predicate entity
+                  (String.sub expression 4 (String.length expression - 4))
+              in
+              Not predicate
+            else
+              let* filter = parse_filter entity expression in
+              Dynamic_filter.predicate entity filter)
 
   let where expression (query : query) =
     let open Result_syntax in

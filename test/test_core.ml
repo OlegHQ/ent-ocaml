@@ -476,6 +476,23 @@ let test_entql_api () =
   | Ok (Is_nil "published_at_ms") -> ()
   | Ok _ -> Alcotest.fail "unexpected entql null predicate"
   | Error error -> Alcotest.fail (error_to_string error));
+  (match
+     Entql.predicate post_entity
+       {|user_id == "user_1" || (body contains "draft" && !published_at_ms is_null)|}
+   with
+  | Ok
+      (Or
+        [
+          Eq ("user_id", V_string "user_1");
+          And [ Contains ("body", "draft"); Not (Is_nil "published_at_ms") ];
+        ]) ->
+      ()
+  | Ok _ -> Alcotest.fail "unexpected entql boolean predicate"
+  | Error error -> Alcotest.fail (error_to_string error));
+  (match Entql.predicate post_entity {|not (body contains "draft")|} with
+  | Ok (Not (Contains ("body", "draft"))) -> ()
+  | Ok _ -> Alcotest.fail "unexpected entql not predicate"
+  | Error error -> Alcotest.fail (error_to_string error));
   (match Entql.predicate post_entity {|published_at_ms == "soon"|} with
   | Error (`Bad_query "entql: expected int64 value: \"soon\"") -> ()
   | Ok _ -> Alcotest.fail "expected entql type error"

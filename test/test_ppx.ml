@@ -1126,7 +1126,8 @@ let test_generated_entql_api () =
     let* predicate = entql_predicate {|status == "draft"|} in
     let* query =
       query ()
-      |> where_entql {|status == "draft" && body contains "hello"|}
+      |> where_entql
+           {|status == "draft" || (body contains "hello" && !published_at_ms is_null)|}
     in
     Ok (predicate, query)
   in
@@ -1136,10 +1137,14 @@ let test_generated_entql_api () =
           {
             Ent_ocaml.predicates =
               [
-                Ent_ocaml.And
+                Ent_ocaml.Or
                   [
                     Ent_ocaml.Eq ("status", Ent_ocaml.V_string "draft");
-                    Ent_ocaml.Contains ("body", "hello");
+                    Ent_ocaml.And
+                      [
+                        Ent_ocaml.Contains ("body", "hello");
+                        Ent_ocaml.Not (Ent_ocaml.Is_nil "published_at_ms");
+                      ];
                   ];
               ];
             _;

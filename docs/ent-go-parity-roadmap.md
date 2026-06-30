@@ -115,9 +115,10 @@ The initial package scaffold already provides:
   paths.
   Generated dynamic filter helpers validate runtime field/operator/value terms
   against the entity descriptor and then compose through normal query pipelines.
-  Generated `entql_predicate` and `where_entql` helpers parse small
-  metadata-validated single-entity filter strings with `&&`, equality,
-  comparison, membership, string, and null operators into those same predicates.
+  Generated `entql_predicate` and `where_entql` helpers parse
+  metadata-validated single-entity filter strings with `&&`, `||`, parentheses,
+  negation, equality, comparison, membership, string, and null operators into
+  those same predicates.
   Generated JSON path predicate helpers for `[@ent.json]` fields support nested
   equality, comparison, membership, and null checks, plus nested path ordering.
   Generated schema snapshots expose stable `Ent_ocaml.value` metadata documents
@@ -175,7 +176,7 @@ The initial package scaffold already provides:
 | Schema views | Read-only entity descriptors and generated query modules | Mongo views/aggregation-backed collections where useful |
 | Schema snapshot | PPX-generated per-entity schema snapshots and repository-wide manifests implemented | Checked-in `.ml` manifest or JSON snapshot |
 | Local custom code | Hand-written modules beside generated code | Ordinary OCaml modules |
-| Dynamic EntQL | Metadata-validated runtime field filters and a small result-returning expression parser implemented; richer grammar pending | Runtime predicate AST parser/builder |
+| Dynamic EntQL | Metadata-validated runtime field filters and a result-returning boolean expression parser implemented; richer cross-entity/path grammar pending | Runtime predicate AST parser/builder |
 | SQL-only features | Backend-specific optional capabilities | Provide Mongo-specific analogs, keep SQL names out of core |
 | GraphQL/gRPC integrations | Out of core for first release | Future packages, not required for Poster |
 
@@ -269,12 +270,12 @@ The initial package scaffold already provides:
 
 11. EntQL and backend-specific metadata:
    metadata-validated runtime dynamic filters are implemented for field
-   predicates, a small EntQL parser handles single-entity `&&` expressions with
-   equality, comparison, membership, string, and null operators, generated JSON
-   path predicates are implemented for JSON fields, and generated per-entity
-   schema snapshots plus repository-wide snapshot manifests are implemented.
-   Richer parser grammar, custom annotations when they directly support a
-   backend feature, and typed
+   predicates, an EntQL parser handles single-entity boolean expressions with
+   `&&`, `||`, parentheses, negation, equality, comparison, membership, string,
+   and null operators, generated JSON path predicates are implemented for JSON
+   fields, and generated per-entity schema snapshots plus repository-wide
+   snapshot manifests are implemented. Richer cross-entity/path grammar, custom
+   annotations when they directly support a backend feature, and typed
    backend-specific escape hatches remain. Migrations and extension/plugin
    systems are not on the Poster roadmap; add typed backend metadata only when a
    concrete backend feature requires it.

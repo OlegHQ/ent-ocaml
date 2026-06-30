@@ -252,8 +252,8 @@ let load_filtered ctx =
   Posts.all ctx ~decode:post_of_bson_doc_result query
 ```
 
-For user-provided filter strings, use the generated EntQL helpers. They parse a
-small metadata-validated expression language into the same typed predicates and
+For user-provided filter strings, use the generated EntQL helpers. They parse
+metadata-validated boolean expressions into the same typed predicates and
 compose through `result`:
 
 ```ocaml
@@ -262,7 +262,8 @@ let load_filtered ctx =
   let open Post in
   let* query =
     query ()
-    |> where_entql {|status == "draft" && body contains "hello"|}
+    |> where_entql
+         {|status == "draft" || (body contains "hello" && !published_at_ms is_null)|}
   in
   Posts.all ctx ~decode:post_of_bson_doc_result query
 ```
