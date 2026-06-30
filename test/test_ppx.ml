@@ -72,6 +72,7 @@ module Memory_backend = struct
          mutations)
   let update_one () _mutation = Ok ()
   let update () _mutation = Ok 1
+  let upsert_one () _mutation = Ok ()
   let delete () _mutation = Ok 1
   let count () (query : Ent_ocaml.query) =
     Ok (List.length query.Ent_ocaml.predicates)
@@ -275,6 +276,28 @@ let test_generated_mutation_api () =
   Alcotest.(check int)
     "update from query predicates" 2
     (List.length update_from_query.predicates);
+  let upsert =
+    let open Post in
+    query ()
+    |> where (id_eq "post_1")
+    |> upsert_where
+    |> set (body "upserted")
+    |> on_insert (id "post_1")
+    |> on_insert (user_id "user_1")
+    |> on_insert (media_ids [])
+    |> on_insert (status "draft")
+    |> on_insert (created_at_ms 1L)
+    |> on_insert (updated_at_ms 1L)
+    |> on_insert (published_at_ms None)
+  in
+  Alcotest.(check bool)
+    "upsert one op" true
+    (match upsert.op with Ent_ocaml.Upsert_one -> true | _ -> false);
+  Alcotest.(check int) "upsert set" 1 (List.length upsert.set);
+  Alcotest.(check int) "upsert on insert" 7 (List.length upsert.on_insert);
+  (match Ent_ocaml.validate_mutation upsert with
+  | Ok () -> ()
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
   let clear_updated =
     Post.update_one ~where:[ Post.id_eq "post_1" ]
       ~clear:[ "updated_at_ms" ] ()
@@ -338,7 +361,22 @@ let test_generated_store_api () =
     let open Post in
     update_one_where query |> set (body "x")
   in
-  match Store.update_one () mutation with
+  (match Store.update_one () mutation with
+  | Ok () -> ()
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error));
+  let upsert =
+    let open Post in
+    upsert_one ~where:[ id_eq "post_1" ] ()
+    |> set (body "upserted")
+    |> on_insert (id "post_1")
+    |> on_insert (user_id "user_1")
+    |> on_insert (media_ids [])
+    |> on_insert (status "draft")
+    |> on_insert (created_at_ms 1L)
+    |> on_insert (updated_at_ms 1L)
+    |> on_insert (published_at_ms None)
+  in
+  match Store.upsert_one () upsert with
   | Ok () -> ()
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 

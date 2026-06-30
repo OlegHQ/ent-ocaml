@@ -87,6 +87,7 @@ let create id user_id body =
         ];
       clear = [];
       add = [];
+      on_insert = [];
     }
 
 let invalid_create_missing_body =
@@ -99,6 +100,23 @@ let invalid_create_missing_body =
         [ ("id", V_string "post_missing_body"); ("user_id", V_string "user_1") ];
       clear = [];
       add = [];
+      on_insert = [];
+    }
+
+let upsert id user_id body =
+  Ent_ocaml.
+    {
+      entity = post_entity;
+      op = Upsert_one;
+      predicates = [ Eq ("id", V_string id) ];
+      set = [ ("body", V_string body) ];
+      clear = [];
+      add = [];
+      on_insert =
+        [
+          ("id", V_string id);
+          ("user_id", V_string user_id);
+        ];
     }
 
 let query_all =
@@ -152,30 +170,60 @@ let run_flow client =
               | Ok user_posts -> (
                   assert_true "edge predicate returns user posts"
                     (List.length user_posts = 1);
-                  match
-                    Ent_ocaml_mongo.insert_many_values ctx
-                      [
-                        create "post_2" "user_2" "duplicate";
-                        create "post_3" "user_1" "third";
-                      ]
-                  with
-                  | Error (`Constraint _) -> (
-                      assert_true "bulk duplicate maps to constraint" true;
-                      match
-                        Ent_ocaml_mongo.insert_many_values ctx
-                          [ invalid_create_missing_body ]
-                      with
-                      | Error (`Bad_query message) ->
-                          assert_true "bulk create validates required fields"
-                            (message = "missing required field: body");
-                          Ok ()
-                      | Error error -> Error error
-                      | Ok _ ->
-                          Error
-                            (`Bad_query
-                              "invalid bulk create unexpectedly succeeded"))
+                  match Ent_ocaml_mongo.upsert_one ctx
+                          (upsert "post_3" "user_1" "third") with
                   | Error error -> Error error
-                  | Ok _ -> Error (`Constraint "duplicate bulk insert succeeded")))))
+                  | Ok () -> (
+                      match Ent_ocaml_mongo.find ctx query_all with
+                      | Error error -> Error error
+                      | Ok found_after_insert -> (
+                          assert_true "upsert inserts missing row"
+                            (List.length found_after_insert = 3);
+                          match Ent_ocaml_mongo.upsert_one ctx
+                                  (upsert "post_3" "user_1" "third updated") with
+                          | Error error -> Error error
+                          | Ok () -> (
+                              match Ent_ocaml_mongo.find ctx query_user_1 with
+                              | Error error -> Error error
+                              | Ok user_posts_after_upsert -> (
+                                  assert_true "upsert updates existing row"
+                                    (List.exists
+                                       (fun doc ->
+                                         Bson.get_string
+                                           (Bson.get_element "body" doc)
+                                         = "third updated")
+                                       user_posts_after_upsert);
+                                  match
+                                    Ent_ocaml_mongo.insert_many_values ctx
+                                      [
+                                        create "post_2" "user_2" "duplicate";
+                                        create "post_4" "user_1" "fourth";
+                                      ]
+                                  with
+                                  | Error (`Constraint _) -> (
+                                      assert_true
+                                        "bulk duplicate maps to constraint"
+                                        true;
+                                      match
+                                        Ent_ocaml_mongo.insert_many_values ctx
+                                          [ invalid_create_missing_body ]
+                                      with
+                                      | Error (`Bad_query message) ->
+                                          assert_true
+                                            "bulk create validates required fields"
+                                            (message
+                                            = "missing required field: body");
+                                          Ok ()
+                                      | Error error -> Error error
+                                      | Ok _ ->
+                                          Error
+                                            (`Bad_query
+                                              "invalid bulk create unexpectedly succeeded"))
+                                  | Error error -> Error error
+                                  | Ok _ ->
+                                      Error
+                                        (`Constraint
+                                          "duplicate bulk insert succeeded")))))))))
 
 let () =
   Random.self_init ();

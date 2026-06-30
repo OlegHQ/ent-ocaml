@@ -1109,7 +1109,8 @@ let gen_query_module td =
         ];
     ]
   in
-  let mutation_record ~op ~predicates ~set ~clear ~add =
+  let mutation_record ?(on_insert = list ~loc []) ~op ~predicates ~set ~clear
+      ~add =
     A.pexp_record ~loc
       [
         (lid ~loc [ "Ent_ocaml"; "entity" ], evar ~loc (type_name ^ "_entity"));
@@ -1118,6 +1119,7 @@ let gen_query_module td =
         (lid ~loc [ "Ent_ocaml"; "set" ], set);
         (lid ~loc [ "Ent_ocaml"; "clear" ], clear);
         (lid ~loc [ "Ent_ocaml"; "add" ], add);
+        (lid ~loc [ "Ent_ocaml"; "on_insert" ], on_insert);
       ]
       None
   in
@@ -1224,6 +1226,20 @@ let gen_query_module td =
                (A.pexp_fun ~loc Nolabel None (pvar ~loc "mutation")
                   (app ~loc (ident ~loc [ "Ent_ocaml"; "Mutation"; "add" ])
                      [ evar ~loc "field"; evar ~loc "mutation" ])));
+        A.value_binding ~loc ~pat:(pvar ~loc "on_insert")
+          ~expr:
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "field")
+               (A.pexp_fun ~loc Nolabel None (pvar ~loc "mutation")
+                  (app ~loc
+                     (ident ~loc [ "Ent_ocaml"; "Mutation"; "on_insert" ])
+                     [ evar ~loc "field"; evar ~loc "mutation" ])));
+        A.value_binding ~loc ~pat:(pvar ~loc "on_insert_all")
+          ~expr:
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "fields")
+               (A.pexp_fun ~loc Nolabel None (pvar ~loc "mutation")
+                  (app ~loc
+                     (ident ~loc [ "Ent_ocaml"; "Mutation"; "on_insert_all" ])
+                     [ evar ~loc "fields"; evar ~loc "mutation" ])));
       ]
   in
   let update_fn name op =
@@ -1271,6 +1287,34 @@ let gen_query_module td =
                      (pvar ~loc "add")
                      (A.pexp_fun ~loc Nolabel None query_pat
                         (apply_update_default_bindings ~loc fields body)))));
+      ]
+  in
+  let upsert_query_fn =
+    let body =
+      mutation_record ~op:"Upsert_one"
+        ~predicates:
+          (A.pexp_field ~loc (evar ~loc "query")
+             (lid ~loc [ "Ent_ocaml"; "predicates" ]))
+        ~set:(list ~loc []) ~clear:(list ~loc []) ~add:(list ~loc [])
+    in
+    A.pstr_value ~loc Nonrecursive
+      [
+        A.value_binding ~loc ~pat:(pvar ~loc "upsert_where")
+          ~expr:(A.pexp_fun ~loc Nolabel None query_pat body);
+      ]
+  in
+  let upsert_fn =
+    A.pstr_value ~loc Nonrecursive
+      [
+        A.value_binding ~loc ~pat:(pvar ~loc "upsert_one")
+          ~expr:
+            (A.pexp_fun ~loc (Optional "where") (Some (list ~loc []))
+               (pvar ~loc "where")
+               (A.pexp_fun ~loc Nolabel None (unit_pat ~loc)
+                  (mutation_record ~op:"Upsert_one"
+                     ~predicates:(evar ~loc "where")
+                     ~set:(list ~loc []) ~clear:(list ~loc [])
+                     ~add:(list ~loc []))));
       ]
   in
   let delete_fn name op =
@@ -1377,6 +1421,14 @@ let gen_query_module td =
                      (Nolabel, evar ~loc "ctx");
                      (Nolabel, evar ~loc "mutation");
                    ])));
+        value_fun "upsert_one"
+          (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+             (A.pexp_fun ~loc Nolabel None (pvar ~loc "mutation")
+                (backend_apply "upsert_one"
+                   [
+                     (Nolabel, evar ~loc "ctx");
+                     (Nolabel, evar ~loc "mutation");
+                   ])));
         value_fun "delete"
           (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
              (A.pexp_fun ~loc Nolabel None (pvar ~loc "mutation")
@@ -1401,6 +1453,8 @@ let gen_query_module td =
     :: update_fn "update" "Update"
     :: update_query_fn "update_one_where" "Update_one"
     :: update_query_fn "update_where" "Update"
+    :: upsert_fn
+    :: upsert_query_fn
     :: delete_fn "delete_one" "Delete_one"
     :: delete_fn "delete" "Delete"
     :: delete_query_fn "delete_one_where" "Delete_one"
@@ -1494,6 +1548,10 @@ let gen_sig_for_type td =
         (arrow Nolabel field_values_typ (arrow Nolabel mutation_typ mutation_typ));
       val_sig "clear" (arrow Nolabel string_typ (arrow Nolabel mutation_typ mutation_typ));
       val_sig "add" (arrow Nolabel field_value_typ (arrow Nolabel mutation_typ mutation_typ));
+      val_sig "on_insert"
+        (arrow Nolabel field_value_typ (arrow Nolabel mutation_typ mutation_typ));
+      val_sig "on_insert_all"
+        (arrow Nolabel field_values_typ (arrow Nolabel mutation_typ mutation_typ));
     ]
   in
   let boolean_sig =
@@ -1538,6 +1596,14 @@ let gen_sig_for_type td =
          (arrow (Optional "clear") (list_typ string_typ)
             (arrow (Optional "add") field_values_typ
                (arrow Nolabel query_typ mutation_typ))))
+  in
+  let upsert_sig name =
+    val_sig name
+      (arrow (Optional "where") predicates_typ
+         (arrow Nolabel unit_typ mutation_typ))
+  in
+  let upsert_query_sig name =
+    val_sig name (arrow Nolabel query_typ mutation_typ)
   in
   let delete_sig name =
     val_sig name
@@ -1656,6 +1722,8 @@ let gen_sig_for_type td =
           (arrow Nolabel backend_ctx (arrow Nolabel mutation_typ unit_result));
         value_sig "update"
           (arrow Nolabel backend_ctx (arrow Nolabel mutation_typ int_result));
+        value_sig "upsert_one"
+          (arrow Nolabel backend_ctx (arrow Nolabel mutation_typ unit_result));
         value_sig "delete"
           (arrow Nolabel backend_ctx (arrow Nolabel mutation_typ int_result));
       ]
@@ -1686,6 +1754,8 @@ let gen_sig_for_type td =
         update_sig "update";
         update_query_sig "update_one_where";
         update_query_sig "update_where";
+        upsert_sig "upsert_one";
+        upsert_query_sig "upsert_where";
         delete_sig "delete_one";
         delete_sig "delete";
         delete_query_sig "delete_one_where";

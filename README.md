@@ -39,6 +39,20 @@ let mutation =
   |> set (body body)
 ```
 
+Upserts use the same shape, with insert-only fields kept separate:
+
+```ocaml
+let mutation =
+  let open Post in
+  query ()
+  |> where (id_eq post.id)
+  |> upsert_where
+  |> set (body post.body)
+  |> on_insert (id post.id)
+  |> on_insert (user_id post.user_id)
+  |> on_insert (created_at_ms now_ms)
+```
+
 Create mutations can be built as pipelines or directly from records:
 
 ```ocaml
@@ -68,8 +82,9 @@ let load_drafts ctx user_id =
 Backends execute those
 typed values with `result`-returning functions such as
 `Ent_ocaml_mongo.insert_many_values`. Core mutation validation catches missing
-required create fields, unknown mutation fields, duplicate mutation fields, and
-immutable-field updates before backend execution. Fields annotated with
+required create/upsert fields, unknown mutation fields, duplicate mutation
+fields, unsafe upsert field overlap, and immutable-field updates before backend
+execution. Fields annotated with
 `[@ent.default expr]` are inserted by generated create helpers when omitted, and
 `[@ent.update_default expr]` is inserted by generated update helpers unless the
 field is explicitly set or cleared. Fields annotated with

@@ -118,7 +118,7 @@ module Query : sig
   val offset : int -> query -> query
 end
 
-type mutation_op = Create | Update_one | Update | Delete_one | Delete
+type mutation_op = Create | Update_one | Update | Delete_one | Delete | Upsert_one
 
 type mutation = {
   entity : entity;
@@ -127,6 +127,7 @@ type mutation = {
   set : (string * value) list;
   clear : string list;
   add : (string * value) list;
+  on_insert : (string * value) list;
 }
 
 module Mutation : sig
@@ -134,6 +135,8 @@ module Mutation : sig
   val set_all : (string * value) list -> mutation -> mutation
   val clear : string -> mutation -> mutation
   val add : string * value -> mutation -> mutation
+  val on_insert : string * value -> mutation -> mutation
+  val on_insert_all : (string * value) list -> mutation -> mutation
 end
 
 type error =
@@ -167,6 +170,7 @@ module type BACKEND = sig
   val insert : ctx -> entity -> doc -> (doc, error) result
   val insert_many : ctx -> entity -> doc list -> (doc list, error) result
   val update : ctx -> mutation -> (int, error) result
+  val upsert_one : ctx -> mutation -> (unit, error) result
   val delete : ctx -> mutation -> (int, error) result
   val count : ctx -> query -> (int, error) result
   val transaction : ctx -> (tx -> ('a, error) result) -> ('a, error) result
@@ -195,6 +199,7 @@ module type STORE_BACKEND = sig
 
   val update_one : ctx -> mutation -> (unit, error) result
   val update : ctx -> mutation -> (int, error) result
+  val upsert_one : ctx -> mutation -> (unit, error) result
   val delete : ctx -> mutation -> (int, error) result
   val count : ctx -> query -> (int, error) result
 end

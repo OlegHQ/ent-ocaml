@@ -116,7 +116,7 @@ module Query = struct
   let offset offset query = { query with offset = Some offset }
 end
 
-type mutation_op = Create | Update_one | Update | Delete_one | Delete
+type mutation_op = Create | Update_one | Update | Delete_one | Delete | Upsert_one
 
 type mutation = {
   entity : entity;
@@ -125,6 +125,7 @@ type mutation = {
   set : (string * value) list;
   clear : string list;
   add : (string * value) list;
+  on_insert : (string * value) list;
 }
 
 module Mutation = struct
@@ -162,6 +163,15 @@ module Mutation = struct
       add = remove_field name mutation.add @ [ field ];
       clear = List.filter (( <> ) name) mutation.clear;
     }
+
+  let on_insert field mutation =
+    let name = field_name field in
+    { mutation with on_insert = remove_field name mutation.on_insert @ [ field ] }
+
+  let on_insert_all fields mutation =
+    List.fold_left
+      (fun mutation field -> on_insert field mutation)
+      mutation fields
 end
 
 type error =
@@ -238,6 +248,9 @@ let validate_required_create (entity : entity) set =
           Error (`Bad_query ("required field is null: " ^ name))
       | None -> Ok ())
 
+let validate_required_upsert (entity : entity) set on_insert =
+  validate_required_create entity (set @ on_insert)
+
 let validate_immutable_update (entity : entity) fields =
   match
     List.find_opt
@@ -283,25 +296,47 @@ let validate_mutation mutation =
   let set_names = List.map fst mutation.set in
   let add_names = List.map fst mutation.add in
   let clear_names = mutation.clear in
-  let all_names = set_names @ add_names @ clear_names in
+  let on_insert_names = List.map fst mutation.on_insert in
+  let all_names = set_names @ add_names @ clear_names @ on_insert_names in
   let* () = validate_known_fields entity "mutation" all_names in
   let* () = validate_no_duplicate "set" set_names in
   let* () = validate_no_duplicate "add" add_names in
   let* () = validate_no_duplicate "clear" clear_names in
+  let* () = validate_no_duplicate "on_insert" on_insert_names in
   let* () = validate_no_overlap "set" set_names "add" add_names in
   let* () = validate_no_overlap "set" set_names "clear" clear_names in
   let* () = validate_no_overlap "add" add_names "clear" clear_names in
-  let* () = validate_field_values entity (mutation.set @ mutation.add) in
+  let* () =
+    validate_no_overlap "set" set_names "on_insert" on_insert_names
+  in
+  let* () =
+    validate_no_overlap "add" add_names "on_insert" on_insert_names
+  in
+  let* () =
+    validate_no_overlap "clear" clear_names "on_insert" on_insert_names
+  in
+  let* () =
+    validate_field_values entity
+      (mutation.set @ mutation.add @ mutation.on_insert)
+  in
   match mutation.op with
   | Create ->
       let* () = validate_required_create entity mutation.set in
       if mutation.predicates <> [] then
         Error (`Bad_query "create mutation cannot have predicates")
-      else if mutation.clear <> [] || mutation.add <> [] then
+      else if mutation.clear <> [] || mutation.add <> [] || mutation.on_insert <> []
+      then
         Error (`Bad_query "create mutation only supports set fields")
       else Ok ()
   | Update_one | Update ->
-      validate_immutable_update entity all_names
+      if mutation.on_insert <> [] then
+        Error (`Bad_query "update mutation cannot have on_insert fields")
+      else validate_immutable_update entity all_names
+  | Upsert_one ->
+      let* () =
+        validate_required_upsert entity mutation.set mutation.on_insert
+      in
+      validate_immutable_update entity (set_names @ add_names @ clear_names)
   | Delete_one | Delete ->
       if all_names = [] then Ok ()
       else Error (`Bad_query "delete mutation cannot set, add, or clear fields")
@@ -319,6 +354,7 @@ module type BACKEND = sig
   val insert : ctx -> entity -> doc -> (doc, error) result
   val insert_many : ctx -> entity -> doc list -> (doc list, error) result
   val update : ctx -> mutation -> (int, error) result
+  val upsert_one : ctx -> mutation -> (unit, error) result
   val delete : ctx -> mutation -> (int, error) result
   val count : ctx -> query -> (int, error) result
   val transaction : ctx -> (tx -> ('a, error) result) -> ('a, error) result
@@ -347,6 +383,7 @@ module type STORE_BACKEND = sig
 
   val update_one : ctx -> mutation -> (unit, error) result
   val update : ctx -> mutation -> (int, error) result
+  val upsert_one : ctx -> mutation -> (unit, error) result
   val delete : ctx -> mutation -> (int, error) result
   val count : ctx -> query -> (int, error) result
 end

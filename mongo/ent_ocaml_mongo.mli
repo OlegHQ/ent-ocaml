@@ -61,4 +61,5 @@ val insert_many_values :
 
 val update_one : ctx -> Ent_ocaml.mutation -> (unit, Ent_ocaml.error) result
 val update : ctx -> Ent_ocaml.mutation -> (int, Ent_ocaml.error) result
+val upsert_one : ctx -> Ent_ocaml.mutation -> (unit, Ent_ocaml.error) result
 val delete : ctx -> Ent_ocaml.mutation -> (int, Ent_ocaml.error) result

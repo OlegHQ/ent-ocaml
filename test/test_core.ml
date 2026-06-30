@@ -59,8 +59,10 @@ let post_entity =
 let query ?(predicates = []) ?(select = []) ?(orders = []) ?limit ?offset () =
   Ent_ocaml.{ entity = post_entity; predicates; select; orders; limit; offset }
 
-let mutation ?(predicates = []) ?(set = []) ?(clear = []) ?(add = []) op =
-  Ent_ocaml.{ entity = post_entity; op; predicates; set; clear; add }
+let mutation ?(predicates = []) ?(set = []) ?(clear = []) ?(add = [])
+    ?(on_insert = []) op =
+  Ent_ocaml.
+    { entity = post_entity; op; predicates; set; clear; add; on_insert }
 
 let test_error_to_string () =
   Alcotest.(check string)
@@ -118,6 +120,45 @@ let test_validate_field_validator () =
   | Error (`Bad_query message) ->
       Alcotest.(check string)
         "message" "validation failed for field body: must not be empty" message
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+
+let test_validate_upsert_required_on_insert () =
+  let upsert =
+    mutation Ent_ocaml.Upsert_one
+      ~predicates:Ent_ocaml.[ Eq ("id", V_string "post_1") ]
+      ~set:Ent_ocaml.[ ("body", V_string "updated") ]
+      ~on_insert:
+        Ent_ocaml.[ ("id", V_string "post_1"); ("user_id", V_string "user_1") ]
+  in
+  match Ent_ocaml.validate_mutation upsert with
+  | Ok () -> ()
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+
+let test_validate_upsert_rejects_immutable_set () =
+  match
+    Ent_ocaml.validate_mutation
+      (mutation Ent_ocaml.Upsert_one
+         ~predicates:Ent_ocaml.[ Eq ("id", V_string "post_1") ]
+         ~set:Ent_ocaml.[ ("id", V_string "post_2") ]
+         ~on_insert:Ent_ocaml.[ ("user_id", V_string "user_1") ])
+  with
+  | Ok () -> Alcotest.fail "expected immutable upsert set error"
+  | Error (`Bad_query message) ->
+      Alcotest.(check string)
+        "message" "immutable field cannot be updated: id" message
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+
+let test_validate_update_rejects_on_insert () =
+  match
+    Ent_ocaml.validate_mutation
+      (mutation Ent_ocaml.Update_one
+         ~set:Ent_ocaml.[ ("body", V_string "updated") ]
+         ~on_insert:Ent_ocaml.[ ("id", V_string "post_1") ])
+  with
+  | Ok () -> Alcotest.fail "expected update on_insert error"
+  | Error (`Bad_query message) ->
+      Alcotest.(check string)
+        "message" "update mutation cannot have on_insert fields" message
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
 let test_query_pipeline_api () =
@@ -250,6 +291,35 @@ let test_mongo_update_planning () =
   Alcotest.(check int64)
     "increment" 1L (Bson.get_int64 (Bson.get_element "revision" inc))
 
+let test_mongo_upsert_planning () =
+  let update =
+    match
+      Ent_ocaml_mongo.update_to_bson
+        (mutation Ent_ocaml.Upsert_one
+           ~set:Ent_ocaml.[ ("body", V_string "updated") ]
+           ~on_insert:
+             Ent_ocaml.
+               [
+                 ("id", V_string "post_1");
+                 ("user_id", V_string "user_1");
+               ])
+    with
+    | Ok update -> update
+    | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
+  in
+  let set = Bson.get_doc_element (Bson.get_element "$set" update) in
+  let set_on_insert =
+    Bson.get_doc_element (Bson.get_element "$setOnInsert" update)
+  in
+  Alcotest.(check string)
+    "set body" "updated" (Bson.get_string (Bson.get_element "body" set));
+  Alcotest.(check string)
+    "insert id" "post_1"
+    (Bson.get_string (Bson.get_element "id" set_on_insert));
+  Alcotest.(check string)
+    "insert user" "user_1"
+    (Bson.get_string (Bson.get_element "user_id" set_on_insert))
+
 let test_mongo_document_planning () =
   let doc =
     match
@@ -338,6 +408,12 @@ let () =
             test_validate_immutable_update;
           Alcotest.test_case "validate field validator" `Quick
             test_validate_field_validator;
+          Alcotest.test_case "validate upsert required" `Quick
+            test_validate_upsert_required_on_insert;
+          Alcotest.test_case "validate upsert immutable" `Quick
+            test_validate_upsert_rejects_immutable_set;
+          Alcotest.test_case "validate update on_insert" `Quick
+            test_validate_update_rejects_on_insert;
           Alcotest.test_case "query pipeline api" `Quick
             test_query_pipeline_api;
           Alcotest.test_case "result syntax" `Quick test_result_syntax;
@@ -356,6 +432,7 @@ let () =
           Alcotest.test_case "projection missing field" `Quick
             test_mongo_projection_missing_field;
           Alcotest.test_case "update planning" `Quick test_mongo_update_planning;
+          Alcotest.test_case "upsert planning" `Quick test_mongo_upsert_planning;
           Alcotest.test_case "document planning" `Quick
             test_mongo_document_planning;
           Alcotest.test_case "decode documents" `Quick
