@@ -528,12 +528,126 @@ let generate_str ~loc:_ ~path:_ (_rec_flag, tds) =
 
 let gen_sig_for_type td =
   let loc = loc_of_type_decl td in
+  let fields = ensure_record td in
+  let type_name = td.ptype_name.txt in
+  let module_name = snake_to_pascal type_name in
   let typ = A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "entity" ]) [] in
+  let predicate_typ =
+    A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "predicate" ]) []
+  in
+  let order_typ = A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "order" ]) [] in
+  let query_typ = A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "query" ]) [] in
+  let mutation_typ =
+    A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "mutation" ]) []
+  in
+  let value_typ = A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "value" ]) [] in
+  let direction_typ =
+    A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "order_direction" ]) []
+  in
+  let string_typ = A.ptyp_constr ~loc (lid ~loc [ "string" ]) [] in
+  let int_typ = A.ptyp_constr ~loc (lid ~loc [ "int" ]) [] in
+  let unit_typ = A.ptyp_constr ~loc (lid ~loc [ "unit" ]) [] in
+  let list_typ typ = A.ptyp_constr ~loc (lid ~loc [ "list" ]) [ typ ] in
+  let pair_typ left right =
+    A.ptyp_tuple ~loc [ left; right ]
+  in
+  let field_value_typ = pair_typ string_typ value_typ in
+  let field_values_typ = list_typ field_value_typ in
+  let predicates_typ = list_typ predicate_typ in
+  let orders_typ = list_typ order_typ in
+  let arrow label arg result = A.ptyp_arrow ~loc label arg result in
+  let val_sig name type_ =
+    A.psig_value ~loc (A.value_description ~loc ~name:{ loc; txt = name } ~type_ ~prim:[])
+  in
+  let query_sig =
+    val_sig "query"
+      (arrow (Optional "where") predicates_typ
+         (arrow (Optional "order") orders_typ
+            (arrow (Optional "limit") int_typ
+               (arrow (Optional "offset") int_typ
+                  (arrow Nolabel unit_typ query_typ)))))
+  in
+  let create_sig =
+    val_sig "create" (arrow Nolabel field_values_typ mutation_typ)
+  in
+  let update_sig name =
+    val_sig name
+      (arrow (Optional "where") predicates_typ
+         (arrow (Optional "set") field_values_typ
+            (arrow (Optional "clear") (list_typ string_typ)
+               (arrow (Optional "add") field_values_typ
+                  (arrow Nolabel unit_typ mutation_typ)))))
+  in
+  let delete_sig name =
+    val_sig name
+      (arrow (Optional "where") predicates_typ
+         (arrow Nolabel unit_typ mutation_typ))
+  in
+  let field_sig_items field =
+    let field_name = field.pld_name.txt in
+    let field_typ = field.pld_type in
+    let order_sig =
+      val_sig (field_name ^ "_order")
+        (arrow (Optional "direction") direction_typ
+           (arrow Nolabel unit_typ order_typ))
+    in
+    let value_sig =
+      match value_constructor field with
+      | None -> []
+      | Some _ -> [ val_sig field_name (arrow Nolabel field_typ field_value_typ) ]
+    in
+    match value_constructor field with
+    | None -> value_sig @ [ order_sig ]
+    | Some value_path ->
+        let base =
+          [
+            val_sig (field_name ^ "_eq") (arrow Nolabel field_typ predicate_typ);
+            val_sig (field_name ^ "_neq") (arrow Nolabel field_typ predicate_typ);
+            val_sig (field_name ^ "_in")
+              (arrow Nolabel (list_typ field_typ) predicate_typ);
+            val_sig (field_name ^ "_not_in")
+              (arrow Nolabel (list_typ field_typ) predicate_typ);
+            order_sig;
+          ]
+        in
+        let nil_helpers =
+          if is_option field then
+            [
+              val_sig (field_name ^ "_is_nil")
+                (arrow Nolabel unit_typ predicate_typ);
+              val_sig (field_name ^ "_not_nil")
+                (arrow Nolabel unit_typ predicate_typ);
+            ]
+          else []
+        in
+        let string_helpers =
+          match value_path with
+          | [ "Ent_ocaml"; "V_string" ] ->
+              [
+                val_sig (field_name ^ "_contains")
+                  (arrow Nolabel string_typ predicate_typ);
+                val_sig (field_name ^ "_has_prefix")
+                  (arrow Nolabel string_typ predicate_typ);
+                val_sig (field_name ^ "_has_suffix")
+                  (arrow Nolabel string_typ predicate_typ);
+              ]
+          | _ -> []
+        in
+        value_sig @ base @ nil_helpers @ string_helpers
+  in
+  let module_items =
+    query_sig :: create_sig :: update_sig "update_one" :: update_sig "update"
+    :: delete_sig "delete_one" :: delete_sig "delete"
+    :: List.concat_map field_sig_items fields
+  in
   [
     A.psig_value ~loc
       (A.value_description ~loc
-         ~name:{ loc; txt = td.ptype_name.txt ^ "_entity" }
+         ~name:{ loc; txt = type_name ^ "_entity" }
          ~type_:typ ~prim:[]);
+    A.psig_module ~loc
+      (A.module_declaration ~loc ~name:{ loc; txt = Some module_name }
+         ~type_:(A.pmty_signature ~loc module_items));
   ]
 
 let generate_sig ~loc:_ ~path:_ (_rec_flag, tds) =
