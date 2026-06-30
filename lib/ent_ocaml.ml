@@ -135,6 +135,89 @@ type group_result = {
   value : value option;
 }
 
+module Schema_snapshot = struct
+  let string name value = (name, V_string value)
+  let bool name value = (name, V_bool value)
+
+  let rec field_type = function
+    | String -> V_string "string"
+    | Int -> V_string "int"
+    | Int32 -> V_string "int32"
+    | Int64 -> V_string "int64"
+    | Float -> V_string "float"
+    | Bool -> V_string "bool"
+    | Time_ms -> V_string "time_ms"
+    | Uuid -> V_string "uuid"
+    | Bytes -> V_string "bytes"
+    | Json -> V_string "json"
+    | Enum values -> V_doc [ ("kind", V_string "enum"); ("values", V_list (List.map (fun value -> V_string value) values)) ]
+    | List typ -> V_doc [ ("kind", V_string "list"); ("type", field_type typ) ]
+    | Option typ -> V_doc [ ("kind", V_string "option"); ("type", field_type typ) ]
+    | Custom name -> V_doc [ ("kind", V_string "custom"); ("name", V_string name) ]
+
+  let field (field : field) =
+    V_doc
+      [
+        string "name" field.name;
+        string "storage_key" field.storage_key;
+        ("type", field_type field.typ);
+        bool "required" field.required;
+        bool "unique" field.unique;
+        bool "immutable" field.immutable;
+        bool "nillable" field.nillable;
+      ]
+
+  let edge_direction = function
+    | To -> V_string "to"
+    | From { ref_name } -> V_doc [ ("kind", V_string "from"); ("ref_name", V_string ref_name) ]
+
+  let edge_cardinality = function
+    | One -> V_string "one"
+    | Many -> V_string "many"
+
+  let option_string = function
+    | None -> V_null
+    | Some value -> V_string value
+
+  let edge (edge : edge) =
+    V_doc
+      [
+        string "name" edge.name;
+        string "target" edge.target;
+        ("direction", edge_direction edge.direction);
+        ("cardinality", edge_cardinality edge.cardinality);
+        bool "required" edge.required;
+        ("storage_key", option_string edge.storage_key);
+      ]
+
+  let index (index : index) =
+    V_doc
+      [
+        ("name", option_string index.name);
+        ("fields", V_list (List.map (fun field -> V_string field) index.fields));
+        ("edges", V_list (List.map (fun edge -> V_string edge) index.edges));
+        bool "unique" index.unique;
+      ]
+
+  let entity (entity : entity) =
+    V_doc
+      [
+        ("version", V_int 1);
+        string "name" entity.name;
+        string "collection" entity.collection;
+        ("fields", V_list (List.map field entity.fields));
+        ("edges", V_list (List.map edge entity.edges));
+        ("indexes", V_list (List.map index entity.indexes));
+      ]
+
+  let entities entities =
+    V_doc
+      [
+        ("version", V_int 1);
+        ("entities", V_list (List.map entity entities));
+      ]
+end
+
 module Query = struct
   let make ?(where = []) ?(select = []) ?(order = []) ?limit ?offset entity =
     { entity; predicates = where; select; orders = order; limit; offset }

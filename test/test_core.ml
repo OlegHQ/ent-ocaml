@@ -374,6 +374,26 @@ let test_dynamic_filter_api () =
   | Ok _ -> Alcotest.fail "unexpected nil predicate"
   | Error error -> Alcotest.fail (error_to_string error))
 
+let test_schema_snapshot () =
+  match Ent_ocaml.Schema_snapshot.entity post_entity with
+  | Ent_ocaml.V_doc fields ->
+      Alcotest.(check (option string))
+        "name" (Some "Post")
+        (Option.map
+           (function Ent_ocaml.V_string value -> value | _ -> "")
+           (List.assoc_opt "name" fields));
+      Alcotest.(check (option int))
+        "version" (Some 1)
+        (Option.map
+           (function Ent_ocaml.V_int value -> value | _ -> -1)
+           (List.assoc_opt "version" fields));
+      Alcotest.(check bool)
+        "fields" true
+        (match List.assoc_opt "fields" fields with
+        | Some (Ent_ocaml.V_list (_ :: _)) -> true
+        | _ -> false)
+  | _ -> Alcotest.fail "expected schema snapshot document"
+
 let test_mongo_eq_predicate () =
   match
     Ent_ocaml_mongo.predicate_to_bson
@@ -709,6 +729,7 @@ let () =
           Alcotest.test_case "query interceptor chain" `Quick
             test_query_interceptor_chain;
           Alcotest.test_case "dynamic filter api" `Quick test_dynamic_filter_api;
+          Alcotest.test_case "schema snapshot" `Quick test_schema_snapshot;
         ] );
       ( "mongo",
         [

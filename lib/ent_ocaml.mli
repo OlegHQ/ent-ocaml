@@ -135,6 +135,15 @@ type group_result = {
   value : value option;
 }
 
+module Schema_snapshot : sig
+  val field_type : field_type -> value
+  val field : field -> value
+  val edge : edge -> value
+  val index : index -> value
+  val entity : entity -> value
+  val entities : entity list -> value
+end
+
 module Query : sig
   val make :
     ?where:predicate list ->

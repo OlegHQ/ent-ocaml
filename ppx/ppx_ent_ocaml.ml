@@ -993,6 +993,17 @@ let gen_entity td =
   A.pstr_value ~loc Nonrecursive
     [ A.value_binding ~loc ~pat:(pvar ~loc (type_name ^ "_entity")) ~expr ]
 
+let gen_schema_snapshot td =
+  let loc = loc_of_type_decl td in
+  let type_name = td.ptype_name.txt in
+  let expr =
+    app ~loc
+      (ident ~loc [ "Ent_ocaml"; "Schema_snapshot"; "entity" ])
+      [ evar ~loc (type_name ^ "_entity") ]
+  in
+  A.pstr_value ~loc Nonrecursive
+    [ A.value_binding ~loc ~pat:(pvar ~loc (type_name ^ "_schema_snapshot")) ~expr ]
+
 let gen_value_converter td =
   let loc = loc_of_type_decl td in
   let fields = ensure_record td in
@@ -2355,7 +2366,7 @@ let gen_query_module td =
 let generate_str ~loc:_ ~path:_ (_rec_flag, tds) =
   List.concat_map
     (fun td ->
-      [ gen_entity td; gen_value_converter td; gen_query_module td ])
+      [ gen_entity td; gen_schema_snapshot td; gen_value_converter td; gen_query_module td ])
     tds
 
 let gen_sig_for_type td =
@@ -2860,6 +2871,10 @@ let gen_sig_for_type td =
       (A.value_description ~loc
          ~name:{ loc; txt = type_name ^ "_entity" }
          ~type_:typ ~prim:[]);
+    A.psig_value ~loc
+      (A.value_description ~loc
+         ~name:{ loc; txt = type_name ^ "_schema_snapshot" }
+         ~type_:value_typ ~prim:[]);
     A.psig_value ~loc
       (A.value_description ~loc
          ~name:{ loc; txt = type_name ^ "_to_ent_value" }

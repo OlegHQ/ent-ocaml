@@ -177,6 +177,21 @@ let test_entity_metadata () =
     | Ent_ocaml.Enum [ "draft"; "published" ] -> true
     | _ -> false)
 
+let test_generated_schema_snapshot () =
+  match post_schema_snapshot with
+  | Ent_ocaml.V_doc fields ->
+      Alcotest.(check (option string))
+        "name" (Some "Post")
+        (Option.map
+           (function Ent_ocaml.V_string value -> value | _ -> "")
+           (List.assoc_opt "name" fields));
+      Alcotest.(check bool)
+        "fields" true
+        (match List.assoc_opt "fields" fields with
+        | Some (Ent_ocaml.V_list fields) -> List.length fields = 8
+        | _ -> false)
+  | _ -> Alcotest.fail "expected generated schema snapshot document"
+
 let test_generated_query_api () =
   let query =
     Post.query ()
@@ -721,6 +736,8 @@ let () =
       ( "deriving",
         [
           Alcotest.test_case "entity metadata" `Quick test_entity_metadata;
+          Alcotest.test_case "generated schema snapshot" `Quick
+            test_generated_schema_snapshot;
           Alcotest.test_case "generated query api" `Quick
             test_generated_query_api;
           Alcotest.test_case "generated cursor api" `Quick

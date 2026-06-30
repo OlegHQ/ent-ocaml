@@ -137,6 +137,12 @@ let load_filtered ctx =
   Posts.all ctx ~decode:post_of_bson_doc_result query
 ```
 
+Generated schema snapshots provide stable metadata for drift/debug tooling:
+
+```ocaml
+let snapshot = Post.post_schema_snapshot
+```
+
 Aggregates compose from queries too:
 
 ```ocaml
