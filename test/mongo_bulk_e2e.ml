@@ -264,7 +264,8 @@ let query_after_views_post_2 =
   |> Ent_ocaml.Query.limit 1
 
 let query_user_from_posts =
-  Ent_ocaml.Edge_query.make ~edge:"user" ~target:user_entity query_user_1
+  Ent_ocaml.Edge_query.make ~as_:"author" ~edge:"user" ~target:user_entity
+    query_user_1
 
 let assert_true label condition =
   if condition then Printf.printf "PASS %s\n%!" label
@@ -560,6 +561,8 @@ let run_flow client =
     | _ -> false);
   let* user_posts = Ent_ocaml_mongo.find ctx query_user_1 in
   assert_true "edge predicate returns user posts" (List.length user_posts = 1);
+  assert_true "named edge alias preserved"
+    (query_user_from_posts.Ent_ocaml.edge_alias = Some "author");
   let* traversed_users =
     Ent_ocaml_mongo.traverse_as ctx query_user_from_posts ~decode:(fun doc ->
         Ok (Bson.get_string (Bson.get_element "_id" doc)))

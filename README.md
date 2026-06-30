@@ -401,11 +401,14 @@ let drafts_with_authors ctx =
   let open Post in
   query ()
   |> where (status_eq "draft")
-  |> with_user ~target:User.user_entity
+  |> with_user ~as_:"author" ~target:User.user_entity
   |> Posts.load_edge ctx
        ~decode_source:post_of_bson_doc_result
        ~decode_target:user_of_bson_doc_result
 ```
+
+The optional `~as_` label is preserved on the edge query so higher-level loaders
+can distinguish several eager loads of the same edge.
 
 Backends execute those
 typed values with `result`-returning functions such as

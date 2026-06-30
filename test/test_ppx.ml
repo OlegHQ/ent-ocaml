@@ -489,11 +489,13 @@ let test_generated_traversal_api () =
     let open Post in
     query ()
     |> where (status_eq "draft")
-    |> with_user ~target:user_entity
+    |> with_user ~as_:"author" ~target:user_entity
   in
   Alcotest.(check string)
     "source entity" "Post" edge_query.Ent_ocaml.source.entity.name;
   Alcotest.(check string) "edge" "user" edge_query.edge;
+  Alcotest.(check (option string))
+    "edge alias" (Some "author") edge_query.edge_alias;
   Alcotest.(check string) "target entity" "User" edge_query.target.name;
   Alcotest.(check int)
     "source predicates" 1

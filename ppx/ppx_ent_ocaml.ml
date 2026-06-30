@@ -1875,19 +1875,21 @@ let gen_query_module td =
         [
           A.value_binding ~loc ~pat:(pvar ~loc ("query_" ^ edge_name))
             ~expr:
-              (A.pexp_fun ~loc (Optional "target_query") None
-                 (pvar ~loc "target_query")
-                 (A.pexp_fun ~loc (Labelled "target") None
-                    (pvar ~loc "target")
-                    (A.pexp_fun ~loc Nolabel None query_pat
-                       (A.pexp_apply ~loc
-                          (ident ~loc [ "Ent_ocaml"; "Edge_query"; "make" ])
-                          [
-                            (Optional "target_query", evar ~loc "target_query");
-                            (Labelled "edge", str ~loc edge_name);
-                            (Labelled "target", evar ~loc "target");
-                            (Nolabel, evar ~loc "query");
-                          ]))));
+              (A.pexp_fun ~loc (Optional "as_") None (pvar ~loc "as_")
+                 (A.pexp_fun ~loc (Optional "target_query") None
+                    (pvar ~loc "target_query")
+                    (A.pexp_fun ~loc (Labelled "target") None
+                       (pvar ~loc "target")
+                       (A.pexp_fun ~loc Nolabel None query_pat
+                          (A.pexp_apply ~loc
+                             (ident ~loc [ "Ent_ocaml"; "Edge_query"; "make" ])
+                             [
+                               (Optional "as_", evar ~loc "as_");
+                               (Optional "target_query", evar ~loc "target_query");
+                               (Labelled "edge", str ~loc edge_name);
+                               (Labelled "target", evar ~loc "target");
+                               (Nolabel, evar ~loc "query");
+                             ])))));
         ];
       A.pstr_value ~loc Nonrecursive
         [
@@ -3630,13 +3632,15 @@ let gen_sig_for_type td =
         (arrow Nolabel predicates_typ predicate_typ);
       val_sig edge_name (arrow Nolabel predicate_typ predicate_typ);
       val_sig ("query_" ^ edge_name)
-        (arrow (Optional "target_query") query_typ
-           (arrow (Labelled "target") entity_typ
-              (arrow Nolabel query_typ edge_query_typ)));
+        (arrow (Optional "as_") string_typ
+           (arrow (Optional "target_query") query_typ
+              (arrow (Labelled "target") entity_typ
+                 (arrow Nolabel query_typ edge_query_typ))));
       val_sig ("with_" ^ edge_name)
-        (arrow (Optional "target_query") query_typ
-           (arrow (Labelled "target") entity_typ
-              (arrow Nolabel query_typ edge_query_typ)));
+        (arrow (Optional "as_") string_typ
+           (arrow (Optional "target_query") query_typ
+              (arrow (Labelled "target") entity_typ
+                 (arrow Nolabel query_typ edge_query_typ))));
     ]
   in
   let update_sig name =

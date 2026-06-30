@@ -124,6 +124,7 @@ type query = {
 type edge_query = {
   source : query;
   edge : string;
+  edge_alias : string option;
   target : entity;
   target_query : query;
 }
@@ -434,11 +435,11 @@ module Query = struct
 end
 
 module Edge_query = struct
-  let make ?target_query ~edge ~target source =
+  let make ?as_ ?target_query ~edge ~target source =
     let target_query =
       Option.value target_query ~default:(Query.make target)
     in
-    { source; edge; target; target_query }
+    { source; edge; edge_alias = as_; target; target_query }
 end
 
 module Aggregate = struct

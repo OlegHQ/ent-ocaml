@@ -366,6 +366,14 @@ let test_query_interceptor_chain () =
   | Ok count -> Alcotest.failf "expected one predicate, got %d" count
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
+let test_edge_query_alias () =
+  let edge_query =
+    Ent_ocaml.Edge_query.make ~as_:"author" ~edge:"user" ~target:post_entity
+      (Ent_ocaml.Query.make post_entity)
+  in
+  Alcotest.(check (option string))
+    "edge alias" (Some "author") edge_query.edge_alias
+
 let test_transaction_hooks () =
   let events = ref [] in
   let transaction () f = f () in
@@ -976,6 +984,7 @@ let () =
           Alcotest.test_case "mutation hook chain" `Quick test_mutation_hook_chain;
           Alcotest.test_case "query interceptor chain" `Quick
             test_query_interceptor_chain;
+          Alcotest.test_case "edge query alias" `Quick test_edge_query_alias;
           Alcotest.test_case "transaction hooks" `Quick test_transaction_hooks;
           Alcotest.test_case "dynamic filter api" `Quick test_dynamic_filter_api;
           Alcotest.test_case "entql api" `Quick test_entql_api;

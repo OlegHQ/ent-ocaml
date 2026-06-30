@@ -124,6 +124,7 @@ type query = {
 type edge_query = {
   source : query;
   edge : string;
+  edge_alias : string option;
   target : entity;
   target_query : query;
 }
@@ -196,6 +197,7 @@ end
 
 module Edge_query : sig
   val make :
+    ?as_:string ->
     ?target_query:query ->
     edge:string ->
     target:entity ->
