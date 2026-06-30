@@ -162,19 +162,6 @@ let snake_to_pascal name =
          else first ^ String.sub part 1 (String.length part - 1))
   |> String.concat ""
 
-let pascal_to_snake name =
-  let buffer = Buffer.create (String.length name + 4) in
-  String.iteri
-    (fun index c ->
-      if
-        index > 0
-        && Char.uppercase_ascii c = c
-        && Char.lowercase_ascii c <> c
-      then Buffer.add_char buffer '_';
-      Buffer.add_char buffer (Char.lowercase_ascii c))
-    name;
-  Buffer.contents buffer
-
 let pluralize name =
   if String.ends_with ~suffix:"s" name then name else name ^ "s"
 
@@ -355,6 +342,7 @@ let parse_edge_spec expr =
                 Some (parse_string_expr ~what:"edge storage_key" value)
           | "ref_name" ->
               ref_name := Some (parse_string_expr ~what:"edge ref_name" value)
+          | "target_entity" -> ()
           | field ->
               Location.raise_errorf ~loc:value.pexp_loc
                 "unknown ent edge option: %s" field)
@@ -414,19 +402,15 @@ let parse_edge_name expr =
       Location.raise_errorf ~loc:expr.pexp_loc
         "ent edge must be a record"
 
-let parse_edge_target expr =
+let parse_edge_target_entity expr =
   match expr.pexp_desc with
-  | Pexp_record (fields, None) -> (
-      match
-        List.find_map
-          (fun (label, value) ->
-            match label_name label.txt with
-            | "target" -> Some (parse_string_expr ~what:"edge target" value)
-            | _ -> None)
-          fields
-      with
-      | Some target -> target
-      | None -> Location.raise_errorf ~loc:expr.pexp_loc "ent edge record requires target")
+  | Pexp_record (fields, None) ->
+      List.find_map
+        (fun (label, value) ->
+          match label_name label.txt with
+          | "target_entity" -> Some value
+          | _ -> None)
+        fields
   | _ ->
       Location.raise_errorf ~loc:expr.pexp_loc
         "ent edge must be a record"
@@ -435,7 +419,7 @@ let edge_specs td =
   Attribute.get ent_edges_attr td |> Option.value ~default:[]
 
 let edge_names td = edge_specs td |> List.map parse_edge_name
-let edge_targets td = edge_specs td |> List.map parse_edge_target
+let edge_target_entities td = edge_specs td |> List.filter_map parse_edge_target_entity
 
 let type_path_name path =
   match List.rev (type_path_parts path) with
@@ -1609,10 +1593,7 @@ let gen_query_module td =
   let fields = ensure_record td in
   let edges = edge_names td in
   let entql_targets =
-    edge_targets td
-    |> List.sort_uniq String.compare
-    |> List.map (fun target -> evar ~loc (pascal_to_snake target ^ "_entity"))
-    |> list ~loc
+    edge_target_entities td |> list ~loc
   in
   let type_name = td.ptype_name.txt in
   let module_name = snake_to_pascal type_name in

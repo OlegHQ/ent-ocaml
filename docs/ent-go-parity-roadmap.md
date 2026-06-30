@@ -144,8 +144,8 @@ The initial package scaffold already provides:
   metadata-validated filter strings with `&&`, `||`, parentheses, negation,
   equality, comparison, membership, string, and null operators into those same
   predicates. Stored foreign-key edge ID paths such as `user.id == "user_1"`
-  compile to `Has_edge_with` predicates, and generated modules register edge
-  target descriptors so target-field paths such as
+  compile to `Has_edge_with` predicates, and generated modules use explicit
+  `target_entity` edge metadata so target-field paths such as
   `user.username == "alice"` compile to target-aware edge predicates.
   Generated JSON path predicate helpers for `[@ent.json]` fields support nested
   equality, comparison, membership, and null checks, plus nested path ordering.

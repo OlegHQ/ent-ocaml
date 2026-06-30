@@ -394,6 +394,23 @@ edge path such as `user.id`; generated modules also register their edge target
 descriptors so related target fields can be referenced as `user.username`:
 
 ```ocaml
+type post = {
+  id : string;
+  user_id : string;
+  body : string;
+}
+[@@ent.edges
+  [
+    {
+      name = "user";
+      target = "User";
+      target_entity = user_entity;
+      storage_key = "user_id";
+      cardinality = "one";
+    };
+  ]]
+[@@deriving ent]
+
 let load_filtered ctx =
   let open Ent_ocaml.Result_syntax in
   let open Post in

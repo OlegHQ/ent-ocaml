@@ -49,6 +49,7 @@ type post = {
     {
       name = "user";
       target = "User";
+      target_entity = user_entity;
       storage_key = "user_id";
       cardinality = "one";
       required = true;
