@@ -100,6 +100,22 @@ type query = {
   offset : int option;
 }
 
+module Query = struct
+  let make ?(where = []) ?(select = []) ?(order = []) ?limit ?offset entity =
+    { entity; predicates = where; select; orders = order; limit; offset }
+
+  let where predicate query =
+    { query with predicates = query.predicates @ [ predicate ] }
+
+  let where_all predicates query =
+    { query with predicates = query.predicates @ predicates }
+
+  let select fields query = { query with select = fields }
+  let order_by orders query = { query with orders }
+  let limit limit query = { query with limit = Some limit }
+  let offset offset query = { query with offset = Some offset }
+end
+
 type mutation_op = Create | Update_one | Update | Delete_one | Delete
 
 type mutation = {
@@ -130,6 +146,11 @@ let error_to_string = function
   | `Not_found -> "not found"
   | `Not_singular -> "not singular"
   | `Constraint message -> "constraint: " ^ message
+
+module Result_syntax = struct
+  let ( let* ) result f = match result with Ok value -> f value | Error _ as error -> error
+  let ( let+ ) result f = match result with Ok value -> Ok (f value) | Error _ as error -> error
+end
 
 let find_field (entity : entity) name =
   List.find_opt (fun (field : field) -> field.name = name) entity.fields

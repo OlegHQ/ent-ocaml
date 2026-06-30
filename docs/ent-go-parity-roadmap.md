@@ -48,6 +48,10 @@ feel like a small typed OCaml library:
 - Provide composable functional helpers for filters, ordering, transactions,
   hooks, privacy, and interceptors, with backend-specific escape hatches kept
   typed and local.
+- Generated query APIs should read as pipelines:
+  `Entity.query () |> Entity.where (...) |> Entity.select [...] |> Entity.limit n`.
+  Predicate lists remain available for bulk composition, but ordinary call sites
+  should not need to construct AST-looking lists by hand.
 - Do not translate Go builder chains mechanically. A generated OCaml API should
   look like compact modules, labeled arguments, typed records/variants, small
   combinators, and `result`-returning execution functions.
@@ -58,7 +62,7 @@ The initial package scaffold already provides:
 
 - Core schema descriptors for fields, edges, indexes, predicates, ordering,
   queries, mutations, mutation validation, field validators, errors, privacy
-  decisions, and backend signatures.
+  decisions, backend signatures, generic query combinators, and result syntax.
 - Mongo planning and CRUD execution for scalar filters, boolean predicates,
   field selection/projection, ordering, limit/offset, insert, bulk insert,
   update, delete, count, stored-FK edge predicates, and basic value translation.
@@ -67,8 +71,8 @@ The initial package scaffold already provides:
   values, create-bulk helpers, field selector constants, create-time and
   update-time default values, typed validator wrappers, and matching `.mli`
   signatures for generated helper modules. Type-level `[@@ent.edges ...]`
-  descriptors generate FK edge metadata plus `has_<edge>` and
-  `has_<edge>_with` predicate helpers.
+  descriptors generate FK edge metadata plus clean edge predicate aliases such
+  as `Post.user (User.id_eq id)` alongside bulk `has_<edge>_with` helpers.
 - Poster pilot integration for `User`, `Session`, `Post`, `Media`,
   `PublishState`, and `PublishAttempt` DTO entities.
 

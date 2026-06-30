@@ -100,6 +100,24 @@ type query = {
   offset : int option;
 }
 
+module Query : sig
+  val make :
+    ?where:predicate list ->
+    ?select:string list ->
+    ?order:order list ->
+    ?limit:int ->
+    ?offset:int ->
+    entity ->
+    query
+
+  val where : predicate -> query -> query
+  val where_all : predicate list -> query -> query
+  val select : string list -> query -> query
+  val order_by : order list -> query -> query
+  val limit : int -> query -> query
+  val offset : int -> query -> query
+end
+
 type mutation_op = Create | Update_one | Update | Delete_one | Delete
 
 type mutation = {
@@ -123,6 +141,11 @@ type error =
 
 val error_to_string : error -> string
 val validate_mutation : mutation -> (unit, error) result
+
+module Result_syntax : sig
+  val ( let* ) : ('a, 'e) result -> ('a -> ('b, 'e) result) -> ('b, 'e) result
+  val ( let+ ) : ('a, 'e) result -> ('a -> 'b) -> ('b, 'e) result
+end
 
 type privacy_decision = Allow | Deny of string | Skip
 type 'ctx query_rule = 'ctx -> query -> privacy_decision

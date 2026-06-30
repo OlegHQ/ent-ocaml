@@ -120,6 +120,27 @@ let test_validate_field_validator () =
         "message" "validation failed for field body: must not be empty" message
   | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
+let test_query_pipeline_api () =
+  let query =
+    Ent_ocaml.Query.make post_entity
+    |> Ent_ocaml.Query.where Ent_ocaml.(Eq ("user_id", V_string "user_1"))
+    |> Ent_ocaml.Query.select [ "id"; "body" ]
+    |> Ent_ocaml.Query.order_by Ent_ocaml.[ { field = "id"; direction = Asc } ]
+    |> Ent_ocaml.Query.limit 5
+  in
+  Alcotest.(check int) "predicates" 1 (List.length query.predicates);
+  Alcotest.(check (list string)) "select" [ "id"; "body" ] query.select;
+  Alcotest.(check (option int)) "limit" (Some 5) query.limit
+
+let test_result_syntax () =
+  let open Ent_ocaml.Result_syntax in
+  let result =
+    let* left = Ok 2 in
+    let+ right = Ok 3 in
+    left + right
+  in
+  Alcotest.(check (result int string)) "result" (Ok 5) result
+
 let test_mongo_eq_predicate () =
   match
     Ent_ocaml_mongo.predicate_to_bson
@@ -317,6 +338,9 @@ let () =
             test_validate_immutable_update;
           Alcotest.test_case "validate field validator" `Quick
             test_validate_field_validator;
+          Alcotest.test_case "query pipeline api" `Quick
+            test_query_pipeline_api;
+          Alcotest.test_case "result syntax" `Quick test_result_syntax;
         ] );
       ( "mongo",
         [

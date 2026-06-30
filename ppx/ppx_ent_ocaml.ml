@@ -967,6 +967,10 @@ let gen_query_module td =
       ]
       None
   in
+  let query_pat =
+    A.ppat_constraint ~loc (pvar ~loc "query")
+      (A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "query" ]) [])
+  in
   let query =
     A.pstr_value ~loc Nonrecursive
       [
@@ -1006,6 +1010,75 @@ let gen_query_module td =
                   (evar ~loc "predicate")));
       ]
   in
+  let query_pipe_helpers =
+    A.pstr_value ~loc Nonrecursive
+      [
+        A.value_binding ~loc ~pat:(pvar ~loc "where")
+          ~expr:
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "predicate")
+               (A.pexp_fun ~loc Nolabel None query_pat
+                  (A.pexp_record ~loc
+                     [
+                       ( lid ~loc [ "Ent_ocaml"; "predicates" ],
+                         app ~loc (ident ~loc [ "@" ])
+                           [
+                             A.pexp_field ~loc (evar ~loc "query")
+                               (lid ~loc [ "Ent_ocaml"; "predicates" ]);
+                             list ~loc [ evar ~loc "predicate" ];
+                           ] );
+                     ]
+                     (Some (evar ~loc "query")))));
+        A.value_binding ~loc ~pat:(pvar ~loc "where_all")
+          ~expr:
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "predicates")
+               (A.pexp_fun ~loc Nolabel None query_pat
+                  (A.pexp_record ~loc
+                     [
+                       ( lid ~loc [ "Ent_ocaml"; "predicates" ],
+                         app ~loc (ident ~loc [ "@" ])
+                           [
+                             A.pexp_field ~loc (evar ~loc "query")
+                               (lid ~loc [ "Ent_ocaml"; "predicates" ]);
+                             evar ~loc "predicates";
+                           ] );
+                     ]
+                     (Some (evar ~loc "query")))));
+        A.value_binding ~loc ~pat:(pvar ~loc "select")
+          ~expr:
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "fields")
+               (A.pexp_fun ~loc Nolabel None query_pat
+                  (A.pexp_record ~loc
+                     [ (lid ~loc [ "Ent_ocaml"; "select" ], evar ~loc "fields") ]
+                     (Some (evar ~loc "query")))));
+        A.value_binding ~loc ~pat:(pvar ~loc "order_by")
+          ~expr:
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "orders")
+               (A.pexp_fun ~loc Nolabel None query_pat
+                  (A.pexp_record ~loc
+                     [ (lid ~loc [ "Ent_ocaml"; "orders" ], evar ~loc "orders") ]
+                     (Some (evar ~loc "query")))));
+        A.value_binding ~loc ~pat:(pvar ~loc "limit")
+          ~expr:
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "limit")
+               (A.pexp_fun ~loc Nolabel None query_pat
+                  (A.pexp_record ~loc
+                     [
+                       ( lid ~loc [ "Ent_ocaml"; "limit" ],
+                         constr_arg ~loc [ "Some" ] (evar ~loc "limit") );
+                     ]
+                     (Some (evar ~loc "query")))));
+        A.value_binding ~loc ~pat:(pvar ~loc "offset")
+          ~expr:
+            (A.pexp_fun ~loc Nolabel None (pvar ~loc "offset")
+               (A.pexp_fun ~loc Nolabel None query_pat
+                  (A.pexp_record ~loc
+                     [
+                       ( lid ~loc [ "Ent_ocaml"; "offset" ],
+                         constr_arg ~loc [ "Some" ] (evar ~loc "offset") );
+                     ]
+                     (Some (evar ~loc "query")))));
+      ]
+  in
   let edge_helper_items edge_name =
     [
       A.pstr_value ~loc Nonrecursive
@@ -1024,6 +1097,15 @@ let gen_query_module td =
                  (constr_arg ~loc [ "Ent_ocaml"; "Has_edge_with" ]
                     (A.pexp_tuple ~loc
                        [ str ~loc edge_name; evar ~loc "predicates" ])));
+        ];
+      A.pstr_value ~loc Nonrecursive
+        [
+          A.value_binding ~loc ~pat:(pvar ~loc edge_name)
+            ~expr:
+              (A.pexp_fun ~loc Nolabel None (pvar ~loc "predicate")
+                 (constr_arg ~loc [ "Ent_ocaml"; "Has_edge_with" ]
+                    (A.pexp_tuple ~loc
+                       [ str ~loc edge_name; list ~loc [ evar ~loc "predicate" ] ])));
         ];
     ]
   in
@@ -1100,7 +1182,7 @@ let gen_query_module td =
       ]
   in
   let structure =
-    query :: boolean_predicates :: create :: create_many
+    query :: boolean_predicates :: query_pipe_helpers :: create :: create_many
     :: update_fn "update_one" "Update_one"
     :: update_fn "update" "Update"
     :: delete_fn "delete_one" "Delete_one"
@@ -1179,11 +1261,25 @@ let gen_sig_for_type td =
       val_sig "not_" (arrow Nolabel predicate_typ predicate_typ);
     ]
   in
+  let query_pipe_sig =
+    [
+      val_sig "where" (arrow Nolabel predicate_typ (arrow Nolabel query_typ query_typ));
+      val_sig "where_all"
+        (arrow Nolabel predicates_typ (arrow Nolabel query_typ query_typ));
+      val_sig "select"
+        (arrow Nolabel (list_typ string_typ) (arrow Nolabel query_typ query_typ));
+      val_sig "order_by"
+        (arrow Nolabel orders_typ (arrow Nolabel query_typ query_typ));
+      val_sig "limit" (arrow Nolabel int_typ (arrow Nolabel query_typ query_typ));
+      val_sig "offset" (arrow Nolabel int_typ (arrow Nolabel query_typ query_typ));
+    ]
+  in
   let edge_sig_items edge_name =
     [
       val_sig ("has_" ^ edge_name) (arrow Nolabel unit_typ predicate_typ);
       val_sig ("has_" ^ edge_name ^ "_with")
         (arrow Nolabel predicates_typ predicate_typ);
+      val_sig edge_name (arrow Nolabel predicate_typ predicate_typ);
     ]
   in
   let update_sig name =
@@ -1268,7 +1364,7 @@ let gen_sig_for_type td =
         value_sig @ base @ comparison_helpers @ nil_helpers @ string_helpers
   in
   let module_items =
-    query_sig :: boolean_sig
+    query_sig :: boolean_sig @ query_pipe_sig
     @ (create_sig :: create_many_sig :: update_sig "update_one" :: update_sig "update"
       :: delete_sig "delete_one" :: delete_sig "delete"
       :: (List.concat_map edge_sig_items edges

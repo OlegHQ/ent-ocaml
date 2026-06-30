@@ -103,25 +103,22 @@ let test_entity_metadata () =
 
 let test_generated_query_api () =
   let query =
-    Post.query
-      ~where:
-        [
-          Post.user_id_eq "user_1";
-          Post.or_
+    Post.query ()
+    |> Post.where (Post.user_id_eq "user_1")
+    |> Post.where
+         (Post.or_
             [
               Post.status_eq "draft";
               Post.not_ (Post.body_has_prefix "archived");
-            ];
-          Post.created_at_ms_gte 1_700_000_000L;
-          Post.body_contains "hello";
-          Post.media_ids_eq [ "media_1"; "media_2" ];
-          Post.published_at_ms_is_nil ();
-          Post.has_user_with
-            [ Ent_ocaml.Eq ("id", Ent_ocaml.V_string "user_1") ];
-        ]
-      ~select:[ Post.select_id; Post.select_body ]
-      ~order:[ Post.published_at_ms_order ~direction:Ent_ocaml.Desc () ]
-      ~limit:10 ()
+            ])
+    |> Post.where (Post.created_at_ms_gte 1_700_000_000L)
+    |> Post.where (Post.body_contains "hello")
+    |> Post.where (Post.media_ids_eq [ "media_1"; "media_2" ])
+    |> Post.where (Post.published_at_ms_is_nil ())
+    |> Post.where (Post.user (Ent_ocaml.Eq ("id", Ent_ocaml.V_string "user_1")))
+    |> Post.select [ Post.select_id; Post.select_body ]
+    |> Post.order_by [ Post.published_at_ms_order ~direction:Ent_ocaml.Desc () ]
+    |> Post.limit 10
   in
   Alcotest.(check string) "entity" "Post" query.entity.name;
   Alcotest.(check int) "predicates" 7 (List.length query.predicates);
