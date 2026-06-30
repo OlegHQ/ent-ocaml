@@ -49,6 +49,12 @@ val find_one_as :
   decode:(Bson.t -> ('a, string) result) ->
   ('a option, Ent_ocaml.error) result
 
+val traverse_as :
+  ctx ->
+  Ent_ocaml.edge_query ->
+  decode:(Bson.t -> ('a, string) result) ->
+  ('a list, Ent_ocaml.error) result
+
 val count : ctx -> Ent_ocaml.query -> (int, Ent_ocaml.error) result
 val ensure_indexes : ctx -> Ent_ocaml.entity list -> (unit, Ent_ocaml.error) result
 val insert : ctx -> Ent_ocaml.entity -> Bson.t -> (Bson.t, Ent_ocaml.error) result

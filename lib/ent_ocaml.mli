@@ -100,6 +100,13 @@ type query = {
   offset : int option;
 }
 
+type edge_query = {
+  source : query;
+  edge : string;
+  target : entity;
+  target_query : query;
+}
+
 type aggregate_op = Count | Min of string | Max of string | Sum of string | Avg of string
 
 type aggregate = {
@@ -145,6 +152,15 @@ module Query : sig
     value ->
     query ->
     query
+end
+
+module Edge_query : sig
+  val make :
+    ?target_query:query ->
+    edge:string ->
+    target:entity ->
+    query ->
+    edge_query
 end
 
 module Aggregate : sig
@@ -231,6 +247,12 @@ module type STORE_BACKEND = sig
     query ->
     decode:(doc -> ('a, string) result) ->
     ('a option, error) result
+
+  val traverse_as :
+    ctx ->
+    edge_query ->
+    decode:(doc -> ('a, string) result) ->
+    ('a list, error) result
 
   val insert_values : ctx -> mutation -> (doc, error) result
 

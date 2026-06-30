@@ -1,3 +1,10 @@
+type user = {
+  id : string [@ent.key "_id"] [@ent.unique] [@ent.immutable];
+  username : string [@ent.unique] [@ent.index "unique_username"];
+}
+[@@ent.entity "User"] [@@ent.collection "users"]
+[@@deriving ent]
+
 type post = {
   id : string [@ent.key "_id"] [@ent.unique] [@ent.immutable];
   user_id : string [@ent.index "posts_by_user"];
@@ -59,6 +66,11 @@ module Memory_backend = struct
   let find_one_as () (query : Ent_ocaml.query) ~decode =
     match decode (Ent_ocaml.V_string query.Ent_ocaml.entity.name) with
     | Ok value -> Ok (Some value)
+    | Error message -> Error (`Decode message)
+
+  let traverse_as () (edge_query : Ent_ocaml.edge_query) ~decode =
+    match decode (Ent_ocaml.V_string edge_query.Ent_ocaml.target.name) with
+    | Ok value -> Ok [ value ]
     | Error message -> Error (`Decode message)
 
   let insert_values () (mutation : Ent_ocaml.mutation) =
@@ -205,6 +217,30 @@ let test_generated_cursor_api () =
     (match query.orders with
     | [ { Ent_ocaml.field = "created_at_ms"; direction = Desc } ] -> true
     | _ -> false)
+
+let test_generated_traversal_api () =
+  let edge_query =
+    let open Post in
+    query ()
+    |> where (status_eq "draft")
+    |> query_user ~target:user_entity
+  in
+  Alcotest.(check string)
+    "source entity" "Post" edge_query.Ent_ocaml.source.entity.name;
+  Alcotest.(check string) "edge" "user" edge_query.edge;
+  Alcotest.(check string) "target entity" "User" edge_query.target.name;
+  Alcotest.(check int)
+    "source predicates" 1
+    (List.length edge_query.source.predicates);
+  let module Store = Post.Store (Memory_backend) in
+  let decode = function
+    | Ent_ocaml.V_string value -> Ok value
+    | _ -> Error "expected string"
+  in
+  match Store.traverse () ~decode edge_query with
+  | Ok [ "User" ] -> ()
+  | Ok _ -> Alcotest.fail "unexpected traverse result"
+  | Error error -> Alcotest.fail (Ent_ocaml.error_to_string error)
 
 let test_generated_mutation_api () =
   let open Post in
@@ -488,6 +524,8 @@ let () =
             test_generated_query_api;
           Alcotest.test_case "generated cursor api" `Quick
             test_generated_cursor_api;
+          Alcotest.test_case "generated traversal api" `Quick
+            test_generated_traversal_api;
           Alcotest.test_case "generated mutation api" `Quick
             test_generated_mutation_api;
           Alcotest.test_case "generated store api" `Quick

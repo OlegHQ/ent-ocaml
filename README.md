@@ -103,6 +103,19 @@ let views_by_status =
   |> Posts.group ctx
 ```
 
+Stored foreign-key edge traversals are also first-class values:
+
+```ocaml
+module Posts = Post.Store (Ent_ocaml_mongo)
+
+let load_authors ctx =
+  let open Post in
+  query ()
+  |> where (status_eq "draft")
+  |> query_user ~target:User.user_entity
+  |> Posts.traverse ctx ~decode:user_of_bson_doc_result
+```
+
 Backends execute those
 typed values with `result`-returning functions such as
 `Ent_ocaml_mongo.insert_many_values`. Core mutation validation catches missing

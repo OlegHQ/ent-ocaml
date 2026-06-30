@@ -1187,6 +1187,24 @@ let gen_query_module td =
                     (A.pexp_tuple ~loc
                        [ str ~loc edge_name; list ~loc [ evar ~loc "predicate" ] ])));
         ];
+      A.pstr_value ~loc Nonrecursive
+        [
+          A.value_binding ~loc ~pat:(pvar ~loc ("query_" ^ edge_name))
+            ~expr:
+              (A.pexp_fun ~loc (Optional "target_query") None
+                 (pvar ~loc "target_query")
+                 (A.pexp_fun ~loc (Labelled "target") None
+                    (pvar ~loc "target")
+                    (A.pexp_fun ~loc Nolabel None query_pat
+                       (A.pexp_apply ~loc
+                          (ident ~loc [ "Ent_ocaml"; "Edge_query"; "make" ])
+                          [
+                            (Optional "target_query", evar ~loc "target_query");
+                            (Labelled "edge", str ~loc edge_name);
+                            (Labelled "target", evar ~loc "target");
+                            (Nolabel, evar ~loc "query");
+                          ]))));
+        ];
     ]
   in
   let mutation_record ~op ~predicates ~set ~clear ~add ~on_insert =
@@ -1459,6 +1477,16 @@ let gen_query_module td =
                         (Nolabel, evar ~loc "query");
                         (Labelled "decode", evar ~loc "decode");
                       ]))));
+        value_fun "traverse"
+          (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
+             (A.pexp_fun ~loc (Labelled "decode") None (pvar ~loc "decode")
+                (A.pexp_fun ~loc Nolabel None (pvar ~loc "edge_query")
+                   (backend_apply "traverse_as"
+                      [
+                        (Nolabel, evar ~loc "ctx");
+                        (Nolabel, evar ~loc "edge_query");
+                        (Labelled "decode", evar ~loc "decode");
+                      ]))));
         value_fun "count"
           (A.pexp_fun ~loc Nolabel None (pvar ~loc "ctx")
              (A.pexp_fun ~loc Nolabel None query_pat
@@ -1587,6 +1615,12 @@ let gen_sig_for_type td =
   in
   let order_typ = A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "order" ]) [] in
   let query_typ = A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "query" ]) [] in
+  let edge_query_typ =
+    A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "edge_query" ]) []
+  in
+  let entity_typ =
+    A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "entity" ]) []
+  in
   let aggregate_typ =
     A.ptyp_constr ~loc (lid ~loc [ "Ent_ocaml"; "aggregate" ]) []
   in
@@ -1698,6 +1732,10 @@ let gen_sig_for_type td =
       val_sig ("has_" ^ edge_name ^ "_with")
         (arrow Nolabel predicates_typ predicate_typ);
       val_sig edge_name (arrow Nolabel predicate_typ predicate_typ);
+      val_sig ("query_" ^ edge_name)
+        (arrow (Optional "target_query") query_typ
+           (arrow (Labelled "target") entity_typ
+              (arrow Nolabel query_typ edge_query_typ)));
     ]
   in
   let update_sig name =
@@ -1843,6 +1881,14 @@ let gen_sig_for_type td =
                 (arrow Nolabel query_typ
                    (result_typ
                       (A.ptyp_constr ~loc (lid ~loc [ "option" ])
+                         [ A.ptyp_var ~loc "a" ])
+                      error_typ))));
+        value_sig "traverse"
+          (arrow Nolabel backend_ctx
+             (arrow (Labelled "decode") decode_typ
+                (arrow Nolabel edge_query_typ
+                   (result_typ
+                      (A.ptyp_constr ~loc (lid ~loc [ "list" ])
                          [ A.ptyp_var ~loc "a" ])
                       error_typ))));
         value_sig "count" (arrow Nolabel backend_ctx (arrow Nolabel query_typ int_result));

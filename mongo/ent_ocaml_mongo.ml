@@ -530,6 +530,56 @@ let value_of_bson_element element =
   in
   loop decoders
 
+let traverse_as ctx (edge_query : Ent_ocaml.edge_query) ~decode =
+  let open Ent_ocaml in
+  let source_entity = edge_query.source.entity in
+  match find_edge source_entity edge_query.edge with
+  | None -> Error (`Bad_query ("edge not found: " ^ edge_query.edge))
+  | Some edge when edge.target <> edge_query.target.name ->
+      Error
+        (`Bad_query
+          (Printf.sprintf "edge %s targets %s, not %s" edge.name edge.target
+             edge_query.target.name))
+  | Some { direction = From _; _ } ->
+      Error (`Bad_query "stored-FK traversal currently supports to-edges")
+  | Some { cardinality = Many; _ } ->
+      Error (`Bad_query "stored-FK traversal currently supports to-one edges")
+  | Some edge -> (
+      match edge.storage_key with
+      | None ->
+          Error
+            (`Bad_query
+              ("edge " ^ edge.name ^ " does not have a stored foreign-key field"))
+      | Some storage_key -> (
+          let source_query = { edge_query.source with select = [] } in
+          match find ctx source_query with
+          | Error _ as error -> error
+          | Ok source_docs ->
+              let rec collect acc = function
+                | [] -> Ok (List.rev acc)
+                | doc :: rest -> (
+                    match Bson.get_element storage_key doc with
+                    | exception Not_found -> collect acc rest
+                    | element -> (
+                        match value_of_bson_element element with
+                        | Error _ as error -> error
+                        | Ok V_null -> collect acc rest
+                        | Ok value ->
+                            let acc =
+                              if List.mem value acc then acc else value :: acc
+                            in
+                            collect acc rest))
+              in
+              match collect [] source_docs with
+              | Error _ as error -> error
+              | Ok [] -> Ok []
+              | Ok ids ->
+                  let target_query =
+                    edge_query.target_query
+                    |> Query.where (In ("id", ids))
+                  in
+                  find_as ctx target_query ~decode))
+
 let run_aggregate ctx (query : Ent_ocaml.query) pipeline =
   match
     Mongo_eio.direct_run_command ctx.client ctx.config.database

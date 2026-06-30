@@ -7,6 +7,46 @@ let port = env "POSTER_MONGO_PORT" "27017" |> int_of_string
 let db =
   Printf.sprintf "ent_ocaml_bulk_e2e_%d_%d" (Unix.getpid ()) (Random.bits ())
 
+let user_entity =
+  Ent_ocaml.
+    {
+      name = "User";
+      collection = "users";
+      fields =
+        [
+          {
+            name = "id";
+            storage_key = "_id";
+            typ = String;
+            required = true;
+            unique = true;
+            immutable = false;
+            nillable = false;
+            validators = [];
+          };
+          {
+            name = "username";
+            storage_key = "username";
+            typ = String;
+            required = true;
+            unique = true;
+            immutable = false;
+            nillable = false;
+            validators = [];
+          };
+        ];
+      edges = [];
+      indexes =
+        [
+          {
+            name = Some "unique_username";
+            fields = [ "username" ];
+            edges = [];
+            unique = true;
+          };
+        ];
+    }
+
 let post_entity =
   Ent_ocaml.
     {
@@ -75,6 +115,18 @@ let post_entity =
             unique = false;
           };
         ];
+    }
+
+let create_user id username =
+  Ent_ocaml.
+    {
+      entity = user_entity;
+      op = Create;
+      predicates = [];
+      set = [ ("id", V_string id); ("username", V_string username) ];
+      clear = [];
+      add = [];
+      on_insert = [];
     }
 
 let create id user_id body views =
@@ -153,6 +205,9 @@ let query_after_post_1 =
        (Ent_ocaml.V_string "post_1")
   |> Ent_ocaml.Query.limit 1
 
+let query_user_from_posts =
+  Ent_ocaml.Edge_query.make ~edge:"user" ~target:user_entity query_user_1
+
 let assert_true label condition =
   if condition then Printf.printf "PASS %s\n%!" label
   else failwith ("FAIL " ^ label)
@@ -202,7 +257,11 @@ let cleanup client =
 let run_flow client =
   let open Ent_ocaml.Result_syntax in
   let ctx = Ent_ocaml_mongo.create ~client { database = db } in
-  let* () = Ent_ocaml_mongo.ensure_indexes ctx [ post_entity ] in
+  let* () = Ent_ocaml_mongo.ensure_indexes ctx [ user_entity; post_entity ] in
+  let* _users =
+    Ent_ocaml_mongo.insert_many_values ctx
+      [ create_user "user_1" "alice"; create_user "user_2" "bob" ]
+  in
   let* docs =
     Ent_ocaml_mongo.insert_many_values ctx
       [
@@ -220,6 +279,12 @@ let run_flow client =
     | _ -> false);
   let* user_posts = Ent_ocaml_mongo.find ctx query_user_1 in
   assert_true "edge predicate returns user posts" (List.length user_posts = 1);
+  let* traversed_users =
+    Ent_ocaml_mongo.traverse_as ctx query_user_from_posts ~decode:(fun doc ->
+        Ok (Bson.get_string (Bson.get_element "_id" doc)))
+  in
+  assert_true "stored edge traversal returns user"
+    (traversed_users = [ "user_1" ]);
   let* sum_value =
     Ent_ocaml_mongo.aggregate ctx (Ent_ocaml.Aggregate.sum "views" query_user_1)
   in
