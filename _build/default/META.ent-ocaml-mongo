@@ -1,6 +1,0 @@
-description = ""
-requires = "bson eio ent-ocaml mongo"
-archive(byte) = "ent_ocaml_mongo.cma"
-archive(native) = "ent_ocaml_mongo.cmxa"
-plugin(byte) = "ent_ocaml_mongo.cma"
-plugin(native) = "ent_ocaml_mongo.cmxs"

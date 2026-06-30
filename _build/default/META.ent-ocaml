@@ -1,6 +1,0 @@
-description = ""
-requires = ""
-archive(byte) = "ent_ocaml.cma"
-archive(native) = "ent_ocaml.cmxa"
-plugin(byte) = "ent_ocaml.cma"
-plugin(native) = "ent_ocaml.cmxs"
